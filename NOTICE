@@ -1,0 +1,21 @@
+DataHub Terraform Provider
+Copyright 2026 The DataHub Project Authors
+
+This product is licensed under the Apache License, Version 2.0
+(see LICENSE).
+
+Portions of this software are derived from the HashiCorp
+terraform-provider-scaffolding-framework template
+(https://github.com/hashicorp/terraform-provider-scaffolding-framework)
+and remain licensed under the Mozilla Public License, Version 2.0
+(see LICENSE.mpl-2.0). The following files are covered by MPL-2.0:
+
+  - main.go
+  - tools/tools.go
+  - internal/provider/provider.go
+  - internal/provider/ingest_resource.go
+  - internal/provider/recipe_unity_document_data_source.go
+  - internal/provider/recipe_dynamodb_document_data_source.go
+
+Each individual source file's SPDX-License-Identifier header
+authoritatively declares its license.
