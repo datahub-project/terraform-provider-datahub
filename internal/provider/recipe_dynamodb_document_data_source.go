@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/datahub/terraform-provider-datahub/internal/provider/pkg/tools/uid"
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/tools/uid"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"

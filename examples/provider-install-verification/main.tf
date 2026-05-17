@@ -7,7 +7,7 @@ terraform {
 }
 
 provider "datahub" {
-  # host is intentionally omitted here; set it via DATAHUB_HOST environment variable or ~/.datahubenv. 
+  # host is intentionally omitted here; set it via DATAHUB_HOST environment variable or ~/.datahubenv.
   # gms_token is intentionally omitted here; set it via the DATAHUB_GMS_TOKEN env var or ~/.datahubenv.
 }
 

@@ -1,4 +1,4 @@
-module github.com/datahub/terraform-provider-datahub
+module github.com/datahub-project/terraform-provider-datahub
 
 go 1.25.6
 

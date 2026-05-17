@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datahub/terraform-provider-datahub/internal/provider/pkg/datahub"
-	"github.com/datahub/terraform-provider-datahub/internal/provider/pkg/tools/uid"
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/tools/uid"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
