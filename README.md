@@ -90,7 +90,7 @@ For local development, create `$HOME/.terraformrc` with a `dev_overrides` entry 
 provider_installation {
 
   dev_overrides {
-      "registry.terraform.io/hashicorp/datahub" = "/absolute/path/to/terraform-provider-datahub/bin"
+      "registry.terraform.io/datahub-project/datahub" = "/absolute/path/to/terraform-provider-datahub/bin"
   }
 
   # For all other providers, install them directly from their origin provider

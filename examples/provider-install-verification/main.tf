@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     datahub = {
-      source = "registry.terraform.io/hashicorp/datahub"
+      source = "registry.terraform.io/datahub-project/datahub"
     }
   }
 }

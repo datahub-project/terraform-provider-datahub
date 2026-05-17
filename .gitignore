@@ -1,0 +1,48 @@
+# Binaries
+bin/
+dist/
+
+# Go test and coverage outputs
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace files (developer-local)
+go.work
+go.work.sum
+
+# Vendored dependencies (only if you choose to vendor)
+vendor/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+
+# DataHub CLI config (provider.go reads ~/.datahubenv at runtime; this
+# guards against an accidental local copy being committed)
+.datahubenv
