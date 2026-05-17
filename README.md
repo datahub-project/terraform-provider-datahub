@@ -1,28 +1,20 @@
 # Terraform Provider DataHub
 
-Terraform provider to manage DataHub ingestion sources and generate ingestion recipe JSON documents.
+Terraform provider to manage DataHub ingestion sources.
 
 This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI endpoints.
 
 ## What it supports
 
-- Resource
-  - `datahub_ingest`: creates/updates/deletes a DataHub ingestion source from a recipe JSON string.
-- Data sources
-  - `datahub_recipe_unity_document`: renders a Unity Catalog / Databricks recipe JSON string from structured inputs.
-  - `datahub_recipe_dynamodb_document`: renders a DynamoDB recipe JSON string from structured inputs.
+- Resources
+  - `datahub_ingestion_source`: creates/updates/deletes a DataHub ingestion source from a recipe JSON string.
 
-Generated docs live under `docs/`:
-
-- Resource docs: `docs/resources/ingest.md`
-- Data source docs:
-  - `docs/data-sources/recipe_unity_document.md`
-  - `docs/data-sources/recipe_dynamodb_document.md`
+Generated docs live under `docs/resources/`.
 
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://go.dev/doc/install) >= 1.25
+- [Go](https://go.dev/doc/install) >= 1.26
 
 ## Provider configuration
 
