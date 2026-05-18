@@ -41,6 +41,8 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+dev.tfrc
+.mise.env
 .terraform.lock.hcl
 
 # DataHub CLI config (provider.go reads ~/.datahubenv at runtime; this
