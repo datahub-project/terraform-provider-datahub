@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // Client is a minimal HTTP client for the Datahub API.
@@ -65,8 +67,39 @@ func NewClient(host, token string) (*Client, error) {
 	return &Client{
 		baseURL:    baseURL,
 		authHeader: authHeader,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &loggingTransport{inner: http.DefaultTransport},
+		},
 	}, nil
+}
+
+// loggingTransport wraps http.DefaultTransport to emit tflog debug entries for
+// every outbound request and its response. Wrapping http.DefaultTransport
+// (rather than constructing a bare &http.Transport{}) preserves proxy support
+// via http.ProxyFromEnvironment.
+type loggingTransport struct {
+	inner http.RoundTripper
+}
+
+func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	fields := map[string]any{
+		"method": req.Method,
+		"url":    req.URL.String(),
+	}
+	if proxyURL, err := http.ProxyFromEnvironment(req); err == nil && proxyURL != nil {
+		fields["proxy"] = proxyURL.Host
+	}
+	tflog.Debug(req.Context(), "DataHub API request", fields)
+	resp, err := t.inner.RoundTrip(req)
+	if err != nil {
+		fields["error"] = err.Error()
+		tflog.Debug(req.Context(), "DataHub API request failed", fields)
+		return nil, err
+	}
+	fields["status"] = resp.StatusCode
+	tflog.Debug(req.Context(), "DataHub API response", fields)
+	return resp, nil
 }
 
 // BaseURL returns the normalized API base URL.
