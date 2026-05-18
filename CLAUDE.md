@@ -69,6 +69,35 @@ Pre-release work that is known and open (no decision recorded yet):
 
 - No tests exist. Adding unit tests for at least `internal/provider/pkg/datahub/` and `internal/provider/pkg/tools/uid/` before v0.1.0 would materially raise contributor confidence.
 
+## New resource and data source design checklist
+
+Before implementing any new resource or data source, read `docs/design/datahub-model-and-resource-design.md` in full. That document covers the reasoning behind each of these points in detail. The short checklist:
+
+**URN strategy**
+- What is the URN format for this entity type? Does the key come from the human-readable name, a user-supplied ID, or a hash?
+- Does the chosen URN key match the convention used by the DataHub Python SDK (`datahub` CLI) for the same entity type? It must, to avoid duplicate-entity problems when coexisting with SDK-created entities.
+- Does the entity type have non-deterministic URN creation paths (e.g., UI creates a random UUID)? Document this and ensure the provider always uses a deterministic path.
+- For container-typed references: do not construct container URNs in the provider. Accept the full URN string as an input, or implement a lookup data source.
+
+**Reference and dependency modeling**
+- Does this resource reference other DataHub entities (tags, glossary terms, domains, containers)?
+- Where possible, model these as Terraform expression inputs (e.g., `datahub_tag.x.urn`) rather than raw URN strings, so Terraform's dependency graph provides ordering automatically.
+- Document that raw URN string inputs bypass validation.
+
+**Upsert and list semantics**
+- Does this resource manage any aspect that contains a list (tags, owners, terms)?
+- If so, the resource must own the complete list and always POST the full desired state. Do not use PATCH/append semantics. Document that items added outside Terraform will be removed on the next apply.
+
+**Delete behavior**
+- Does the entity type support `status.removed` (soft delete)?
+- Does the OpenAPI DELETE endpoint perform a soft or hard delete? Verify against the DataHub API.
+- Are there reactivation risks if the URN is reused after deletion? Document them.
+
+**Provider scope**
+- Is this entity type platform-level configuration (owned by platform/engineering teams) or per-asset enrichment (owned by business users)?
+- Resources are appropriate for platform-level configuration only. Do not implement resources for managing descriptions, tag assignments, or ownership on individual data assets - those belong to business users and will be overwritten by apply.
+- Data sources are appropriate for looking up asset URNs and metadata without managing them.
+
 ## DataHub domain vocabulary (quick reference)
 
 - **Ingestion Source** - the configured, persisted entity in DataHub that represents one source-of-metadata. Resource-shaped.
