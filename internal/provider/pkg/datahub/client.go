@@ -23,9 +23,10 @@ import (
 // It stores the API host (base URL) and attaches the configured Bearer token
 // to every request.
 type Client struct {
-	baseURL    string
-	authHeader string
-	httpClient *http.Client
+	baseURL        string
+	authHeader     string
+	httpClient     *http.Client
+	cachedIdentity *MeIdentity
 }
 
 // NewClient creates a new Datahub API client.
@@ -146,9 +147,13 @@ type meGraphQLResponse struct {
 
 // Me calls the DataHub GraphQL API and returns the authenticated user's identity.
 // Used both for credential verification in provider Configure and by the datahub_me data source.
+// The result is cached on the Client after the first successful call.
 func (c *Client) Me(ctx context.Context) (*MeIdentity, error) {
 	if c == nil {
 		return nil, errors.New("client is nil")
+	}
+	if c.cachedIdentity != nil {
+		return c.cachedIdentity, nil
 	}
 
 	const query = `{ me { corpUser { urn username type info { displayName email } } } }`
@@ -194,6 +199,7 @@ func (c *Client) Me(ctx context.Context) (*MeIdentity, error) {
 		return nil, fmt.Errorf("credential check succeeded but returned no user URN from %s", c.BaseURL())
 	}
 
+	c.cachedIdentity = id
 	return id, nil
 }
 
