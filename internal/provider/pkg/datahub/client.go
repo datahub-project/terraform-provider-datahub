@@ -52,8 +52,11 @@ func NewClient(host, token string) (*Client, error) {
 		return nil, errors.New("invalid host URL: missing host")
 	}
 
-	// Normalize base URL (no trailing slash).
+	// Normalize base URL: no trailing slash, and strip any /gms path suffix.
+	// Some DataHub CLI configs and older tooling append /gms to the host URL,
+	// but all API paths (e.g. /api/graphql, /openapi/v3/...) are rooted at /.
 	baseURL := strings.TrimRight(parsed.String(), "/")
+	baseURL = strings.TrimSuffix(baseURL, "/gms")
 
 	token = strings.TrimSpace(token)
 	if token == "" {

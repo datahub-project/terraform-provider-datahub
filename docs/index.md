@@ -23,4 +23,4 @@ For production, prefer DataHub Secrets and environment variable substitution (e.
 ### Optional
 
 - `gms_token` (String, Sensitive) Datahub GMS token for authentication.If not filled, the provider will attempt to read the token from the DATAHUB_GMS_TOKEN environment variable and as a last resort, from the local Datahub CLI configuration located at ~/.datahubenv.
-- `host` (String) Datahub instance host URL. For eg. https://datahub.example.com. If not filled the provider will attempt to read the host from the DATAHUB_HOST environment variable and as last resort from the local Datahub CLI configuration located at ~/.datahubenv
+- `gms_url` (String) DataHub GMS URL. For example: https://datahub.example.com. If not set, the provider will read DATAHUB_GMS_URL from the environment, or fall back to gms.server in ~/.datahubenv.
