@@ -115,6 +115,88 @@ func (c *Client) HTTPClient() *http.Client {
 	return c.httpClient
 }
 
+// MeIdentity contains the identity of the authenticated DataHub user.
+type MeIdentity struct {
+	Urn         string
+	Username    string
+	Type        string
+	DisplayName string // empty when the user has no display name set
+	Email       string // empty when the user has no email set
+}
+
+// meGraphQLResponse is the JSON response shape from POST /api/graphql with the me query.
+type meGraphQLResponse struct {
+	Data struct {
+		Me struct {
+			CorpUser struct {
+				Urn      string `json:"urn"`
+				Username string `json:"username"`
+				Type     string `json:"type"`
+				Info     *struct {
+					DisplayName string `json:"displayName"`
+					Email       string `json:"email"`
+				} `json:"info"`
+			} `json:"corpUser"`
+		} `json:"me"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// Me calls the DataHub GraphQL API and returns the authenticated user's identity.
+// Used both for credential verification in provider Configure and by the datahub_me data source.
+func (c *Client) Me(ctx context.Context) (*MeIdentity, error) {
+	if c == nil {
+		return nil, errors.New("client is nil")
+	}
+
+	const query = `{ me { corpUser { urn username type info { displayName email } } } }`
+	req, err := c.NewRequest(ctx, http.MethodPost, "/api/graphql", map[string]string{"query": query})
+	if err != nil {
+		return nil, fmt.Errorf("building credential-check request: %w", err)
+	}
+
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("credential-check request to %s failed: %w", c.BaseURL(), err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("DataHub rejected the token (HTTP %d): check DATAHUB_GMS_TOKEN", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("unexpected HTTP %d from %s/api/graphql", resp.StatusCode, c.BaseURL())
+	}
+
+	var gqlResp meGraphQLResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {
+		return nil, fmt.Errorf("parsing credential-check response from %s: %w", c.BaseURL(), err)
+	}
+
+	if len(gqlResp.Errors) > 0 {
+		return nil, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+
+	cu := gqlResp.Data.Me.CorpUser
+	id := &MeIdentity{
+		Urn:      cu.Urn,
+		Username: cu.Username,
+		Type:     cu.Type,
+	}
+	if cu.Info != nil {
+		id.DisplayName = cu.Info.DisplayName
+		id.Email = cu.Info.Email
+	}
+
+	if id.Urn == "" {
+		return nil, fmt.Errorf("credential check succeeded but returned no user URN from %s", c.BaseURL())
+	}
+
+	return id, nil
+}
+
 // NewRequest builds an HTTP request against the API base URL.
 //
 // path is appended to the base URL (e.g. "/api/v2/..."), and the Bearer token

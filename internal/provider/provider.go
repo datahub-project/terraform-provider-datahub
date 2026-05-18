@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"gopkg.in/yaml.v3"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -219,13 +220,25 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 
+	identity, err := client.Me(ctx)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to authenticate with DataHub",
+			fmt.Sprintf("The configured host/token could not be verified against %s: %s", client.BaseURL(), err),
+		)
+		return
+	}
+	tflog.Info(ctx, "Authenticated with DataHub", map[string]any{"urn": identity.Urn})
+
 	resp.DataSourceData = client
 	resp.ResourceData = client
 }
 
 // DataSources defines the data sources implemented in the provider.
 func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewMeDataSource,
+	}
 }
 
 // Resources defines the resources implemented in the provider.
