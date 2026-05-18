@@ -22,7 +22,7 @@ The provider needs to reach DataHub GMS.
 
 Common approaches:
 
-- Set `DATAHUB_HOST` and `DATAHUB_GMS_TOKEN` environment variables.
+- Set `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` environment variables.
 - Or configure them in the provider block.
 
 See `examples/provider-install-verification/` for a working development setup.
