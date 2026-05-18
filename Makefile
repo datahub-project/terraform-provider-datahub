@@ -27,15 +27,11 @@ help:
 	@echo "  test          Run unit tests"
 	@echo "  testacc       Run acceptance tests (TF_ACC=1)"
 
-build: $(BIN_DIR)/$(BINARY_NAME)
+build:
+	@mkdir -p "$(BIN_DIR)"
+	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN_DIR)/$(BINARY_NAME)" "$(MAIN)"
 
 install: build
-
-$(BIN_DIR):
-	@mkdir -p "$(BIN_DIR)"
-
-$(BIN_DIR)/$(BINARY_NAME): | $(BIN_DIR)
-	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN_DIR)/$(BINARY_NAME)" "$(MAIN)"
 
 dev-override:
 	@{ \
