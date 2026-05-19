@@ -32,6 +32,10 @@ jobs:
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@1a80836c5c9d9e5755a25cb59ec6f45a3b5f41a8 # v7.2.1
+        with:
+          args: check
 
   generate:
     name: Generate
