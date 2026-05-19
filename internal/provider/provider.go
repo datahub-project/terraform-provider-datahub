@@ -147,18 +147,18 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 	// Default values to environment variables, but override
 	// with Terraform configuration value if set.
 	host := os.Getenv("DATAHUB_HOST")
-	gms_token := os.Getenv("DATAHUB_GMS_TOKEN")
+	gmsToken := os.Getenv("DATAHUB_GMS_TOKEN")
 
 	if !config.Host.IsNull() {
 		host = config.Host.ValueString()
 	}
 
 	if !config.GmsToken.IsNull() {
-		gms_token = config.GmsToken.ValueString()
+		gmsToken = config.GmsToken.ValueString()
 	}
 
 	// Last resort: Datahub CLI local configuration at ~/.datahubenv
-	if host == "" || gms_token == "" {
+	if host == "" || gmsToken == "" {
 		envCfg, exists, err := readDatahubEnvConfig()
 		if err != nil {
 			resp.Diagnostics.AddError(
@@ -174,8 +174,8 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 				server = strings.TrimSuffix(server, "/gms")
 				host = server
 			}
-			if gms_token == "" && envCfg.Gms.Token != "" {
-				gms_token = envCfg.Gms.Token
+			if gmsToken == "" && envCfg.Gms.Token != "" {
+				gmsToken = envCfg.Gms.Token
 			}
 		}
 	}
@@ -190,7 +190,7 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 				"Init otherwise datahub cli via `datahub init` command to create the configuration file at ~/.datahubenv",
 		)
 	}
-	if gms_token == "" {
+	if gmsToken == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("gms_token"),
 			"Missing Datahub GMS Token",
@@ -206,7 +206,7 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 	}
 
 	// Create a new Datahub client using the configuration values
-	client, err := datahub.NewClient(host, gms_token)
+	client, err := datahub.NewClient(host, gmsToken)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Datahub API Client",
