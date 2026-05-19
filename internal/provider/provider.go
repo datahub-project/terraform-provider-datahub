@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -18,6 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"gopkg.in/yaml.v3"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 type datahubEnvConfig struct {

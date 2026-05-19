@@ -9,8 +9,9 @@ import (
 	"flag"
 	"log"
 
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider"
 )
 
 var (
