@@ -16,4 +16,4 @@ Self-contained Terraform configurations you can `terraform apply` directly.
 Each has its own README with prerequisites and instructions.
 
 - `provider-install-verification/` -- smoke test: verifies the provider binary loads and credentials are valid
-- `ingestion-source-egress-probe/` -- creates a real ingestion source; surfaces the executor's egress IP on first run
+- `ingestion-source-csv-enricher/` -- creates a real ingestion source using the csv-enricher connector; ingests test metadata artifacts from a stable upstream URL
