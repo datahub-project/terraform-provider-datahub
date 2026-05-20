@@ -25,7 +25,7 @@ output "next_steps" {
   EXEC_URN=$(curl -sS -X POST "$DATAHUB_GMS_URL/api/graphql" \
     -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
     -H "Content-Type: application/json" \
-    -d '${jsonencode({query = "mutation Trigger($urn: String!) { createIngestionExecutionRequest(input: { ingestionSourceUrn: $urn }) }", variables = {urn = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher_demo.source_id}"}})}' \
+    -d '${jsonencode({ query = "mutation Trigger($urn: String!) { createIngestionExecutionRequest(input: { ingestionSourceUrn: $urn }) }", variables = { urn = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher_demo.source_id}" } })}' \
     | jq -r '.data.createIngestionExecutionRequest')
   echo "Execution request: $EXEC_URN"
 
