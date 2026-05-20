@@ -9,8 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/tools/uid"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -19,9 +20,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/tools/uid"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 var (
@@ -43,10 +42,21 @@ type ingestionSourceResourceModel struct {
 	Timezone         types.String `tfsdk:"timezone"`
 	CLIVersion       types.String `tfsdk:"cli_version"`
 	ExtraArgs        types.Map    `tfsdk:"extra_args"`
-	Async            types.Bool   `tfsdk:"async"`
 	Recipe           types.String `tfsdk:"recipe"`
-	Response         types.String `tfsdk:"response"`
-	LastUpdated      types.String `tfsdk:"last_updated"`
+	DebugMode        types.Bool   `tfsdk:"debug_mode"`
+	Platform         types.String `tfsdk:"platform"`
+}
+
+type createOrUpdateResult struct {
+	SourceID         types.String
+	SourceType       string
+	RemoteExecutorID types.String
+	CronInterval     types.String
+	Timezone         types.String
+	CLIVersion       types.String
+	ExtraArgs        types.Map
+	DebugMode        types.Bool
+	Platform         types.String
 }
 
 func NewIngestionSourceResource() resource.Resource {
@@ -77,7 +87,22 @@ func (r *ingestionSourceResource) Metadata(_ context.Context, req resource.Metad
 func (r *ingestionSourceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.\n\n" +
-			"This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).",
+			"This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).\n\n" +
+			"## Argument Reference\n\n" +
+			"- `source_id` (Optional) Unique id for the ingestion source. If omitted, it is derived from `source_name` as `<sanitized-source_name>-<hash>`. This becomes the Terraform resource id.\n" +
+			"- `source_name` (Required) Human-friendly name shown in the DataHub UI.\n" +
+			"- `recipe` (Required) Recipe JSON string. Build it with `jsonencode({...})` or any mechanism that produces valid JSON.\n" +
+			"- `cron_interval` (Optional) Cron schedule expression (e.g. `0 10 * * *`). If omitted, no schedule is sent.\n" +
+			"- `timezone` (Optional) Schedule timezone. If `cron_interval` is set and timezone is omitted, `UTC` is used.\n" +
+			"- `cli_version` (Optional) DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.\n" +
+			"- `extra_args` (Optional) Extra arguments sent to DataHub as `config.extraArgs` (map of string keys to string values). For example, set `extra_pip_requirements` to add pip deps.\n" +
+			"- `debug_mode` (Optional) Enable debug mode for this ingestion source (`config.debugMode`). Produces verbose executor logs for troubleshooting.\n" +
+			"- `platform` (Optional) DataPlatform URN to associate with this ingestion source (e.g. `urn:li:dataPlatform:bigquery`). Used by the DataHub UI for icons and filtering.\n" +
+			"- `source_type` (Optional) Ingestion source type. If omitted, it is derived from `recipe.source.type`. If set, it must match the type inside the recipe.\n\n" +
+			"## Security Note\n\n" +
+			"**Warning:** The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.\n\n" +
+			"**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.\n\n" +
+			"References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -147,16 +172,22 @@ func (r *ingestionSourceResource) Schema(_ context.Context, _ resource.SchemaReq
 				MarkdownDescription: "Optional extra arguments sent to DataHub as `config.extraArgs` (map of string keys to string values). This can be used for settings like `extra_pip_requirements`.",
 				PlanModifiers:       []planmodifier.Map{mapplanmodifier.UseStateForUnknown()},
 			},
-			"async": schema.BoolAttribute{
-				Optional:            true,
-				MarkdownDescription: "Whether to create/update the ingestion source asynchronously.",
-			},
 			"recipe": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Recipe JSON string. Avoid embedding secrets directly; prefer `${SECRET_NAME}` / `${ENV_VAR}` placeholders so DataHub can resolve credentials via Secrets or environment variables.",
 			},
-			"response":     schema.StringAttribute{Computed: true, Sensitive: true},
-			"last_updated": schema.StringAttribute{Computed: true},
+			"debug_mode": schema.BoolAttribute{
+				Optional:            true,
+				MarkdownDescription: "Whether to run this ingestion source in debug mode (DataHub `config.debugMode`). Enables verbose logging in the ingestion executor for troubleshooting failing runs.",
+			},
+			"platform": schema.StringAttribute{
+				Optional:            true,
+				Computed:            true,
+				MarkdownDescription: "Optional DataPlatform URN to associate with this ingestion source (e.g. `urn:li:dataPlatform:bigquery`). Used by the DataHub UI for icons and filtering.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+			},
 		},
 	}
 }
@@ -173,22 +204,22 @@ func (r *ingestionSourceResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	respBody, effectiveSourceID, resolvedSourceType, effectiveRemoteExecutorID, effectiveCronInterval, effectiveTimezone, effectiveCLIVersion, effectiveExtraArgs, diags := r.createOrUpdate(ctx, plan)
+	result, diags := r.createOrUpdate(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	plan.SourceID = effectiveSourceID
-	plan.ID = effectiveSourceID
-	plan.SourceType = types.StringValue(resolvedSourceType)
-	plan.RemoteExecutorID = effectiveRemoteExecutorID
-	plan.CronInterval = effectiveCronInterval
-	plan.Timezone = effectiveTimezone
-	plan.CLIVersion = effectiveCLIVersion
-	plan.ExtraArgs = effectiveExtraArgs
-	plan.Response = types.StringValue(string(respBody))
-	plan.LastUpdated = types.StringValue(time.Now().UTC().Format(time.RFC3339))
+	plan.SourceID = result.SourceID
+	plan.ID = result.SourceID
+	plan.SourceType = types.StringValue(result.SourceType)
+	plan.RemoteExecutorID = result.RemoteExecutorID
+	plan.CronInterval = result.CronInterval
+	plan.Timezone = result.Timezone
+	plan.CLIVersion = result.CLIVersion
+	plan.ExtraArgs = result.ExtraArgs
+	plan.DebugMode = result.DebugMode
+	plan.Platform = result.Platform
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -280,9 +311,20 @@ func (r *ingestionSourceResource) Read(ctx context.Context, req resource.ReadReq
 		state.ExtraArgs = types.MapNull(types.StringType)
 	}
 
-	// Refresh recipe from remote state.
 	if remoteRecipe := strings.TrimSpace(remote.DataHubIngestionSourceInfo.Value.Config.Recipe); remoteRecipe != "" {
 		state.Recipe = types.StringValue(remoteRecipe)
+	}
+
+	if remote.DataHubIngestionSourceInfo.Value.Config.DebugMode != nil {
+		state.DebugMode = types.BoolValue(*remote.DataHubIngestionSourceInfo.Value.Config.DebugMode)
+	} else {
+		state.DebugMode = types.BoolNull()
+	}
+
+	if p := strings.TrimSpace(remote.DataHubIngestionSourceInfo.Value.Platform); p != "" {
+		state.Platform = types.StringValue(p)
+	} else {
+		state.Platform = types.StringNull()
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -300,22 +342,22 @@ func (r *ingestionSourceResource) Update(ctx context.Context, req resource.Updat
 		return
 	}
 
-	respBody, effectiveSourceID, resolvedSourceType, effectiveRemoteExecutorID, effectiveCronInterval, effectiveTimezone, effectiveCLIVersion, effectiveExtraArgs, diags := r.createOrUpdate(ctx, plan)
+	result, diags := r.createOrUpdate(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	plan.SourceID = effectiveSourceID
-	plan.ID = effectiveSourceID
-	plan.SourceType = types.StringValue(resolvedSourceType)
-	plan.RemoteExecutorID = effectiveRemoteExecutorID
-	plan.CronInterval = effectiveCronInterval
-	plan.Timezone = effectiveTimezone
-	plan.CLIVersion = effectiveCLIVersion
-	plan.ExtraArgs = effectiveExtraArgs
-	plan.Response = types.StringValue(string(respBody))
-	plan.LastUpdated = types.StringValue(time.Now().UTC().Format(time.RFC3339))
+	plan.SourceID = result.SourceID
+	plan.ID = result.SourceID
+	plan.SourceType = types.StringValue(result.SourceType)
+	plan.RemoteExecutorID = result.RemoteExecutorID
+	plan.CronInterval = result.CronInterval
+	plan.Timezone = result.Timezone
+	plan.CLIVersion = result.CLIVersion
+	plan.ExtraArgs = result.ExtraArgs
+	plan.DebugMode = result.DebugMode
+	plan.Platform = result.Platform
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -353,7 +395,7 @@ func (r *ingestionSourceResource) Delete(ctx context.Context, req resource.Delet
 	resp.State.RemoveResource(ctx)
 }
 
-func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan ingestionSourceResourceModel) ([]byte, types.String, string, types.String, types.String, types.String, types.String, types.Map, diag.Diagnostics) {
+func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan ingestionSourceResourceModel) (createOrUpdateResult, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	sourceID := strings.TrimSpace(plan.SourceID.ValueString())
@@ -374,11 +416,11 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 				sv, ok := v.(types.String)
 				if !ok {
 					diags.AddError("Invalid extra_args", fmt.Sprintf("extra_args[%q] must be a string", k))
-					return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+					return createOrUpdateResult{}, diags
 				}
 				if sv.IsUnknown() {
 					diags.AddError("Invalid extra_args", fmt.Sprintf("extra_args[%q] is unknown", k))
-					return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+					return createOrUpdateResult{}, diags
 				}
 				if sv.IsNull() {
 					continue
@@ -393,7 +435,7 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 				mv, d := types.MapValue(types.StringType, effectiveElems)
 				diags.Append(d...)
 				if diags.HasError() {
-					return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+					return createOrUpdateResult{}, diags
 				}
 				effectiveExtraArgs = mv
 			}
@@ -402,19 +444,18 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 
 	if sourceName == "" {
 		diags.AddError("Invalid plan", "source_name is required")
-		return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+		return createOrUpdateResult{}, diags
 	}
 	if sourceID == "" || plan.SourceID.IsNull() || plan.SourceID.IsUnknown() {
 		sourceID = uid.DeriveID(sourceName, []byte(sourceName), 48)
 	}
 	if recipe == "" {
 		diags.AddError("Invalid plan", "recipe must be a non-empty JSON string")
-		return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+		return createOrUpdateResult{}, diags
 	}
 
 	effectiveSourceID := types.StringValue(sourceID)
 
-	// Always parse the recipe to validate JSON and optionally derive/check source_type.
 	var doc struct {
 		Source struct {
 			Type string `json:"type"`
@@ -422,7 +463,7 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 	}
 	if err := json.Unmarshal([]byte(recipe), &doc); err != nil {
 		diags.AddError("Invalid recipe JSON", fmt.Sprintf("recipe must be valid JSON: %v", err))
-		return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+		return createOrUpdateResult{}, diags
 	}
 
 	recipeSourceType := strings.TrimSpace(doc.Source.Type)
@@ -432,20 +473,14 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 	}
 	if sourceType == "" {
 		diags.AddError("Missing source_type", "source_type must be set or present at recipe.source.type")
-		return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+		return createOrUpdateResult{}, diags
 	}
 	if recipeSourceType != "" && sourceType != recipeSourceType {
 		diags.AddError(
 			"source_type mismatch",
 			fmt.Sprintf("source_type (%q) does not match recipe.source.type (%q)", sourceType, recipeSourceType),
 		)
-		return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
-	}
-
-	var asyncPtr *bool
-	if !plan.Async.IsNull() && !plan.Async.IsUnknown() {
-		v := plan.Async.ValueBool()
-		asyncPtr = &v
+		return createOrUpdateResult{}, diags
 	}
 
 	var executorIDPtr *string
@@ -474,7 +509,6 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 				timezonePtr = &timezone
 			}
 		}
-		// If the user did not set a timezone but did set a cron interval, default to UTC.
 		if timezonePtr == nil {
 			utc := "UTC"
 			timezonePtr = &utc
@@ -491,6 +525,24 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 		}
 	}
 
+	var debugModePtr *bool
+	effectiveDebugMode := types.BoolNull()
+	if !plan.DebugMode.IsNull() && !plan.DebugMode.IsUnknown() {
+		v := plan.DebugMode.ValueBool()
+		debugModePtr = &v
+		effectiveDebugMode = types.BoolValue(v)
+	}
+
+	var platformPtr *string
+	effectivePlatform := types.StringNull()
+	if !plan.Platform.IsNull() && !plan.Platform.IsUnknown() {
+		p := strings.TrimSpace(plan.Platform.ValueString())
+		if p != "" {
+			platformPtr = &p
+			effectivePlatform = types.StringValue(p)
+		}
+	}
+
 	respBody, err := r.client.NewDatasourceIngestion(ctx, datahub.DatasourceIngestionInput{
 		SourceID:     sourceID,
 		SourceName:   sourceName,
@@ -501,12 +553,28 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 		Timezone:     timezonePtr,
 		CLIVersion:   cliVersionPtr,
 		RecipeJSON:   &recipe,
-		Async:        asyncPtr,
+		DebugMode:    debugModePtr,
+		Platform:     platformPtr,
 	})
 	if err != nil {
 		diags.AddError("Datahub API Error", err.Error())
-		return nil, types.StringNull(), "", types.StringNull(), types.StringNull(), types.StringNull(), types.StringNull(), types.MapNull(types.StringType), diags
+		return createOrUpdateResult{}, diags
 	}
 
-	return respBody, effectiveSourceID, sourceType, effectiveRemoteExecutorID, effectiveCronInterval, effectiveTimezone, effectiveCLIVersion, effectiveExtraArgs, diags
+	tflog.Debug(ctx, "DataHub ingestion source upsert response", map[string]any{
+		"source_id": sourceID,
+		"body":      string(respBody),
+	})
+
+	return createOrUpdateResult{
+		SourceID:         effectiveSourceID,
+		SourceType:       sourceType,
+		RemoteExecutorID: effectiveRemoteExecutorID,
+		CronInterval:     effectiveCronInterval,
+		Timezone:         effectiveTimezone,
+		CLIVersion:       effectiveCLIVersion,
+		ExtraArgs:        effectiveExtraArgs,
+		DebugMode:        effectiveDebugMode,
+		Platform:         effectivePlatform,
+	}, diags
 }
