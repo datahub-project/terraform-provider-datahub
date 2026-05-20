@@ -100,10 +100,22 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 
 ## Example conventions
 
-When building a runnable example under `examples/`, always include outputs that let the user verify or act on the result of their `terraform apply` without leaving the terminal. At minimum:
+### File layout
+
+Runnable examples follow the standard HashiCorp convention for file separation:
+
+- `main.tf` — provider block and resource/data source declarations only
+- `outputs.tf` — all `output` blocks; never mix them into `main.tf`
+- `variables.tf` — input variables (add when the example needs parameterisation)
+- `README.md` — prerequisites, run instructions, follow-up actions, cleanup
+
+### Outputs
+
+Always include outputs that let the user verify or act on the result of their `terraform apply` without leaving the terminal. At minimum:
 
 - Expose any IDs or URNs that identify the created resource (e.g. `source_id`, `source_urn`).
-- Where a follow-up action is natural (triggering a run, querying status, opening a UI page), include the relevant curl/CLI command or URL in the README, referencing the outputs directly via `terraform output -raw <name>`.
+- Where a follow-up action is natural and involves dynamic content (IDs, URNs), emit the complete command as an output value — use HCL interpolation and `jsonencode` to bake the computed values in. The user can then copy the command directly from the apply output or run it via `eval "$(terraform output -raw <name>)"`.
+- Where the follow-up command cannot be fully pre-built (e.g. it depends on a value returned by a previous step), put it in the README referencing `$(terraform output -raw <name>)` for the dynamic parts.
 - If the DataHub UI is the most natural place to verify the result, include the navigation path and a direct URL template (e.g. `$DATAHUB_GMS_URL/ingestion` for ingestion sources).
 
 The goal: a user who has just applied the example can verify the result and take the logical next step without hunting through docs.
