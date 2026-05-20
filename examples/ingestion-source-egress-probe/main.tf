@@ -17,7 +17,11 @@ provider "datahub" {
 # the DataHub UI surfaces the ingestion executor's egress IP in the
 # run log -- useful when configuring source-system allow-lists.
 resource "datahub_ingestion_source" "egress_ip_probe" {
-  source_name = "Terraform Egress IP Probe"
+  source_name       = "Terraform Egress IP Probe"
+  # "default" is the standard executor ID for OSS DataHub and DataHub Cloud.
+  # If your instance uses a named custom executor, change this value.
+  # A future datahub_ingestion_executor data source will allow lookup by name.
+  remote_executor_id = "default"
   recipe = jsonencode({
     source = {
       type   = "file"
