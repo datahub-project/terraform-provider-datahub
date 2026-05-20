@@ -34,6 +34,7 @@ Outputs:
 
 ingestion_source_id = "terraform-egress-ip-probe-<hash>"
 source_urn          = "urn:li:dataHubIngestionSource:terraform-egress-ip-probe-<hash>"
+trigger_command     = "curl -sS -X POST \"$DATAHUB_GMS_URL/api/graphql\" ... | jq -r ..."
 ```
 
 ## Trigger the ingestion run (optional)
@@ -42,16 +43,18 @@ The run will fail to parse the response from ifconfig.me (plain text, not MCE/MC
 
 ### Via curl (GraphQL API)
 
-```bash
-# Capture the source URN from Terraform outputs
-SOURCE_URN=$(terraform output -raw source_urn)
+The `trigger_command` output contains a ready-to-use curl command with the source URN already embedded. Copy it directly from the apply output:
 
-# Trigger an execution run -- returns the execution request URN
-EXEC_URN=$(curl -sS -X POST "$DATAHUB_GMS_URL/api/graphql" \
-  -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"query\":\"mutation { createIngestionExecutionRequest(input: { ingestionSourceUrn: \\\"$SOURCE_URN\\\" }) }\"}" \
-  | jq -r '.data.createIngestionExecutionRequest')
+```bash
+# Copy the trigger_command output and run it:
+EXEC_URN=$(terraform output -raw trigger_command | bash)
+echo "Execution request: $EXEC_URN"
+```
+
+Or retrieve and run it in one step:
+
+```bash
+EXEC_URN=$(eval "$(terraform output -raw trigger_command)")
 echo "Execution request: $EXEC_URN"
 ```
 
