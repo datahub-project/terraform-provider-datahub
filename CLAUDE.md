@@ -98,6 +98,16 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 - Resources are appropriate for platform-level configuration only. Do not implement resources for managing descriptions, tag assignments, or ownership on individual data assets - those belong to business users and will be overwritten by apply.
 - Data sources are appropriate for looking up asset URNs and metadata without managing them.
 
+## Example conventions
+
+When building a runnable example under `examples/`, always include outputs that let the user verify or act on the result of their `terraform apply` without leaving the terminal. At minimum:
+
+- Expose any IDs or URNs that identify the created resource (e.g. `source_id`, `source_urn`).
+- Where a follow-up action is natural (triggering a run, querying status, opening a UI page), include the relevant curl/CLI command or URL in the README, referencing the outputs directly via `terraform output -raw <name>`.
+- If the DataHub UI is the most natural place to verify the result, include the navigation path and a direct URL template (e.g. `$DATAHUB_GMS_URL/ingestion` for ingestion sources).
+
+The goal: a user who has just applied the example can verify the result and take the logical next step without hunting through docs.
+
 ## DataHub domain vocabulary (quick reference)
 
 - **Ingestion Source** - the configured, persisted entity in DataHub that represents one source-of-metadata. Resource-shaped.

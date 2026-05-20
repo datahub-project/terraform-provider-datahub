@@ -13,7 +13,7 @@ The source itself serves a practical diagnostic purpose: when triggered from the
 - `DATAHUB_GMS_URL` set to your DataHub instance URL (e.g. `https://your-instance.acryl.io`)
 - `DATAHUB_GMS_TOKEN` set to a Personal Access Token with permission to manage ingestion sources
 - Terraform >= 1.0
-- For the optional diagnostic step: access to the DataHub UI
+- `jq` for the optional curl commands below (or use the DataHub UI instead)
 
 ## Run
 
@@ -33,17 +33,54 @@ Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 Outputs:
 
 ingestion_source_id = "terraform-egress-ip-probe-<hash>"
+source_urn          = "urn:li:dataHubIngestionSource:terraform-egress-ip-probe-<hash>"
 ```
 
 ## Trigger the ingestion run (optional)
 
-To surface the executor's egress IP:
+The run will fail to parse the response from ifconfig.me (plain text, not MCE/MCP JSON), but the failure log reveals the executor's egress IP.
+
+### Via curl (GraphQL API)
+
+```bash
+# Capture the source URN from Terraform outputs
+SOURCE_URN=$(terraform output -raw source_urn)
+
+# Trigger an execution run -- returns the execution request URN
+EXEC_URN=$(curl -sS -X POST "$DATAHUB_GMS_URL/api/graphql" \
+  -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"mutation { createIngestionExecutionRequest(input: { ingestionSourceUrn: \\\"$SOURCE_URN\\\" }) }\"}" \
+  | jq -r '.data.createIngestionExecutionRequest')
+echo "Execution request: $EXEC_URN"
+```
+
+### Via the DataHub UI
 
 1. Open the DataHub UI and navigate to **Ingestion**.
 2. Find the source named **Terraform Egress IP Probe**.
 3. Click **Execute** to trigger a manual run.
-4. Once the run completes (it will fail), open the run log.
-5. The egress IP appears in the connector's fetch-failure message -- something like `Failed to fetch https://ifconfig.me: ... <IP>`.
+
+## Check the result
+
+The run is short (a single HTTP fetch attempt) and will complete within seconds.
+
+### Via curl
+
+```bash
+# Poll status -- expect RUNNING briefly, then FAILURE
+curl -sS -X POST "$DATAHUB_GMS_URL/api/graphql" \
+  -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"query { executionRequest(urn: \\\"$EXEC_URN\\\") { result { status startTimeMs durationMs report } } }\"}" \
+  | jq '.data.executionRequest.result'
+```
+
+The `report` field in the response (and in the DataHub UI run log) contains the connector's failure message, which includes the executor's outbound IP address.
+
+### Via the DataHub UI
+
+Open the failed run's log in **Ingestion** -> **Terraform Egress IP Probe** -> run history. The egress IP appears in the fetch-failure line -- something like `Failed to fetch https://ifconfig.me: ... <IP>`.
 
 Add that IP to any source-system firewall or network allow-list that DataHub's executor needs to reach.
 
