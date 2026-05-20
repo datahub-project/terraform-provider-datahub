@@ -27,12 +27,3 @@ resource "datahub_ingestion_source" "egress_ip_probe" {
   })
 }
 
-output "ingestion_source_id" {
-  value       = datahub_ingestion_source.egress_ip_probe.source_id
-  description = "Short ID of the ingestion source."
-}
-
-output "source_urn" {
-  value       = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.egress_ip_probe.source_id}"
-  description = "Full DataHub URN for this ingestion source. Use in API calls to trigger or inspect runs."
-}
