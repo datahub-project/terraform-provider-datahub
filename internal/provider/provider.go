@@ -240,5 +240,6 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewIngestionSourceResource,
+		NewSecretResource,
 	}
 }
