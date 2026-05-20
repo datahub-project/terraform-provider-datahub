@@ -34,6 +34,7 @@ type ingestionSourceInfoAspect struct {
 type ingestionSourceInfo struct {
 	Name     string                   `json:"name"`
 	Type     string                   `json:"type"`
+	Platform string                   `json:"platform,omitempty"`
 	Schedule *ingestionSourceSchedule `json:"schedule,omitempty"`
 	Config   ingestionSourceConfig    `json:"config"`
 }
@@ -69,7 +70,10 @@ type DatasourceIngestionInput struct {
 	CLIVersion *string
 	// RecipeJSON is the ingestion source recipe JSON string stored in `config.recipe`.
 	RecipeJSON *string
-	Async      *bool // defaults to false if nil
+	// DebugMode sets `config.debugMode` when non-nil.
+	DebugMode *bool
+	// Platform sets the top-level `platform` URN (e.g. urn:li:dataPlatform:bigquery) when non-nil and non-empty.
+	Platform *string
 }
 
 // Datahub endpoint used: POST /openapi/v3/entity/datahubingestionsource.
@@ -98,11 +102,6 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 	recipeJSON := strings.TrimSpace(*in.RecipeJSON)
 	if recipeJSON == "" {
 		return nil, errors.New("recipeJSON is empty")
-	}
-
-	async := false
-	if in.Async != nil {
-		async = *in.Async
 	}
 
 	payload := []IngestionSource{
@@ -158,7 +157,18 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 		}
 	}
 
-	path := fmt.Sprintf("/openapi/v3/entity/datahubingestionsource?async=%t", async)
+	if in.DebugMode != nil {
+		payload[0].DataHubIngestionSourceInfo.Value.Config.DebugMode = in.DebugMode
+	}
+
+	if in.Platform != nil {
+		p := strings.TrimSpace(*in.Platform)
+		if p != "" {
+			payload[0].DataHubIngestionSourceInfo.Value.Platform = p
+		}
+	}
+
+	path := "/openapi/v3/entity/datahubingestionsource?async=false"
 	req, err := c.NewRequest(ctx, http.MethodPost, path, payload)
 	if err != nil {
 		return nil, err

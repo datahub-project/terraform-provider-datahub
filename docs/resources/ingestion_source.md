@@ -5,35 +5,8 @@ subcategory: ""
 description: |-
   Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.
   This is similar in spirit to aws_iam_policy: the resource stores a JSON document (the recipe) in the target system (DataHub).
-  Example Usage
-  
-  resource "datahub_ingestion_source" "example" {
-    # source_id is optional; if omitted, it is derived from source_name
-    # source_id   = "my-unity-source"
-    source_name   = "My Unity Catalog Source"
-    cron_interval = "0 10 * * *"
-    timezone      = "UTC"
-    cli_version   = "1.3.1.5"
-    async         = false
-  
-    # source_type is optional; derived from recipe.source.type if omitted
-    # source_type = "unity-catalog"
-  
-    recipe = jsonencode({
-      source = {
-        type   = "unity-catalog"
-        config = {
-          workspace_url = var.databricks_workspace_url
-          token         = var.databricks_pat
-          env           = "PROD"
-        }
-      }
-      pipeline_name = "unity-catalog:my-unity-source"
-    })
-  }
-  
   Argument Reference
-  source_id (Optional) Unique id for the ingestion source. If omitted, it is derived from source_name as <sanitized-source_name>-<hash>. This becomes the Terraform resource id.source_name (Required) Human-friendly name shown in the DataHub UI.recipe (Required) Recipe JSON string. Build it with jsonencode({...}) or any mechanism that produces valid JSON.cron_interval (Optional) Cron schedule expression (e.g. 0 10 * * *). If omitted, no schedule is sent.timezone (Optional) Schedule timezone. If cron_interval is set and timezone is omitted, UTC is used.cli_version (Optional) DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.extra_args (Optional) Extra arguments sent to DataHub as config.extraArgs (map of string keys to string values). For example, set extra_pip_requirements to add pip deps.async (Optional) Whether to create/update asynchronously.source_type (Optional) Ingestion source type. If omitted, it is derived from recipe.source.type. If set, it must match the type inside the recipe.
+  source_id (Optional) Unique id for the ingestion source. If omitted, it is derived from source_name as <sanitized-source_name>-<hash>. This becomes the Terraform resource id.source_name (Required) Human-friendly name shown in the DataHub UI.recipe (Required) Recipe JSON string. Build it with jsonencode({...}) or any mechanism that produces valid JSON.cron_interval (Optional) Cron schedule expression (e.g. 0 10 * * *). If omitted, no schedule is sent.timezone (Optional) Schedule timezone. If cron_interval is set and timezone is omitted, UTC is used.cli_version (Optional) DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.extra_args (Optional) Extra arguments sent to DataHub as config.extraArgs (map of string keys to string values). For example, set extra_pip_requirements to add pip deps.debug_mode (Optional) Enable debug mode for this ingestion source (config.debugMode). Produces verbose executor logs for troubleshooting.platform (Optional) DataPlatform URN to associate with this ingestion source (e.g. urn:li:dataPlatform:bigquery). Used by the DataHub UI for icons and filtering.source_type (Optional) Ingestion source type. If omitted, it is derived from recipe.source.type. If set, it must match the type inside the recipe.
   Security Note
   Warning: The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.
   Recommended: Use DataHub Secrets / environment variable substitution (e.g. ${SECRET_NAME}) instead of hard-coded credentials.
@@ -46,27 +19,57 @@ Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.
 
 This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).
 
+## Argument Reference
+
+- `source_id` (Optional) Unique id for the ingestion source. If omitted, it is derived from `source_name` as `<sanitized-source_name>-<hash>`. This becomes the Terraform resource id.
+- `source_name` (Required) Human-friendly name shown in the DataHub UI.
+- `recipe` (Required) Recipe JSON string. Build it with `jsonencode({...})` or any mechanism that produces valid JSON.
+- `cron_interval` (Optional) Cron schedule expression (e.g. `0 10 * * *`). If omitted, no schedule is sent.
+- `timezone` (Optional) Schedule timezone. If `cron_interval` is set and timezone is omitted, `UTC` is used.
+- `cli_version` (Optional) DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.
+- `extra_args` (Optional) Extra arguments sent to DataHub as `config.extraArgs` (map of string keys to string values). For example, set `extra_pip_requirements` to add pip deps.
+- `debug_mode` (Optional) Enable debug mode for this ingestion source (`config.debugMode`). Produces verbose executor logs for troubleshooting.
+- `platform` (Optional) DataPlatform URN to associate with this ingestion source (e.g. `urn:li:dataPlatform:bigquery`). Used by the DataHub UI for icons and filtering.
+- `source_type` (Optional) Ingestion source type. If omitted, it is derived from `recipe.source.type`. If set, it must match the type inside the recipe.
+
+## Security Note
+
+**Warning:** The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.
+
+**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.
+
+References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.
+
 ## Example Usage
 
 ```terraform
-resource "datahub_ingestion_source" "example" {
-  source_name        = "CSV Enricher Demo"
-  remote_executor_id = "default"
-  cron_interval      = "0 6 * * *"
-  timezone           = "UTC"
+resource "datahub_secret" "bq_creds" {
+  name             = "bq-service-account-json"
+  description      = "Service account for BigQuery ingestion"
+  value            = file("${path.module}/bq-key.json")
+  value_wo_version = 1
+}
 
+resource "datahub_ingestion_source" "bq" {
+  source_name   = "BigQuery (prod)"
+  cron_interval = "0 6 * * *"
+  timezone      = "UTC"
+
+  # Use $${SECRET_NAME} (double $) so HCL does not interpolate the braces --
+  # DataHub resolves ${bq-service-account-json} at ingestion run time via Secrets.
   recipe = jsonencode({
     source = {
-      type = "csv-enricher"
+      type = "bigquery"
       config = {
-        filename        = "https://raw.githubusercontent.com/datahub-project/datahub/e32ee8df08404fa29f8b1630c9a7a6cf1ba270a2/metadata-ingestion/tests/integration/csv-enricher/csv_enricher_test_data.csv"
-        array_delimiter = "|"
-        delimiter       = ","
-        write_semantics = "PATCH"
+        credential = {
+          credentials_json = "$${bq-service-account-json}"
+        }
       }
     }
-    pipeline_name = "csv-enricher:demo"
+    pipeline_name = "bigquery:prod"
   })
+
+  depends_on = [datahub_secret.bq_creds]
 }
 ```
 
@@ -80,10 +83,11 @@ resource "datahub_ingestion_source" "example" {
 
 ### Optional
 
-- `async` (Boolean) Whether to create/update the ingestion source asynchronously.
 - `cli_version` (String) Optional DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.
 - `cron_interval` (String) Optional cron schedule expression for the ingestion source. If omitted, no schedule is sent.
+- `debug_mode` (Boolean) Whether to run this ingestion source in debug mode (DataHub `config.debugMode`). Enables verbose logging in the ingestion executor for troubleshooting failing runs.
 - `extra_args` (Map of String) Optional extra arguments sent to DataHub as `config.extraArgs` (map of string keys to string values). This can be used for settings like `extra_pip_requirements`.
+- `platform` (String) Optional DataPlatform URN to associate with this ingestion source (e.g. `urn:li:dataPlatform:bigquery`). Used by the DataHub UI for icons and filtering.
 - `remote_executor_id` (String) Optional remote executor id (DataHub `config.executorId`). If omitted, it is not sent and will be omitted from the stored ingestion source config.
 - `source_id` (String) Unique id for the ingestion source (DataHub identifier). If omitted, it is derived from `source_name` as `<sanitized-source_name>-<hash>`. This is also used as the Terraform resource id.
 - `source_type` (String) Ingestion source type. If omitted, it is derived from `recipe.source.type`.
@@ -92,13 +96,3 @@ resource "datahub_ingestion_source" "example" {
 ### Read-Only
 
 - `id` (String) The ID of this resource.
-- `last_updated` (String)
-- `response` (String, Sensitive)
-
-## Security Note
-
-**Warning:** The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.
-
-**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.
-
-References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.
