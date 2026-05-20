@@ -34,7 +34,7 @@ output "next_steps" {
     -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"query\":\"query { executionRequest(urn: \\\"$EXEC_URN\\\") { result { status report } } }\"}" \
-    | jq '.data.executionRequest.result'
+    | jq -r '"Status: \(.data.executionRequest.result.status)\n\(.data.executionRequest.result.report)"'
 
   # The run ingests metadata from the test CSV. The 'report' field in the result
   # summarises the ingested entities. Search the DataHub UI to find them.
