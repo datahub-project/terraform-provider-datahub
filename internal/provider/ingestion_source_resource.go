@@ -24,15 +24,15 @@ import (
 )
 
 var (
-	_ resource.Resource              = &ingestResource{}
-	_ resource.ResourceWithConfigure = &ingestResource{}
+	_ resource.Resource              = &ingestionSourceResource{}
+	_ resource.ResourceWithConfigure = &ingestionSourceResource{}
 )
 
-type ingestResource struct {
+type ingestionSourceResource struct {
 	client *datahub.Client
 }
 
-type ingestResourceModel struct {
+type ingestionSourceResourceModel struct {
 	ID               types.String `tfsdk:"id"`
 	SourceID         types.String `tfsdk:"source_id"`
 	SourceName       types.String `tfsdk:"source_name"`
@@ -48,11 +48,11 @@ type ingestResourceModel struct {
 	LastUpdated      types.String `tfsdk:"last_updated"`
 }
 
-func NewIngestResource() resource.Resource {
-	return &ingestResource{}
+func NewIngestionSourceResource() resource.Resource {
+	return &ingestionSourceResource{}
 }
 
-func (r *ingestResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+func (r *ingestionSourceResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	if req.ProviderData == nil {
 		return
 	}
@@ -69,17 +69,17 @@ func (r *ingestResource) Configure(_ context.Context, req resource.ConfigureRequ
 	r.client = client
 }
 
-func (r *ingestResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_ingest"
+func (r *ingestionSourceResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = req.ProviderTypeName + "_ingestion_source"
 }
 
-func (r *ingestResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *ingestionSourceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.\n\n" +
 			"This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).\n\n" +
 			"## Example Usage\n\n" +
 			"```terraform\n" +
-			"resource \"datahub_ingest\" \"example\" {\n" +
+			"resource \"datahub_ingestion_source\" \"example\" {\n" +
 			"  # source_id is optional; if omitted, it is derived from source_name\n" +
 			"  # source_id   = \"my-unity-source\"\n" +
 			"  source_name   = \"My Unity Catalog Source\"\n" +
@@ -91,13 +91,23 @@ func (r *ingestResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"  # source_type is optional; derived from recipe.source.type if omitted\n" +
 			"  # source_type = \"unity-catalog\"\n" +
 			"\n" +
-			"  recipe = data.datahub_recipe_unity_document.example.json\n" +
+			"  recipe = jsonencode({\n" +
+			"    source = {\n" +
+			"      type   = \"unity-catalog\"\n" +
+			"      config = {\n" +
+			"        workspace_url = var.databricks_workspace_url\n" +
+			"        token         = var.databricks_pat\n" +
+			"        env           = \"PROD\"\n" +
+			"      }\n" +
+			"    }\n" +
+			"    pipeline_name = \"unity-catalog:my-unity-source\"\n" +
+			"  })\n" +
 			"}\n" +
 			"```\n\n" +
 			"## Argument Reference\n\n" +
 			"- `source_id` (Optional) Unique id for the ingestion source. If omitted, it is derived from `source_name` as `<sanitized-source_name>-<hash>`. This becomes the Terraform resource id.\n" +
 			"- `source_name` (Required) Human-friendly name shown in the DataHub UI.\n" +
-			"- `recipe` (Required) Recipe JSON string. Typically produced by `datahub_recipe_unity_document`.\n" +
+			"- `recipe` (Required) Recipe JSON string. Build it with `jsonencode({...})` or any mechanism that produces valid JSON.\n" +
 			"- `cron_interval` (Optional) Cron schedule expression (e.g. `0 10 * * *`). If omitted, no schedule is sent.\n" +
 			"- `timezone` (Optional) Schedule timezone. If `cron_interval` is set and timezone is omitted, `UTC` is used.\n" +
 			"- `cli_version` (Optional) DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.\n" +
@@ -191,13 +201,13 @@ func (r *ingestResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 	}
 }
 
-func (r *ingestResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+func (r *ingestionSourceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration (host, gms_token) is set.")
 		return
 	}
 
-	var plan ingestResourceModel
+	var plan ingestionSourceResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -223,13 +233,13 @@ func (r *ingestResource) Create(ctx context.Context, req resource.CreateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func (r *ingestResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+func (r *ingestionSourceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration (host, gms_token) is set.")
 		return
 	}
 
-	var state ingestResourceModel
+	var state ingestionSourceResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -318,13 +328,13 @@ func (r *ingestResource) Read(ctx context.Context, req resource.ReadRequest, res
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-func (r *ingestResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+func (r *ingestionSourceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration (host, gms_token) is set.")
 		return
 	}
 
-	var plan ingestResourceModel
+	var plan ingestionSourceResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -350,13 +360,13 @@ func (r *ingestResource) Update(ctx context.Context, req resource.UpdateRequest,
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-func (r *ingestResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+func (r *ingestionSourceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration (host, gms_token) is set.")
 		return
 	}
 
-	var state ingestResourceModel
+	var state ingestionSourceResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -383,7 +393,7 @@ func (r *ingestResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	resp.State.RemoveResource(ctx)
 }
 
-func (r *ingestResource) createOrUpdate(ctx context.Context, plan ingestResourceModel) ([]byte, types.String, string, types.String, types.String, types.String, types.String, types.Map, diag.Diagnostics) {
+func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan ingestionSourceResourceModel) ([]byte, types.String, string, types.String, types.String, types.String, types.String, types.Map, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
 	sourceID := strings.TrimSpace(plan.SourceID.ValueString())

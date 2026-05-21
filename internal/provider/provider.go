@@ -223,15 +223,12 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 
 // DataSources defines the data sources implemented in the provider.
 func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
-		NewRecipeUnityDocumentDataSource,
-		NewRecipeDynamoDBDocumentDataSource,
-	}
+	return []func() datasource.DataSource{}
 }
 
 // Resources defines the resources implemented in the provider.
 func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewIngestResource,
+		NewIngestionSourceResource,
 	}
 }

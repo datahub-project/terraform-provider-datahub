@@ -1,6 +1,6 @@
 module github.com/datahub-project/terraform-provider-datahub
 
-go 1.25.6
+go 1.26.3
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.17.0
