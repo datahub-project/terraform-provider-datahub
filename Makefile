@@ -6,12 +6,15 @@ BIN_DIR ?= bin
 BINARY_NAME ?= terraform-provider-datahub
 MAIN ?= ./main.go
 DEV_TFRC ?= $(PWD)/dev.tfrc
+COVERAGE_FILE ?= coverage.out
+COVERAGE_HTML ?= coverage.html
+COVER_PKG ?= ./internal/...
 
 # Best-effort version string (used for main.version via -ldflags)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate test testacc dev-override
+.PHONY: all help build install clean fmt lint generate test testacc coverage coverage-html dev-override
 
 all: install
 
@@ -26,6 +29,8 @@ help:
 	@echo "  generate      Run go generate in tools/"
 	@echo "  test          Run unit tests"
 	@echo "  testacc       Run acceptance tests (TF_ACC=1)"
+	@echo "  coverage      Run all tests with merged coverage; prints total"
+	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -63,3 +68,12 @@ test:
 
 testacc:
 	TF_ACC=1 $(GO) test -v -cover -timeout 120m ./...
+
+coverage:
+	TF_ACC=1 $(GO) test -coverprofile=$(COVERAGE_FILE) -coverpkg=$(COVER_PKG) -timeout 120m ./...
+	@echo ""
+	@$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1
+
+coverage-html: coverage
+	$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_HTML)
+	@echo "Wrote $(COVERAGE_HTML). Open with: open $(COVERAGE_HTML)"

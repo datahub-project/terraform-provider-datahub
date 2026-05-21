@@ -44,60 +44,9 @@ References:
 - https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#handling-sensitive-information-in-recipes
 - https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes
 
-## Building The Provider
+## Building and contributing
 
-1. Clone the repository
-1. Enter the repository directory
-1. Build the provider using `Makefile` command:
-
-```shell
-make install
-```
-
-## Cleaning build artifacts
-
-If you need to remove the locally built provider binary (for example, to force a rebuild):
-
-```shell
-make clean
-```
-
-This removes `bin/terraform-provider-datahub`.
-
-## Running tests
-
-```shell
-go test ./...
-```
-
-## Developing the Provider
-
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
-
-To compile the provider, run `make install`. This will build the provider and put the provider binary in the local `bin/` directory.
-
-For local development, create `$HOME/.terraformrc` with a `dev_overrides` entry pointing at your local build output:
-
-```
-provider_installation {
-
-  dev_overrides {
-      "registry.terraform.io/datahub-project/datahub" = "/absolute/path/to/terraform-provider-datahub/bin"
-  }
-
-  # For all other providers, install them directly from their origin provider
-  # registries as normal. If you omit this, Terraform will _only_ use
-  # the dev_overrides block, and so no other providers will be available.
-  direct {}
-}
-```
-
-Then you can run the verification example:
-
-```shell
-terraform -chdir=examples/provider-install-verification init
-terraform -chdir=examples/provider-install-verification plan
-```
+See [BUILDING.md](BUILDING.md) for build instructions, test commands, coverage reports, linting, and doc generation.
 
 ## License
 
