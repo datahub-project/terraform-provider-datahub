@@ -146,9 +146,17 @@ func (r *secretResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	// WriteOnly attributes are null in the plan; the configured value is only
+	// available in the request config.
+	var config secretResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	urn, err := r.client.CreateSecret(ctx, datahub.CreateSecretInput{
 		Name:        plan.Name.ValueString(),
-		Value:       plan.Value.ValueString(),
+		Value:       config.Value.ValueString(),
 		Description: plan.Description.ValueString(),
 	})
 	if err != nil {
@@ -215,6 +223,14 @@ func (r *secretResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
+	// WriteOnly attributes are null in the plan; the configured value is only
+	// available in the request config.
+	var config secretResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	urn := state.URN.ValueString()
 	if urn == "" {
 		urn = state.ID.ValueString()
@@ -223,7 +239,7 @@ func (r *secretResource) Update(ctx context.Context, req resource.UpdateRequest,
 	err := r.client.UpdateSecret(ctx, datahub.UpdateSecretInput{
 		URN:         urn,
 		Name:        plan.Name.ValueString(),
-		Value:       plan.Value.ValueString(),
+		Value:       config.Value.ValueString(),
 		Description: plan.Description.ValueString(),
 	})
 	if err != nil {
