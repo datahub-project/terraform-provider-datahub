@@ -223,7 +223,10 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		)
 		return
 	}
-	tflog.Info(ctx, "Authenticated with DataHub", map[string]any{"urn": identity.Urn})
+	tflog.Info(ctx, "Authenticated with DataHub", map[string]any{
+		"urn":     identity.Urn,
+		"version": p.version,
+	})
 
 	resp.DataSourceData = client
 	resp.ResourceData = client
