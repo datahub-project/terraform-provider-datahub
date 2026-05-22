@@ -9,12 +9,16 @@ DEV_TFRC ?= $(PWD)/dev.tfrc
 COVERAGE_FILE ?= coverage.out
 COVERAGE_HTML ?= coverage.html
 COVER_PKG ?= ./internal/...
+DATAHUB_GMS_URL ?= http://localhost:8080
+TOKEN_ACTOR ?= urn:li:corpuser:datahub
+QUICKSTART_HEALTH_TIMEOUT ?= 600
+QUICKSTART_HEALTH_INTERVAL ?= 5
 
 # Best-effort version string (used for main.version via -ldflags)
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-cloud coverage coverage-html dev-override dev-deps
+.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-cloud testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps
 
 all: install
 
@@ -34,6 +38,10 @@ help:
 	@echo "  coverage      Run all tests with merged coverage; prints total"
 	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
 	@echo "  dev-deps      Install Python dev dependencies (datahub CLI) into .venv"
+	@echo "  quickstart-up    Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first"
+	@echo "  quickstart-down  Tear down the Quickstart (datahub docker nuke)"
+	@echo "  quickstart-token Mint a DataHub PAT against the running Quickstart"
+	@echo "  testacc-quickstart Boot Quickstart, run live acc tests, nuke on exit; KEEP_QUICKSTART=1 skips nuke"
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -44,6 +52,43 @@ install: build
 dev-deps:
 	uv venv --allow-existing .venv
 	UV_INDEX= uv pip install -r requirements-dev.txt
+
+quickstart-up:
+	@if [ "$$FRESH" = "1" ]; then \
+		echo "FRESH=1: nuking existing Quickstart"; \
+		datahub docker nuke >/dev/null 2>&1 || true; \
+	fi
+	@if datahub docker check >/dev/null 2>&1; then \
+		echo "Quickstart already healthy; reusing"; \
+	else \
+		echo "Starting Quickstart (first pull can take 5-10 min)"; \
+		datahub docker quickstart; \
+	fi
+	@echo "Polling GMS until ready..."
+	@end=$$(( $$(date +%s) + $(QUICKSTART_HEALTH_TIMEOUT) )); \
+	while ! datahub docker check >/dev/null 2>&1; do \
+		if [ $$(date +%s) -ge $$end ]; then \
+			echo "Quickstart did not become healthy within $(QUICKSTART_HEALTH_TIMEOUT)s"; \
+			exit 1; \
+		fi; \
+		sleep $(QUICKSTART_HEALTH_INTERVAL); \
+	done
+	@echo "Quickstart healthy at $(DATAHUB_GMS_URL)"
+
+quickstart-down:
+	datahub docker nuke
+
+quickstart-token:
+	@DATAHUB_GMS_URL=$(DATAHUB_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh
+
+testacc-quickstart:
+	@if [ "$$KEEP_QUICKSTART" != "1" ]; then \
+		trap 'echo "Tearing down Quickstart"; datahub docker nuke >/dev/null 2>&1 || true' EXIT; \
+	fi; \
+	set -e; \
+	$(MAKE) quickstart-up; \
+	TOKEN=$$(DATAHUB_GMS_URL=$(DATAHUB_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT"; exit 1; }; \
+	DATAHUB_GMS_URL=$(DATAHUB_GMS_URL) DATAHUB_GMS_TOKEN="$$TOKEN" $(MAKE) testacc-local
 
 dev-override: dev-deps
 	@{ \

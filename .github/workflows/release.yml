@@ -15,8 +15,13 @@ concurrency:
 permissions: read-all
 
 jobs:
+  live-acceptance:
+    name: Live Acceptance
+    uses: ./.github/workflows/live-acceptance.yml
+
   goreleaser:
     name: GoReleaser
+    needs: live-acceptance
     runs-on: ubuntu-latest
     permissions:
       contents: write

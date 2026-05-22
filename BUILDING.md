@@ -8,6 +8,8 @@
 | Terraform CLI | yes | >= 1.11 required for `WriteOnly` attribute support. |
 | `golangci-lint` | no | Only needed for `make lint`. Install via `mise` or see https://golangci-lint.run. |
 | `tfplugindocs` | no | Only needed for `make generate`. Managed by the `tools/` sub-module. |
+| Docker | no | Required for `make testacc-quickstart` only. |
+| `jq` | no | Required for `make quickstart-token` and `testacc-quickstart`. Preinstalled on macOS/Linux. |
 
 If you use [mise](https://mise.jdx.dev), run `mise install` in the repo root to get all pinned tools (Go, Terraform, golangci-lint, Python, uv).
 
@@ -76,56 +78,58 @@ The acceptance tests support three backends, selected at runtime via `DATAHUB_TE
 |---|---|---|
 | unset / `mock` | `make testacc` | Default. In-memory mock server; no DataHub needed. CI gate. |
 | `local` | `make testacc-local` | Real DataHub started via `datahub docker quickstart`. Throw-away. |
+| `local` (automated) | `make testacc-quickstart` | Boots Quickstart, mints PAT, runs tests, nukes on exit. Release CI gate. |
 | `cloud` | `make testacc-cloud` | DataHub cloud tenant built for smoke-testing. Requires `DATAHUB_TEST_ALLOW_CLOUD=1`. |
 
 For live targets the test uses a randomized resource name (`tfprovider-secret-<random>` etc.) so repeated runs and concurrent developers do not collide.
 
 ### Live tests against a local DataHub Quickstart
 
-For higher-fidelity coverage run the same scenarios against a real DataHub instance started locally via the `datahub` CLI's Quickstart.
-
-**Prerequisites**
-
-Run `make dev-override` (see "First-time setup") -- this installs the `datahub` CLI into the project venv. Confirm with:
+`make testacc-quickstart` runs the full live acceptance suite against a throw-away DataHub instance with zero manual steps. It requires Docker and the `datahub` CLI (installed by `make dev-override`).
 
 ```bash
-datahub version
+make testacc-quickstart
 ```
 
-**Start the stack** (takes 5-10 minutes the first time):
+This target:
+1. Checks if a Quickstart is already healthy and reuses it; otherwise calls `datahub docker quickstart` (first pull takes 5-10 min).
+2. Mints a personal access token via the GMS GraphQL API.
+3. Runs `make testacc-local` with the URL and token set.
+4. Always calls `datahub docker nuke` on exit, whether tests pass or fail.
+
+**Knobs**
+
+| Variable | Default | Effect |
+|---|---|---|
+| `FRESH=1` | off | Nuke any existing Quickstart before booting a fresh one. |
+| `KEEP_QUICKSTART=1` | off | Skip the automatic nuke on exit (for post-mortem inspection). |
+| `DATAHUB_GMS_URL` | `http://localhost:8080` | Override if Quickstart is bound to a different address. |
 
 ```bash
-datahub docker quickstart
+# Always start fresh:
+FRESH=1 make testacc-quickstart
+
+# Keep containers running after tests for inspection:
+KEEP_QUICKSTART=1 make testacc-quickstart
+# ... inspect logs, UI at http://localhost:9002 ...
+make quickstart-down
 ```
 
-Wait until `http://localhost:9002` loads in a browser.
-
-**Get a personal access token**
-
-1. Open `http://localhost:9002` and log in with `datahub` / `datahub`.
-2. Settings -> Access Tokens -> Generate new token.
-3. Copy the value.
-
-If you are running an older Quickstart with metadata service authentication disabled, any non-empty string works -- the provider client requires a non-empty token, but DataHub ignores it.
-
-**Export the env vars and run**
-
-```bash
-export DATAHUB_GMS_URL=http://localhost:8080
-export DATAHUB_GMS_TOKEN=<paste your PAT>
-make testacc-local
-```
-
-**Verify in the UI**
+**Verify in the UI** (while stack is running)
 
 - Ingestion sources: `http://localhost:9002/ingestion`
 - Secrets: Settings -> Secrets
 
-Resources are destroyed at the end of each test step's lifecycle, so a clean run leaves no residue.
+**Manual fallback**
 
-**Tear down**
+If you prefer to manage the Quickstart lifecycle yourself:
 
 ```bash
+datahub docker quickstart
+# ... wait for http://localhost:9002 to load ...
+export DATAHUB_GMS_URL=http://localhost:8080
+export DATAHUB_GMS_TOKEN=<PAT from Settings -> Access Tokens, or any non-empty string>
+make testacc-local
 datahub docker nuke
 ```
 
@@ -133,7 +137,7 @@ datahub docker nuke
 
 - If a previous `datahub init` left a stale `~/.datahubenv`, the provider falls back to it when the env vars are empty. Either keep the env vars exported per session or remove `~/.datahubenv`.
 - A test that crashes between Create and Destroy can leak resources. Re-running is safe (names are randomized), but stale entities accumulate in DataHub until `datahub docker nuke`.
-- Live tests are not run in CI. The mock acceptance tests remain the CI gate.
+- Live tests run in CI on release tag pushes (as a gate before GoReleaser), on a nightly schedule, and on PRs labeled `run-live-ci`.
 
 ### Live tests against a DataHub cloud tenant
 

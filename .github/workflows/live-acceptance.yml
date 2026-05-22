@@ -1,0 +1,39 @@
+name: Live Acceptance
+
+# Reusable workflow called by release.yml (on every v* tag) and nightly-live.yml
+# (on schedule and run-live-ci labeled PRs). Boots a DataHub Quickstart, runs
+# the live acceptance tests, and always tears down on exit.
+on:
+  workflow_call:
+
+permissions: read-all
+
+jobs:
+  live-acceptance:
+    name: Live Acceptance (Quickstart)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - name: Install Python dev deps (datahub CLI)
+        run: make dev-deps
+      - name: Run Quickstart-backed acceptance tests
+        run: make testacc-quickstart
+      - name: Capture Quickstart logs on failure
+        if: failure()
+        run: |
+          mkdir -p quickstart-logs
+          docker ps -a > quickstart-logs/ps.txt 2>&1 || true
+          for c in $(docker ps -aq 2>/dev/null); do
+            docker logs "$c" > "quickstart-logs/${c}.log" 2>&1 || true
+          done
+      - name: Upload Quickstart logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-logs
+          path: quickstart-logs/
+          if-no-files-found: ignore
