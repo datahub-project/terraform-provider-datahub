@@ -52,6 +52,8 @@ After import, run `terraform apply` with the `value` set in config. The update m
 
 ## Cleanup
 
+`TF_VAR_secret_value` is not required for destroy.
+
 ```bash
 terraform destroy
 ```
