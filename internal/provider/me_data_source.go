@@ -7,10 +7,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 var (

@@ -26,8 +26,8 @@ import (
 
 // mockIngestionSource mirrors the JSON shape that pkg/datahub sends and reads.
 type mockIngestionSource struct {
-	Urn                        string `json:"urn"`
-	DataHubIngestionSourceKey  struct {
+	Urn                       string `json:"urn"`
+	DataHubIngestionSourceKey struct {
 		Value struct {
 			ID string `json:"id"`
 		} `json:"value"`
@@ -114,7 +114,7 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *mockServer) handleMe(w http.ResponseWriter) {
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
 			"me": map[string]any{
 				"corpUser": map[string]any{
@@ -144,7 +144,7 @@ func (s *mockServer) handleCreateSecret(w http.ResponseWriter, variables map[str
 	}
 	s.mu.Unlock()
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"createSecret": "urn:li:dataHubSecret:" + name},
 	})
 }
@@ -159,7 +159,7 @@ func (s *mockServer) handleUpdateSecret(w http.ResponseWriter, variables map[str
 	s.secrets[name] = mockSecret{URN: urn, Name: name, Description: desc}
 	s.mu.Unlock()
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"updateSecret": urn},
 	})
 }
@@ -172,7 +172,7 @@ func (s *mockServer) handleDeleteSecret(w http.ResponseWriter, variables map[str
 	delete(s.secrets, name)
 	s.mu.Unlock()
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"deleteSecret": urn},
 	})
 }
@@ -200,7 +200,7 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 		results = []map[string]any{}
 	}
 
-	json.NewEncoder(w).Encode(map[string]any{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
 			"listSecrets": map[string]any{"secrets": results},
 		},
@@ -229,7 +229,7 @@ func (s *mockServer) handleIngestionSourceCollection(w http.ResponseWriter, r *h
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(body)
+	_, _ = w.Write(body)
 }
 
 // handleIngestionSourceItem handles GET and DELETE on a single entity by URN.
@@ -248,7 +248,7 @@ func (s *mockServer) handleIngestionSourceItem(w http.ResponseWriter, r *http.Re
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(entity)
+		_ = json.NewEncoder(w).Encode(entity)
 
 	case http.MethodDelete:
 		s.mu.Lock()

@@ -21,7 +21,8 @@ func TestSHA256Hex(t *testing.T) {
 	}
 
 	// Deterministic.
-	if SHA256Hex([]byte("hello")) != SHA256Hex([]byte("hello")) {
+	h1, h2 := SHA256Hex([]byte("hello")), SHA256Hex([]byte("hello"))
+	if h1 != h2 {
 		t.Error("SHA256Hex is not deterministic")
 	}
 
@@ -36,7 +37,7 @@ func TestSHA256Hex(t *testing.T) {
 		t.Errorf("SHA256Hex length = %d, want 64", len(h))
 	}
 	for i, c := range h {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			t.Errorf("SHA256Hex result[%d] = %q is not lowercase hex", i, c)
 			break
 		}
@@ -112,7 +113,7 @@ func TestDeriveID(t *testing.T) {
 	t.Run("max_prefix_len_truncates", func(t *testing.T) {
 		longPrefix := "a-very-long-source-name-that-exceeds-limit"
 		id := DeriveID(longPrefix, []byte("x"), 10)
-		parts := strings.SplitN(id, "-", -1)
+		parts := strings.Split(id, "-")
 		// The prefix portion (everything before the final 12-char hash) must be short.
 		// id = "<truncated-prefix>-<12hash>", last segment is the hash.
 		hashPart := parts[len(parts)-1]
@@ -126,7 +127,7 @@ func TestDeriveID(t *testing.T) {
 		id := DeriveID("src", []byte("test"), 0)
 		suffix := strings.TrimPrefix(id, "src-")
 		for i, c := range suffix {
-			if !((c >= 'a' && c <= 'z') || (c >= '2' && c <= '7')) {
+			if (c < 'a' || c > 'z') && (c < '2' || c > '7') {
 				t.Errorf("hash suffix[%d] = %q is not lowercase base32", i, c)
 				break
 			}

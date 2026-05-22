@@ -4,9 +4,10 @@
 package provider_test
 
 import (
-	provider "github.com/datahub-project/terraform-provider-datahub/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+
+	provider "github.com/datahub-project/terraform-provider-datahub/internal/provider"
 )
 
 // testAccProtoV6ProviderFactories is shared by all acceptance tests in this package.

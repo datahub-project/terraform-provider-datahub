@@ -99,7 +99,7 @@ func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		fields["error"] = err.Error()
 		tflog.Debug(req.Context(), "DataHub API request failed", fields)
-		return nil, err
+		return nil, fmt.Errorf("round trip: %w", err)
 	}
 	fields["status"] = resp.StatusCode
 	tflog.Debug(req.Context(), "DataHub API response", fields)
