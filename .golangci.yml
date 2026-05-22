@@ -12,15 +12,20 @@ linters:
     - errcheck
     - errname
     - errorlint
+    - forcetypeassert
+    - godot
     - govet
     - ineffassign
+    - makezero
     - misspell
     - nilerr
     - nilnesserr
     - predeclared
     - staticcheck
     - unconvert
+    - unparam
     - unused
+    - usetesting
 
   exclusions:
     generated: lax
