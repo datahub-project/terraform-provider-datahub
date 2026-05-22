@@ -43,33 +43,24 @@ References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and 
 ## Example Usage
 
 ```terraform
-resource "datahub_secret" "bq_creds" {
-  name             = "tf-bq-service-account-json"
-  description      = "Service account for BigQuery ingestion"
-  value            = file("${path.module}/bq-key.json")
-  value_wo_version = 1
-}
+resource "datahub_ingestion_source" "csv_enricher" {
+  source_name        = "TF CSV Enricher"
+  remote_executor_id = "default"
+  cron_interval      = "0 6 * * *"
+  timezone           = "UTC"
 
-resource "datahub_ingestion_source" "bq" {
-  source_name   = "TF BigQuery (prod)"
-  cron_interval = "0 6 * * *"
-  timezone      = "UTC"
-
-  # Use $${SECRET_NAME} (double $) so HCL does not interpolate the braces --
-  # DataHub resolves ${tf-bq-service-account-json} at ingestion run time via Secrets.
   recipe = jsonencode({
     source = {
-      type = "bigquery"
+      type = "csv-enricher"
       config = {
-        credential = {
-          credentials_json = "$${tf-bq-service-account-json}"
-        }
+        filename        = "https://raw.githubusercontent.com/datahub-project/datahub/e32ee8df08404fa29f8b1630c9a7a6cf1ba270a2/metadata-ingestion/tests/integration/csv-enricher/csv_enricher_test_data.csv"
+        array_delimiter = "|"
+        delimiter       = ","
+        write_semantics = "PATCH"
       }
     }
-    pipeline_name = "bigquery:prod"
+    pipeline_name = "tf-csv-enricher"
   })
-
-  depends_on = [datahub_secret.bq_creds]
 }
 ```
 
