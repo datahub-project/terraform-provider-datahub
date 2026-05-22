@@ -96,3 +96,11 @@ resource "datahub_ingestion_source" "bq" {
 ### Read-Only
 
 - `id` (String) The ID of this resource.
+
+## Security Note
+
+**Warning:** The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.
+
+**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.
+
+References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.
