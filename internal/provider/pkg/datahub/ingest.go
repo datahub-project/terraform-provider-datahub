@@ -72,7 +72,7 @@ type DatasourceIngestionInput struct {
 	Async      *bool // defaults to false if nil
 }
 
-// Datahub endpoint used: POST /openapi/v3/entity/datahubingestionsource
+// Datahub endpoint used: POST /openapi/v3/entity/datahubingestionsource.
 func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngestionInput) ([]byte, error) {
 	if c == nil {
 		return nil, errors.New("client is nil")
@@ -172,7 +172,7 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 
 	respBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("unexpected status %s: %s", res.Status, respBody)
@@ -181,7 +181,7 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 	return respBody, nil
 }
 
-// Datahub endpoint used: GET /openapi/v3/entity/datahubingestionsource/{urn}
+// Datahub endpoint used: GET /openapi/v3/entity/datahubingestionsource/{urn}.
 func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([]byte, error) {
 	urn := fmt.Sprintf("urn:li:dataHubIngestionSource:%s", sourceID)
 	path := fmt.Sprintf("/openapi/v3/entity/datahubingestionsource/%s", urn)
@@ -198,7 +198,7 @@ func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([
 
 	respBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("unexpected status %s: %s", res.Status, respBody)
@@ -207,7 +207,7 @@ func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([
 	return respBody, nil
 }
 
-// Datahub endpoint used: DELETE /openapi/v3/entity/datahubingestionsource/{urn}
+// Datahub endpoint used: DELETE /openapi/v3/entity/datahubingestionsource/{urn}.
 func (c *Client) DeleteIngestionSourceByID(ctx context.Context, sourceID string) error {
 	urn := fmt.Sprintf("urn:li:dataHubIngestionSource:%s", sourceID)
 	path := fmt.Sprintf("/openapi/v3/entity/datahubingestionsource/%s", urn)

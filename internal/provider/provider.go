@@ -6,11 +6,11 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
@@ -18,6 +18,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"gopkg.in/yaml.v3"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 type datahubEnvConfig struct {
@@ -32,7 +34,7 @@ func readDatahubEnvConfig() (datahubEnvConfig, bool, error) {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("determining home directory: %w", err)
 	}
 
 	path := filepath.Join(home, ".datahubenv")
@@ -40,16 +42,16 @@ func readDatahubEnvConfig() (datahubEnvConfig, bool, error) {
 		if os.IsNotExist(err) {
 			return cfg, false, nil
 		}
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("checking %s: %w", path, err)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("reading %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
 	return cfg, true, nil
@@ -82,13 +84,13 @@ type datahubProviderModel struct {
 }
 
 // Metadata returns the provider type name.
-func (p *datahubProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+func (p *datahubProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "datahub"
 	resp.Version = p.version
 }
 
 // Schema defines the provider-level schema for configuration data.
-func (p *datahubProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
+func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Terraform provider for managing DataHub ingestion sources via the DataHub APIs.\n\n" +
 			"**Security note:** DataHub ingestion recipes and source configurations are stored in DataHub. If you embed credentials (tokens, passwords, private keys) directly into a recipe/config, they can end up stored in DataHub metadata and exposed to users/services with access to view ingestion source configs.\n\n" +
@@ -147,18 +149,18 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 	// Default values to environment variables, but override
 	// with Terraform configuration value if set.
 	host := os.Getenv("DATAHUB_HOST")
-	gms_token := os.Getenv("DATAHUB_GMS_TOKEN")
+	gmsToken := os.Getenv("DATAHUB_GMS_TOKEN")
 
 	if !config.Host.IsNull() {
 		host = config.Host.ValueString()
 	}
 
 	if !config.GmsToken.IsNull() {
-		gms_token = config.GmsToken.ValueString()
+		gmsToken = config.GmsToken.ValueString()
 	}
 
 	// Last resort: Datahub CLI local configuration at ~/.datahubenv
-	if host == "" || gms_token == "" {
+	if host == "" || gmsToken == "" {
 		envCfg, exists, err := readDatahubEnvConfig()
 		if err != nil {
 			resp.Diagnostics.AddError(
@@ -174,8 +176,8 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 				server = strings.TrimSuffix(server, "/gms")
 				host = server
 			}
-			if gms_token == "" && envCfg.Gms.Token != "" {
-				gms_token = envCfg.Gms.Token
+			if gmsToken == "" && envCfg.Gms.Token != "" {
+				gmsToken = envCfg.Gms.Token
 			}
 		}
 	}
@@ -190,7 +192,7 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 				"Init otherwise datahub cli via `datahub init` command to create the configuration file at ~/.datahubenv",
 		)
 	}
-	if gms_token == "" {
+	if gmsToken == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("gms_token"),
 			"Missing Datahub GMS Token",
@@ -206,7 +208,7 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 	}
 
 	// Create a new Datahub client using the configuration values
-	client, err := datahub.NewClient(host, gms_token)
+	client, err := datahub.NewClient(host, gmsToken)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Datahub API Client",

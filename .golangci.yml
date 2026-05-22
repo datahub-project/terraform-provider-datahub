@@ -1,22 +1,36 @@
 version: "2"
+
+run:
+  allow-serial-runners: true
+
 linters:
   default: none
+
   enable:
+    - bodyclose
     - copyloopvar
     - durationcheck
     - errcheck
+    - errname
+    - errorlint
     - forcetypeassert
     - godot
+    - govet
     - ineffassign
     - makezero
     - misspell
     - nilerr
+    - nilnesserr
+    - noctx
     - predeclared
+    - revive
     - staticcheck
     - unconvert
     - unparam
     - unused
     - usetesting
+    - wrapcheck
+
   exclusions:
     generated: lax
     presets:
@@ -25,18 +39,25 @@ linters:
       - legacy
       - std-error-handling
     paths:
-      - third_party$
-      - builtin$
       - examples$
+
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+
 formatters:
   enable:
     - gofmt
+    - goimports
+
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/datahub-project/terraform-provider-datahub
+
   exclusions:
     generated: lax
     paths:
-      - third_party$
-      - builtin$
       - examples$

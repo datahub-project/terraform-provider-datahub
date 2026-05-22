@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/tools/uid"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -21,6 +19,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/tools/uid"
 )
 
 var (
@@ -76,48 +77,7 @@ func (r *ingestionSourceResource) Metadata(_ context.Context, req resource.Metad
 func (r *ingestionSourceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.\n\n" +
-			"This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).\n\n" +
-			"## Example Usage\n\n" +
-			"```terraform\n" +
-			"resource \"datahub_ingestion_source\" \"example\" {\n" +
-			"  # source_id is optional; if omitted, it is derived from source_name\n" +
-			"  # source_id   = \"my-unity-source\"\n" +
-			"  source_name   = \"My Unity Catalog Source\"\n" +
-			"  cron_interval = \"0 10 * * *\"\n" +
-			"  timezone      = \"UTC\"\n" +
-			"  cli_version   = \"1.3.1.5\"\n" +
-			"  async         = false\n" +
-			"\n" +
-			"  # source_type is optional; derived from recipe.source.type if omitted\n" +
-			"  # source_type = \"unity-catalog\"\n" +
-			"\n" +
-			"  recipe = jsonencode({\n" +
-			"    source = {\n" +
-			"      type   = \"unity-catalog\"\n" +
-			"      config = {\n" +
-			"        workspace_url = var.databricks_workspace_url\n" +
-			"        token         = var.databricks_pat\n" +
-			"        env           = \"PROD\"\n" +
-			"      }\n" +
-			"    }\n" +
-			"    pipeline_name = \"unity-catalog:my-unity-source\"\n" +
-			"  })\n" +
-			"}\n" +
-			"```\n\n" +
-			"## Argument Reference\n\n" +
-			"- `source_id` (Optional) Unique id for the ingestion source. If omitted, it is derived from `source_name` as `<sanitized-source_name>-<hash>`. This becomes the Terraform resource id.\n" +
-			"- `source_name` (Required) Human-friendly name shown in the DataHub UI.\n" +
-			"- `recipe` (Required) Recipe JSON string. Build it with `jsonencode({...})` or any mechanism that produces valid JSON.\n" +
-			"- `cron_interval` (Optional) Cron schedule expression (e.g. `0 10 * * *`). If omitted, no schedule is sent.\n" +
-			"- `timezone` (Optional) Schedule timezone. If `cron_interval` is set and timezone is omitted, `UTC` is used.\n" +
-			"- `cli_version` (Optional) DataHub ingestion CLI version used by DataHub to execute the source. If omitted, it is not sent.\n" +
-			"- `extra_args` (Optional) Extra arguments sent to DataHub as `config.extraArgs` (map of string keys to string values). For example, set `extra_pip_requirements` to add pip deps.\n" +
-			"- `async` (Optional) Whether to create/update asynchronously.\n" +
-			"- `source_type` (Optional) Ingestion source type. If omitted, it is derived from `recipe.source.type`. If set, it must match the type inside the recipe.\n\n" +
-			"## Security Note\n\n" +
-			"**Warning:** The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.\n\n" +
-			"**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.\n\n" +
-			"References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.",
+			"This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
