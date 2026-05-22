@@ -29,6 +29,7 @@ linters:
     - unparam
     - unused
     - usetesting
+    - wrapcheck
 
   exclusions:
     generated: lax
