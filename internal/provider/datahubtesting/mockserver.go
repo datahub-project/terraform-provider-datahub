@@ -77,6 +77,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -108,8 +109,6 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeleteSecret(w, req.Variables)
 	case strings.Contains(q, "listSecrets"):
 		s.handleListSecrets(w, req.Variables)
-	case strings.Contains(q, "DataHubSecret"):
-		s.handleGetSecretByURN(w, req.Variables)
 	default:
 		http.Error(w, `{"errors":[{"message":"unknown operation"}]}`, http.StatusBadRequest)
 	}
@@ -209,8 +208,14 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 	})
 }
 
-func (s *mockServer) handleGetSecretByURN(w http.ResponseWriter, variables map[string]any) {
-	urn, _ := variables["urn"].(string)
+// handleSecretItem serves GET /openapi/v3/entity/datahubsecret/{urn}.
+func (s *mockServer) handleSecretItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/datahubsecret/")
 	name := strings.TrimPrefix(urn, "urn:li:dataHubSecret:")
 
 	s.mu.Lock()
@@ -218,20 +223,20 @@ func (s *mockServer) handleGetSecretByURN(w http.ResponseWriter, variables map[s
 	s.mu.Unlock()
 
 	if !ok {
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"data": map[string]any{"entity": nil},
-		})
+		http.NotFound(w, r)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data": map[string]any{
-			"entity": map[string]any{
-				"urn": secret.URN,
-				"properties": map[string]any{
-					"name":        secret.Name,
-					"description": secret.Description,
-				},
+		"urn": secret.URN,
+		"dataHubSecretKey": map[string]any{
+			"value": map[string]any{"id": secret.Name},
+		},
+		"dataHubSecretValue": map[string]any{
+			"value": map[string]any{
+				"name":        secret.Name,
+				"description": secret.Description,
 			},
 		},
 	})
