@@ -109,7 +109,7 @@ locals {
 
 resource "datahub_ingestion_source" "unity_scheduled" {
   # source_id   = "scheduled-my-unique-source-id" # automatically generated if not provided; derived from a sha256 version of source_name if not provided.
-  source_name        = "scheduled-my-unity-source-name"
+  source_name = "scheduled-my-unity-source-name"
   # source_type is optional; derived from recipe.source.type if omitted.
   remote_executor_id = "my-remote-executor-id"
   cron_interval      = "0 10 * * *"
@@ -121,7 +121,7 @@ resource "datahub_ingestion_source" "unity_scheduled" {
 }
 
 resource "datahub_ingestion_source" "dynamodb_scheduled" {
-  source_name        = "scheduled-my-dynamodb-source-name"
+  source_name = "scheduled-my-dynamodb-source-name"
   # source_type is optional; derived from recipe.source.type if omitted.
   remote_executor_id = "my-remote-executor-id"
   cron_interval      = "0 10 * * *"
@@ -134,7 +134,7 @@ resource "datahub_ingestion_source" "dynamodb_scheduled" {
 
 resource "datahub_ingestion_source" "unity" {
   # source_id   = "scheduled-my-unique-source-id" # automatically generated if not provided; derived from a sha256 version of source_name if not provided.
-  source_name        = "my-unity-source-name"
+  source_name = "my-unity-source-name"
   # source_type is optional; derived from recipe.source.type if omitted.
   remote_executor_id = "my-remote-executor-id"
 
@@ -149,7 +149,7 @@ resource "datahub_ingestion_source" "unity" {
 }
 
 resource "datahub_ingestion_source" "dynamodb" {
-  source_name        = "my-dynamodb-source-name"
+  source_name = "my-dynamodb-source-name"
   # source_type is optional; derived from recipe.source.type if omitted.
   remote_executor_id = "my-remote-executor-id"
   recipe             = local.dynamodb_recipe
