@@ -6,8 +6,9 @@ package provider_test
 import (
 	"testing"
 
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
 )
 
 func TestAcc_MeDataSource_Read(t *testing.T) {

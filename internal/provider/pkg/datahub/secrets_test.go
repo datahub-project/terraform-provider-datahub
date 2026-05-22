@@ -15,10 +15,10 @@ import (
 // graphqlHandler is a test double for the DataHub GraphQL endpoint. It inspects
 // the incoming query string and returns scripted responses.
 type graphqlHandler struct {
-	createResp  func(name, value, desc string) any
-	listResp    func(query string) any
-	updateResp  func() any
-	deleteResp  func(urn string) any
+	createResp func(name, value, desc string) any
+	listResp   func(query string) any
+	updateResp func() any
+	deleteResp func(urn string) any
 }
 
 func (h *graphqlHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -28,27 +28,35 @@ func (h *graphqlHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Query     string         `json:"query"`
 		Variables map[string]any `json:"variables"`
 	}
-	json.Unmarshal(body, &req)
+	_ = json.Unmarshal(body, &req)
 
 	switch {
 	case strings.Contains(req.Query, "createSecret"):
-		input := req.Variables["input"].(map[string]any)
+		input, ok := req.Variables["input"].(map[string]any)
+		if !ok {
+			http.Error(w, `{"errors":[{"message":"bad input"}]}`, http.StatusBadRequest)
+			return
+		}
 		name, _ := input["name"].(string)
 		value, _ := input["value"].(string)
 		desc, _ := input["description"].(string)
-		json.NewEncoder(w).Encode(h.createResp(name, value, desc))
+		_ = json.NewEncoder(w).Encode(h.createResp(name, value, desc))
 	case strings.Contains(req.Query, "updateSecret"):
-		json.NewEncoder(w).Encode(h.updateResp())
+		_ = json.NewEncoder(w).Encode(h.updateResp())
 	case strings.Contains(req.Query, "deleteSecret"):
 		urn, _ := req.Variables["urn"].(string)
-		json.NewEncoder(w).Encode(h.deleteResp(urn))
+		_ = json.NewEncoder(w).Encode(h.deleteResp(urn))
 	case strings.Contains(req.Query, "listSecrets"):
-		input := req.Variables["input"].(map[string]any)
+		input, ok := req.Variables["input"].(map[string]any)
+		if !ok {
+			http.Error(w, `{"errors":[{"message":"bad input"}]}`, http.StatusBadRequest)
+			return
+		}
 		query, _ := input["query"].(string)
-		json.NewEncoder(w).Encode(h.listResp(query))
+		_ = json.NewEncoder(w).Encode(h.listResp(query))
 	default:
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"errors":[{"message":"unknown operation"}]}`))
+		_, _ = w.Write([]byte(`{"errors":[{"message":"unknown operation"}]}`))
 	}
 }
 
@@ -73,7 +81,7 @@ func TestCreateSecret(t *testing.T) {
 	})
 
 	t.Run("empty_name_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		_, err := c.CreateSecret(t.Context(), CreateSecretInput{Name: "", Value: "x"})
 		if err == nil {
 			t.Fatal("expected error for empty name, got nil")
@@ -81,7 +89,7 @@ func TestCreateSecret(t *testing.T) {
 	})
 
 	t.Run("empty_value_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		_, err := c.CreateSecret(t.Context(), CreateSecretInput{Name: "x", Value: ""})
 		if err == nil {
 			t.Fatal("expected error for empty value, got nil")
@@ -139,7 +147,7 @@ func TestCreateSecret(t *testing.T) {
 func TestGetSecretByName(t *testing.T) {
 	t.Run("found_returns_secret", func(t *testing.T) {
 		handler := &graphqlHandler{
-			listResp: func(query string) any {
+			listResp: func(_ string) any {
 				return map[string]any{
 					"data": map[string]any{
 						"listSecrets": map[string]any{
@@ -223,7 +231,7 @@ func TestGetSecretByName(t *testing.T) {
 	})
 
 	t.Run("empty_name_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		_, err := c.GetSecretByName(t.Context(), "")
 		if err == nil {
 			t.Fatal("expected error for empty name, got nil")
@@ -260,7 +268,7 @@ func TestUpdateSecret(t *testing.T) {
 	})
 
 	t.Run("missing_urn_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		err := c.UpdateSecret(t.Context(), UpdateSecretInput{Name: "x", Value: "y"})
 		if err == nil {
 			t.Fatal("expected error for empty URN, got nil")
@@ -301,7 +309,7 @@ func TestDeleteSecret(t *testing.T) {
 	})
 
 	t.Run("empty_urn_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		if err := c.DeleteSecret(t.Context(), ""); err == nil {
 			t.Fatal("expected error for empty URN, got nil")
 		}

@@ -30,7 +30,7 @@ func TestNewDatasourceIngestion(t *testing.T) {
 			gotAuth = r.Header.Get("Authorization")
 			gotBody, _ = io.ReadAll(r.Body)
 			w.Header().Set("Content-Type", "application/json")
-			w.Write(gotBody)
+			_, _ = w.Write(gotBody)
 		}))
 		defer server.Close()
 
@@ -67,7 +67,7 @@ func TestNewDatasourceIngestion(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotBody, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusOK)
-			w.Write(gotBody)
+			_, _ = w.Write(gotBody)
 		}))
 		defer server.Close()
 
@@ -87,7 +87,9 @@ func TestNewDatasourceIngestion(t *testing.T) {
 		}
 
 		var entities []IngestionSource
-		json.Unmarshal(gotBody, &entities)
+		if err := json.Unmarshal(gotBody, &entities); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
 		sched := entities[0].DataHubIngestionSourceInfo.Value.Schedule
 		if sched == nil {
 			t.Fatal("schedule is nil, want non-nil")
@@ -105,7 +107,7 @@ func TestNewDatasourceIngestion(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			gotBody, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusOK)
-			w.Write(gotBody)
+			_, _ = w.Write(gotBody)
 		}))
 		defer server.Close()
 
@@ -118,10 +120,14 @@ func TestNewDatasourceIngestion(t *testing.T) {
 			CronInterval: &cronInterval,
 		}
 		c := newTestClient(t, server)
-		c.NewDatasourceIngestion(t.Context(), in)
+		if _, err := c.NewDatasourceIngestion(t.Context(), in); err != nil {
+			t.Fatalf("error = %v", err)
+		}
 
 		var entities []IngestionSource
-		json.Unmarshal(gotBody, &entities)
+		if err := json.Unmarshal(gotBody, &entities); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
 		sched := entities[0].DataHubIngestionSourceInfo.Value.Schedule
 		if sched == nil || sched.Timezone != "UTC" {
 			t.Errorf("expected timezone=UTC when unset, got %v", sched)
@@ -129,7 +135,7 @@ func TestNewDatasourceIngestion(t *testing.T) {
 	})
 
 	t.Run("nil_recipe_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		in := DatasourceIngestionInput{SourceID: "x", SourceName: "x", SourceType: "file", RecipeJSON: nil}
 		_, err := c.NewDatasourceIngestion(t.Context(), in)
 		if err == nil {
@@ -138,7 +144,7 @@ func TestNewDatasourceIngestion(t *testing.T) {
 	})
 
 	t.Run("missing_source_id_returns_error", func(t *testing.T) {
-		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})))
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
 		in := DatasourceIngestionInput{SourceName: "x", SourceType: "file", RecipeJSON: &minimalRecipe}
 		_, err := c.NewDatasourceIngestion(t.Context(), in)
 		if err == nil {
@@ -168,7 +174,7 @@ func TestGetIngestionSourceByID(t *testing.T) {
 			gotPath = r.URL.Path
 			gotMethod = r.Method
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(sampleBody))
+			_, _ = w.Write([]byte(sampleBody))
 		}))
 		defer server.Close()
 
