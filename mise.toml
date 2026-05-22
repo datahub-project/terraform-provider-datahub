@@ -2,6 +2,9 @@
 go = "1.26.3"
 terraform = "1.15.4"
 golangci-lint = "2.12.2"
+python = "3.11.15"
+uv = "0.5.20"
 
 [env]
 _.file = ".mise.env"
+_.python.venv = {path = ".venv", create = true}
