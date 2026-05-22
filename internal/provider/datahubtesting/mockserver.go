@@ -108,6 +108,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeleteSecret(w, req.Variables)
 	case strings.Contains(q, "listSecrets"):
 		s.handleListSecrets(w, req.Variables)
+	case strings.Contains(q, "DataHubSecret"):
+		s.handleGetSecretByURN(w, req.Variables)
 	default:
 		http.Error(w, `{"errors":[{"message":"unknown operation"}]}`, http.StatusBadRequest)
 	}
@@ -203,6 +205,34 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
 			"listSecrets": map[string]any{"secrets": results},
+		},
+	})
+}
+
+func (s *mockServer) handleGetSecretByURN(w http.ResponseWriter, variables map[string]any) {
+	urn, _ := variables["urn"].(string)
+	name := strings.TrimPrefix(urn, "urn:li:dataHubSecret:")
+
+	s.mu.Lock()
+	secret, ok := s.secrets[name]
+	s.mu.Unlock()
+
+	if !ok {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"entity": nil},
+		})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"entity": map[string]any{
+				"urn": secret.URN,
+				"properties": map[string]any{
+					"name":        secret.Name,
+					"description": secret.Description,
+				},
+			},
 		},
 	})
 }

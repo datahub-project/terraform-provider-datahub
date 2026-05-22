@@ -183,7 +183,16 @@ func (r *secretResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	secret, err := r.client.GetSecretByName(ctx, state.Name.ValueString())
+	// Prefer URN-based lookup (reads from primary datastore; no search-index
+	// lag). Fall back to name-based lookup for states that pre-date this
+	// field being populated (e.g. manual state edits or old imports).
+	var secret *datahub.Secret
+	var err error
+	if urn := state.URN.ValueString(); urn != "" {
+		secret, err = r.client.GetSecretByURN(ctx, urn)
+	} else {
+		secret, err = r.client.GetSecretByName(ctx, state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return

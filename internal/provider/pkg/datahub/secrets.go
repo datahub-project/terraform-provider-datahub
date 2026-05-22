@@ -87,6 +87,21 @@ type listSecretsResponse struct {
 	} `json:"errors"`
 }
 
+type getSecretByURNResponse struct {
+	Data struct {
+		Entity *struct {
+			URN        string `json:"urn"`
+			Properties *struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+			} `json:"properties"`
+		} `json:"entity"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
 // CreateSecret creates a DataHub secret via the GraphQL API and returns the
 // URN of the created secret.
 func (c *Client) CreateSecret(ctx context.Context, in CreateSecretInput) (string, error) {
@@ -158,6 +173,76 @@ mutation createSecret($input: CreateSecretInput!) {
 		urn = fmt.Sprintf("urn:li:dataHubSecret:%s", in.Name)
 	}
 	return urn, nil
+}
+
+// GetSecretByURN fetches a DataHub secret directly by URN via the entity
+// query, which reads from the primary datastore rather than the search index.
+// Use this in Read to avoid the eventual-consistency lag that affects
+// listSecrets (which goes through OpenSearch).
+// Returns nil (no error) when the URN does not exist.
+func (c *Client) GetSecretByURN(ctx context.Context, urn string) (*Secret, error) {
+	if c == nil {
+		return nil, errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	if urn == "" {
+		return nil, errors.New("URN is required")
+	}
+
+	const q = `
+query getSecret($urn: String!) {
+  entity(urn: $urn) {
+    urn
+    ... on DataHubSecret {
+      properties {
+        name
+        description
+      }
+    }
+  }
+}`
+
+	body := map[string]any{
+		"query":     q,
+		"variables": map[string]any{"urn": urn},
+	}
+
+	req, err := c.NewRequest(ctx, http.MethodPost, "/api/graphql", body)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_SECRETS privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("unexpected HTTP %d from DataHub secrets API", res.StatusCode)
+	}
+
+	var gqlResp getSecretByURNResponse
+	if err := json.NewDecoder(res.Body).Decode(&gqlResp); err != nil {
+		return nil, fmt.Errorf("parsing entity response: %w", err)
+	}
+
+	if len(gqlResp.Errors) > 0 {
+		return nil, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+
+	e := gqlResp.Data.Entity
+	if e == nil || e.Properties == nil {
+		return nil, nil
+	}
+	return &Secret{
+		URN:         e.URN,
+		Name:        e.Properties.Name,
+		Description: e.Properties.Description,
+	}, nil
 }
 
 // GetSecretByName looks up a DataHub secret by exact name using listSecrets.
