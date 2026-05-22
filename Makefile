@@ -11,6 +11,7 @@ COVERAGE_HTML ?= coverage.html
 COVER_PKG ?= ./internal/...
 DATAHUB_GMS_URL ?= http://localhost:8080
 TOKEN_ACTOR ?= urn:li:corpuser:datahub
+QUICKSTART_VERSION ?= v1.5.0.6
 QUICKSTART_HEALTH_TIMEOUT ?= 600
 QUICKSTART_HEALTH_INTERVAL ?= 5
 
@@ -38,7 +39,7 @@ help:
 	@echo "  coverage      Run all tests with merged coverage; prints total"
 	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
 	@echo "  dev-deps      Install Python dev dependencies (datahub CLI) into .venv"
-	@echo "  quickstart-up    Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first"
+	@echo "  quickstart-up    Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first; QUICKSTART_VERSION=vX.Y.Z overrides image"
 	@echo "  quickstart-down  Tear down the Quickstart (datahub docker nuke)"
 	@echo "  quickstart-token Mint a DataHub PAT against the running Quickstart"
 	@echo "  testacc-quickstart Boot Quickstart, run live acc tests, nuke on exit; KEEP_QUICKSTART=1 skips nuke"
@@ -62,7 +63,7 @@ quickstart-up:
 		echo "Quickstart already healthy; reusing"; \
 	else \
 		echo "Starting Quickstart (first pull can take 5-10 min)"; \
-		datahub docker quickstart; \
+		datahub docker quickstart --version $(QUICKSTART_VERSION); \
 	fi
 	@echo "Polling GMS until ready..."
 	@end=$$(( $$(date +%s) + $(QUICKSTART_HEALTH_TIMEOUT) )); \
