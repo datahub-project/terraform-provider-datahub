@@ -83,13 +83,13 @@ type datahubProviderModel struct {
 }
 
 // Metadata returns the provider type name.
-func (p *datahubProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+func (p *datahubProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "datahub"
 	resp.Version = p.version
 }
 
 // Schema defines the provider-level schema for configuration data.
-func (p *datahubProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
+func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Terraform provider for managing DataHub ingestion sources via the DataHub APIs.\n\n" +
 			"**Security note:** DataHub ingestion recipes and source configurations are stored in DataHub. If you embed credentials (tokens, passwords, private keys) directly into a recipe/config, they can end up stored in DataHub metadata and exposed to users/services with access to view ingestion source configs.\n\n" +
