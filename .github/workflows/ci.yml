@@ -69,7 +69,9 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
+          slug: datahub-project/terraform-provider-datahub
           fail_ci_if_error: false
 
   check:
