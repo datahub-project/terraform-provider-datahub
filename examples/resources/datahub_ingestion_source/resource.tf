@@ -1,24 +1,19 @@
 resource "datahub_ingestion_source" "example" {
-  # source_id is optional; if omitted, it is derived from source_name
-  # source_id   = "my-unity-source"
-  source_name   = "My Unity Catalog Source"
-  cron_interval = "0 10 * * *"
-  timezone      = "UTC"
-  cli_version   = "1.3.1.5"
-  async         = false
-
-  # source_type is optional; derived from recipe.source.type if omitted
-  # source_type = "unity-catalog"
+  source_name        = "CSV Enricher Demo"
+  remote_executor_id = "default"
+  cron_interval      = "0 6 * * *"
+  timezone           = "UTC"
 
   recipe = jsonencode({
     source = {
-      type = "unity-catalog"
+      type = "csv-enricher"
       config = {
-        workspace_url = var.databricks_workspace_url
-        token         = var.databricks_pat
-        env           = "PROD"
+        filename        = "https://raw.githubusercontent.com/datahub-project/datahub/e32ee8df08404fa29f8b1630c9a7a6cf1ba270a2/metadata-ingestion/tests/integration/csv-enricher/csv_enricher_test_data.csv"
+        array_delimiter = "|"
+        delimiter       = ","
+        write_semantics = "PATCH"
       }
     }
-    pipeline_name = "unity-catalog:my-unity-source"
+    pipeline_name = "csv-enricher:demo"
   })
 }
