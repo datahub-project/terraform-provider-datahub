@@ -183,7 +183,16 @@ func (r *secretResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	secret, err := r.client.GetSecretByName(ctx, state.Name.ValueString())
+	// Prefer URN-based lookup (reads from primary datastore; no search-index
+	// lag). Fall back to name-based lookup for states that pre-date this
+	// field being populated (e.g. manual state edits or old imports).
+	var secret *datahub.Secret
+	var err error
+	if urn := state.URN.ValueString(); urn != "" {
+		secret, err = r.client.GetSecretByURN(ctx, urn)
+	} else {
+		secret, err = r.client.GetSecretByName(ctx, state.Name.ValueString())
+	}
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
@@ -300,7 +309,9 @@ func (r *secretResource) ImportState(ctx context.Context, req resource.ImportSta
 		urn = urnPrefix + name
 	}
 
-	secret, err := r.client.GetSecretByName(ctx, name)
+	// Use URN-based lookup (primary datastore, no search-index lag) since the
+	// URN is always constructable from either import input form.
+	secret, err := r.client.GetSecretByURN(ctx, urn)
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
@@ -308,15 +319,19 @@ func (r *secretResource) ImportState(ctx context.Context, req resource.ImportSta
 	if secret == nil {
 		resp.Diagnostics.AddError(
 			"Secret not found",
-			fmt.Sprintf("No secret named %q was found in DataHub. Verify the name or URN and retry.", name),
+			fmt.Sprintf("No secret with URN %q was found in DataHub. Verify the name or URN and retry.", urn),
 		)
 		return
+	}
+	// Ensure the name we set matches what the server returned (not just what was derived from the URN).
+	if secret.Name != "" {
+		name = secret.Name
 	}
 
 	state := secretResourceModel{
 		ID:          types.StringValue(urn),
 		URN:         types.StringValue(urn),
-		Name:        types.StringValue(secret.Name),
+		Name:        types.StringValue(name),
 		Description: types.StringNull(),
 	}
 	if secret.Description != "" {

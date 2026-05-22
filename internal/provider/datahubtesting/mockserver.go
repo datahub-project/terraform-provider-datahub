@@ -77,6 +77,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -203,6 +204,40 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
 			"listSecrets": map[string]any{"secrets": results},
+		},
+	})
+}
+
+// handleSecretItem serves GET /openapi/v3/entity/datahubsecret/{urn}.
+func (s *mockServer) handleSecretItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/datahubsecret/")
+	name := strings.TrimPrefix(urn, "urn:li:dataHubSecret:")
+
+	s.mu.Lock()
+	secret, ok := s.secrets[name]
+	s.mu.Unlock()
+
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"urn": secret.URN,
+		"dataHubSecretKey": map[string]any{
+			"value": map[string]any{"id": secret.Name},
+		},
+		"dataHubSecretValue": map[string]any{
+			"value": map[string]any{
+				"name":        secret.Name,
+				"description": secret.Description,
+			},
 		},
 	})
 }

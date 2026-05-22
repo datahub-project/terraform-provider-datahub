@@ -48,6 +48,9 @@ dev.tfrc
 # Python venv (managed by mise; populated by make dev-deps)
 .venv/
 
+# Quickstart failure logs captured by the live-acceptance CI job
+quickstart-logs/
+
 # DataHub CLI config (provider.go reads ~/.datahubenv at runtime; this
 # guards against an accidental local copy being committed)
 .datahubenv

@@ -239,6 +239,66 @@ func TestGetSecretByName(t *testing.T) {
 	})
 }
 
+func TestGetSecretByURN(t *testing.T) {
+	t.Run("found_returns_secret", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"urn": "urn:li:dataHubSecret:my-secret",
+				"dataHubSecretKey": map[string]any{
+					"value": map[string]any{"id": "my-secret"},
+				},
+				"dataHubSecretValue": map[string]any{
+					"value": map[string]any{
+						"name":        "my-secret",
+						"description": "a desc",
+					},
+				},
+			})
+		}))
+		defer server.Close()
+
+		c := newTestClient(t, server)
+		secret, err := c.GetSecretByURN(t.Context(), "urn:li:dataHubSecret:my-secret")
+		if err != nil {
+			t.Fatalf("GetSecretByURN() error = %v", err)
+		}
+		if secret == nil {
+			t.Fatal("secret is nil, want non-nil")
+		}
+		if secret.Name != "my-secret" {
+			t.Errorf("Name = %q, want my-secret", secret.Name)
+		}
+		if secret.Description != "a desc" {
+			t.Errorf("Description = %q, want 'a desc'", secret.Description)
+		}
+	})
+
+	t.Run("not_found_returns_nil", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.NotFound(w, nil)
+		}))
+		defer server.Close()
+
+		c := newTestClient(t, server)
+		secret, err := c.GetSecretByURN(t.Context(), "urn:li:dataHubSecret:missing")
+		if err != nil {
+			t.Fatalf("unexpected error = %v", err)
+		}
+		if secret != nil {
+			t.Errorf("expected nil for missing secret, got %+v", secret)
+		}
+	})
+
+	t.Run("empty_urn_returns_error", func(t *testing.T) {
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
+		_, err := c.GetSecretByURN(t.Context(), "")
+		if err == nil {
+			t.Fatal("expected error for empty URN, got nil")
+		}
+	})
+}
+
 func TestUpdateSecret(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		var gotBody []byte

@@ -7,6 +7,9 @@
 // value as plaintext. The GraphQL resolvers (CreateSecretResolver,
 // UpdateSecretResolver) run server-side AES-GCM-256 encryption before
 // persisting the value.
+//
+// Reads via the OpenAPI v3 path are safe: the secret value is never returned
+// in plaintext by any GET response. Only name and description are present.
 
 package datahub
 
@@ -15,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -85,6 +89,32 @@ type listSecretsResponse struct {
 	Errors []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
+}
+
+// secretEntity is the OpenAPI v3 response shape for GET /openapi/v3/entity/datahubsecret/{urn}.
+// The encrypted secret value field inside dataHubSecretValue is intentionally ignored.
+type secretEntity struct {
+	URN                string             `json:"urn"`
+	DataHubSecretKey   *secretKeyAspect   `json:"dataHubSecretKey,omitempty"`
+	DataHubSecretValue *secretValueAspect `json:"dataHubSecretValue,omitempty"`
+}
+
+type secretKeyAspect struct {
+	Value secretKey `json:"value"`
+}
+
+type secretKey struct {
+	ID string `json:"id"`
+}
+
+type secretValueAspect struct {
+	Value secretValueData `json:"value"`
+}
+
+type secretValueData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// encrypted Value field is present in the response but intentionally ignored
 }
 
 // CreateSecret creates a DataHub secret via the GraphQL API and returns the
@@ -158,6 +188,64 @@ mutation createSecret($input: CreateSecretInput!) {
 		urn = fmt.Sprintf("urn:li:dataHubSecret:%s", in.Name)
 	}
 	return urn, nil
+}
+
+// GetSecretByURN fetches a DataHub secret directly by URN via the OpenAPI v3
+// entity endpoint, which reads from the primary datastore (MySQL) rather than
+// the search index. Use this in Read to avoid the eventual-consistency lag that
+// affects listSecrets (which goes through OpenSearch).
+// Returns nil (no error) when the URN does not exist (HTTP 404).
+func (c *Client) GetSecretByURN(ctx context.Context, urn string) (*Secret, error) {
+	if c == nil {
+		return nil, errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	if urn == "" {
+		return nil, errors.New("URN is required")
+	}
+
+	path := fmt.Sprintf("/openapi/v3/entity/datahubsecret/%s", urn)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_SECRETS privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("unexpected HTTP %d from DataHub secrets API: %s", res.StatusCode, respBody)
+	}
+
+	var entity secretEntity
+	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
+		return nil, fmt.Errorf("parsing secret entity response: %w", err)
+	}
+
+	if entity.DataHubSecretValue == nil {
+		return nil, nil
+	}
+
+	name := entity.DataHubSecretValue.Value.Name
+	if name == "" && entity.DataHubSecretKey != nil {
+		name = entity.DataHubSecretKey.Value.ID
+	}
+
+	return &Secret{
+		URN:         entity.URN,
+		Name:        name,
+		Description: entity.DataHubSecretValue.Value.Description,
+	}, nil
 }
 
 // GetSecretByName looks up a DataHub secret by exact name using listSecrets.

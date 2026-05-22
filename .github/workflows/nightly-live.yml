@@ -1,0 +1,44 @@
+name: Nightly Live
+
+# Triggers:
+#   - Daily at 14:00 UTC (off-peak for hosted runners).
+#   - PRs targeting main when the run-live-ci label is present; re-triggers on
+#     label add, new commits, and re-open so the result stays current.
+#
+# Uses the live-acceptance reusable workflow (same logic as the release gate).
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  pull_request:
+    types: [labeled, synchronize, reopened]
+    branches: [main]
+
+permissions: read-all
+
+concurrency:
+  group: nightly-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Decide whether to run
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.decide.outputs.should_run }}
+    steps:
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && \
+               [ "${{ contains(github.event.pull_request.labels.*.name, 'run-live-ci') }}" = "true" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  live-acceptance:
+    name: Live Acceptance
+    needs: guard
+    if: needs.guard.outputs.should_run == 'true'
+    uses: ./.github/workflows/live-acceptance.yml
