@@ -58,6 +58,101 @@ Sets `TF_ACC=1` and runs the Plugin Framework acceptance tests in `internal/prov
 
 The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automatically skipped if an older CLI is found.
 
+### Live tests: three-target model
+
+The acceptance tests support three backends, selected at runtime via `DATAHUB_TEST_TARGET`:
+
+| Value | Makefile target | Notes |
+|---|---|---|
+| unset / `mock` | `make testacc` | Default. In-memory mock server; no DataHub needed. CI gate. |
+| `local` | `make testacc-local` | Real DataHub started via `datahub docker quickstart`. Throw-away. |
+| `cloud` | `make testacc-cloud` | DataHub cloud tenant built for smoke-testing. Requires `DATAHUB_TEST_ALLOW_CLOUD=1`. |
+
+For live targets the test uses a randomized resource name (`tfprovider-secret-<random>` etc.) so repeated runs and concurrent developers do not collide.
+
+### Live tests against a local DataHub Quickstart
+
+For higher-fidelity coverage run the same scenarios against a real DataHub instance started locally via the `datahub` CLI's Quickstart.
+
+**Prerequisites**
+
+```bash
+pip install acryl-datahub        # or 'uv pip install acryl-datahub'
+datahub version                  # confirm CLI is on PATH
+```
+
+**Start the stack** (takes 5-10 minutes the first time):
+
+```bash
+datahub docker quickstart
+```
+
+Wait until `http://localhost:9002` loads in a browser.
+
+**Get a personal access token**
+
+1. Open `http://localhost:9002` and log in with `datahub` / `datahub`.
+2. Settings -> Access Tokens -> Generate new token.
+3. Copy the value.
+
+If you are running an older Quickstart with metadata service authentication disabled, any non-empty string works -- the provider client requires a non-empty token, but DataHub ignores it.
+
+**Export the env vars and run**
+
+```bash
+export DATAHUB_GMS_URL=http://localhost:8080
+export DATAHUB_GMS_TOKEN=<paste your PAT>
+make testacc-local
+```
+
+**Verify in the UI**
+
+- Ingestion sources: `http://localhost:9002/ingestion`
+- Secrets: Settings -> Secrets
+
+Resources are destroyed at the end of each test step's lifecycle, so a clean run leaves no residue.
+
+**Tear down**
+
+```bash
+datahub docker nuke
+```
+
+**Caveats**
+
+- If a previous `datahub init` left a stale `~/.datahubenv`, the provider falls back to it when the env vars are empty. Either keep the env vars exported per session or remove `~/.datahubenv`.
+- A test that crashes between Create and Destroy can leak resources. Re-running is safe (names are randomized), but stale entities accumulate in DataHub until `datahub docker nuke`.
+- Live tests are not run in CI. The mock acceptance tests remain the CI gate.
+
+### Live tests against a DataHub cloud tenant
+
+`make testacc-cloud` runs the same `TestAcc_*` functions against a real DataHub cloud instance. The `DATAHUB_TEST_ALLOW_CLOUD=1` guard is required to prevent accidental use of a production tenant.
+
+```bash
+export DATAHUB_GMS_URL=https://your-tenant.acryl.io/api/gms
+export DATAHUB_GMS_TOKEN=<cloud PAT>
+export DATAHUB_TEST_ALLOW_CLOUD=1
+make testacc-cloud
+```
+
+Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks. Cloud sweeper support is planned before v0.1.
+
+### Inspect-then-destroy workflow
+
+`resource.Test` always destroys resources at the end of the last test step. To deploy a resource, inspect it in the UI, and then manually clean it up, use the example directories directly:
+
+```bash
+cd examples/resources/datahub_secret
+export DATAHUB_GMS_URL=http://localhost:8080
+export DATAHUB_GMS_TOKEN=<PAT>
+terraform init
+terraform apply              # creates the resource; leaves it in place
+# inspect in DataHub UI at http://localhost:9002/settings/secrets
+terraform destroy            # tear it down when ready
+```
+
+This works against the local Quickstart or any cloud tenant without any changes to the provider.
+
 ## Coverage reports
 
 The `make test` / `make testacc` targets print per-package coverage using Go's default mode, which does not track cross-package calls. Use the dedicated coverage targets to get a merged project-wide figure.

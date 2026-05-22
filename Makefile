@@ -14,7 +14,7 @@ COVER_PKG ?= ./internal/...
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate test testacc coverage coverage-html dev-override
+.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-cloud coverage coverage-html dev-override
 
 all: install
 
@@ -28,7 +28,9 @@ help:
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
 	@echo "  test          Run unit tests"
-	@echo "  testacc       Run acceptance tests (TF_ACC=1)"
+	@echo "  testacc       Run acceptance tests against the in-memory mock (TF_ACC=1)"
+	@echo "  testacc-local Run acceptance tests against a local DataHub Quickstart (env-gated)"
+	@echo "  testacc-cloud Run acceptance tests against a DataHub cloud tenant (env-gated)"
 	@echo "  coverage      Run all tests with merged coverage; prints total"
 	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
 
@@ -68,6 +70,24 @@ test:
 
 testacc:
 	TF_ACC=1 $(GO) test -v -cover -timeout 120m ./...
+
+testacc-local:
+	@if [ -z "$$DATAHUB_GMS_URL" ] || [ -z "$$DATAHUB_GMS_TOKEN" ]; then \
+		echo "DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN must be set; see BUILDING.md."; \
+		exit 1; \
+	fi
+	TF_ACC=1 DATAHUB_TEST_TARGET=local $(GO) test -v -timeout 30m ./...
+
+testacc-cloud:
+	@if [ -z "$$DATAHUB_GMS_URL" ] || [ -z "$$DATAHUB_GMS_TOKEN" ]; then \
+		echo "DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN must be set; see BUILDING.md."; \
+		exit 1; \
+	fi
+	@if [ "$$DATAHUB_TEST_ALLOW_CLOUD" != "1" ]; then \
+		echo "DATAHUB_TEST_ALLOW_CLOUD=1 must be set to run against a cloud instance; see BUILDING.md."; \
+		exit 1; \
+	fi
+	TF_ACC=1 DATAHUB_TEST_TARGET=cloud $(GO) test -v -timeout 30m ./...
 
 coverage:
 	TF_ACC=1 $(GO) test -coverprofile=$(COVERAGE_FILE) -coverpkg=$(COVER_PKG) -timeout 120m ./...

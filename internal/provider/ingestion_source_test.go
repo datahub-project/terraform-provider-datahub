@@ -11,12 +11,11 @@ import (
 )
 
 func TestAcc_IngestionSource_Lifecycle(t *testing.T) {
-	server := datahubtesting.NewServer(t)
-	t.Setenv("DATAHUB_GMS_URL", server.URL)
-	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+	tg := datahubtesting.SetupTarget(t)
+	name := tg.Name("tfprovider-source")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps:                    datahubtesting.IngestionSourceLifecycleSteps(),
+		Steps:                    datahubtesting.IngestionSourceLifecycleSteps(name),
 	})
 }
