@@ -172,7 +172,7 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 
 	respBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("unexpected status %s: %s", res.Status, respBody)
@@ -198,7 +198,7 @@ func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([
 
 	respBody, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading response body: %w", err)
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("unexpected status %s: %s", res.Status, respBody)

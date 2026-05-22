@@ -6,6 +6,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func readDatahubEnvConfig() (datahubEnvConfig, bool, error) {
 
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("determining home directory: %w", err)
 	}
 
 	path := filepath.Join(home, ".datahubenv")
@@ -41,16 +42,16 @@ func readDatahubEnvConfig() (datahubEnvConfig, bool, error) {
 		if os.IsNotExist(err) {
 			return cfg, false, nil
 		}
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("checking %s: %w", path, err)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("reading %s: %w", path, err)
 	}
 
 	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return cfg, false, err
+		return cfg, false, fmt.Errorf("parsing %s: %w", path, err)
 	}
 
 	return cfg, true, nil

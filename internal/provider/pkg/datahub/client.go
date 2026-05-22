@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -113,7 +114,7 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body any) 
 		default:
 			b, err := json.Marshal(v)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("marshaling request body: %w", err)
 			}
 			reader = bytes.NewReader(b)
 			contentType = "application/json"
@@ -122,7 +123,7 @@ func (c *Client) NewRequest(ctx context.Context, method, path string, body any) 
 
 	req, err := http.NewRequestWithContext(ctx, method, fullURL, reader)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("building HTTP request: %w", err)
 	}
 
 	req.Header.Set("Authorization", c.authHeader)
@@ -141,5 +142,9 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if req == nil {
 		return nil, errors.New("request is nil")
 	}
-	return c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing HTTP request: %w", err)
+	}
+	return resp, nil
 }
