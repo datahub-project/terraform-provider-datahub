@@ -1,11 +1,11 @@
 output "ingestion_source_id" {
   description = "Short ID of the ingestion source."
-  value       = datahub_ingestion_source.csv_enricher_demo.source_id
+  value       = datahub_ingestion_source.csv_enricher.source_id
 }
 
 output "source_urn" {
   description = "Full DataHub URN -- use in API calls to trigger or inspect runs."
-  value       = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher_demo.source_id}"
+  value       = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher.source_id}"
 }
 
 output "next_steps" {
@@ -14,8 +14,8 @@ output "next_steps" {
 
   Ingestion source created:
 
-    Source ID:  ${datahub_ingestion_source.csv_enricher_demo.source_id}
-    Source URN: urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher_demo.source_id}
+    Source ID:  ${datahub_ingestion_source.csv_enricher.source_id}
+    Source URN: urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher.source_id}
     DataHub UI: $DATAHUB_GMS_URL/ingestion
 
   To ingest metadata from the test CSV, trigger a run and inspect the result.
@@ -25,7 +25,7 @@ output "next_steps" {
   EXEC_URN=$(curl -sS -X POST "$DATAHUB_GMS_URL/api/graphql" \
     -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
     -H "Content-Type: application/json" \
-    -d '${jsonencode({ query = "mutation Trigger($urn: String!) { createIngestionExecutionRequest(input: { ingestionSourceUrn: $urn }) }", variables = { urn = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher_demo.source_id}" } })}' \
+    -d '${jsonencode({ query = "mutation Trigger($urn: String!) { createIngestionExecutionRequest(input: { ingestionSourceUrn: $urn }) }", variables = { urn = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher.source_id}" } })}' \
     | jq -r '.data.createIngestionExecutionRequest')
   echo "Execution request: $EXEC_URN"
 

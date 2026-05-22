@@ -12,7 +12,7 @@ description: |-
   Because value is write-only, Terraform cannot detect drift in the value on its own. To rotate a secret, update the value in your config and increment value_wo_version (e.g. from 1 to 2). Terraform will plan a replacement -- deleting and recreating the secret with the new value. The URN (and therefore all recipe references like ${MY_SECRET}) remain unchanged after rotation because the name does not change.
   
   resource "datahub_secret" "bq_creds" {
-    name             = "bq-service-account-json"
+    name             = "tf-bq-service-account-json"
     description      = "Service account for BigQuery ingestion"
     value            = file("${path.module}/bq-key.json")
     value_wo_version = 1  # bump to rotate
@@ -40,7 +40,7 @@ Because `value` is write-only, Terraform cannot detect drift in the value on its
 
 ```terraform
 resource "datahub_secret" "bq_creds" {
-  name             = "bq-service-account-json"
+  name             = "tf-bq-service-account-json"
   description      = "Service account for BigQuery ingestion"
   value            = file("${path.module}/bq-key.json")
   value_wo_version = 1  # bump to rotate
@@ -55,7 +55,7 @@ After `terraform import`, the `value` attribute has no recorded state (it was ne
 
 ```terraform
 resource "datahub_secret" "bq_creds" {
-  name             = "bq-service-account-json"
+  name             = "tf-bq-service-account-json"
   description      = "Service account for BigQuery ingestion"
   value            = file("${path.module}/bq-key.json")
   value_wo_version = 1 # bump to rotate
@@ -90,8 +90,8 @@ The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/c
 
 ```shell
 # Import by full URN
-terraform import datahub_secret.bq_creds urn:li:dataHubSecret:bq-service-account-json
+terraform import datahub_secret.bq_creds urn:li:dataHubSecret:tf-bq-service-account-json
 
 # Or equivalently, by bare name
-terraform import datahub_secret.bq_creds bq-service-account-json
+terraform import datahub_secret.bq_creds tf-bq-service-account-json
 ```

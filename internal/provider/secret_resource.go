@@ -83,7 +83,7 @@ func (r *secretResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"remain unchanged after rotation because the name does not change.\n\n" +
 			"```terraform\n" +
 			"resource \"datahub_secret\" \"bq_creds\" {\n" +
-			"  name             = \"bq-service-account-json\"\n" +
+			"  name             = \"tf-bq-service-account-json\"\n" +
 			"  description      = \"Service account for BigQuery ingestion\"\n" +
 			"  value            = file(\"${path.module}/bq-key.json\")\n" +
 			"  value_wo_version = 1  # bump to rotate\n" +

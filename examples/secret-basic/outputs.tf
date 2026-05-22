@@ -1,11 +1,11 @@
 output "secret_urn" {
-  description = "Full DataHub URN of the secret. Use this as $${demo-api-token} in other recipes."
+  description = "Full DataHub URN of the secret. Use this as $${tf-demo-api-token} in other recipes."
   value       = datahub_secret.demo_token.urn
 }
 
 output "ingestion_source_id" {
   description = "Short ID of the ingestion source."
-  value       = datahub_ingestion_source.demo.source_id
+  value       = datahub_ingestion_source.example.source_id
 }
 
 output "next_steps" {
@@ -15,7 +15,7 @@ output "next_steps" {
   Secret and ingestion source created.
 
     Secret URN:  ${datahub_secret.demo_token.urn}
-    Source ID:   ${datahub_ingestion_source.demo.source_id}
+    Source ID:   ${datahub_ingestion_source.example.source_id}
     DataHub UI:  $DATAHUB_GMS_URL/settings/secrets  (view secret)
                  $DATAHUB_GMS_URL/ingestion         (view source)
 
