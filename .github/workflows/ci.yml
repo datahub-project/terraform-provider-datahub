@@ -44,14 +44,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          terraform_version: latest
-          terraform_wrapper: false
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
       - run: make generate
       - name: Check for uncommitted changes
         run: |
@@ -83,12 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: |
-          set -euo pipefail
-          results=( ${{ join(needs.*.result, ' ') }} )
-          for result in "${results[@]}"; do
-            if [[ "$result" == "failure" ]] || [[ "$result" == "cancelled" ]]; then
-              echo "::error::CI failed"
-              exit 1
-            fi
-          done
+          echo "::error::CI failed"
+          exit 1
