@@ -1,5 +1,5 @@
 output "secret_urn" {
-  description = "Full DataHub URN of the secret. Use this as ${demo-api-token} in other recipes."
+  description = "Full DataHub URN of the secret. Use this as $${demo-api-token} in other recipes."
   value       = datahub_secret.demo_token.urn
 }
 

@@ -38,7 +38,7 @@ resource "datahub_ingestion_source" "demo" {
       config = {
         # Reference the secret by its name inside ${...}.
         # DataHub substitutes the decrypted value when executing the run.
-        api_token = "${demo-api-token}"
+        api_token = "$${demo-api-token}"
       }
     }
     pipeline_name = "demo"
