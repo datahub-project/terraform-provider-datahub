@@ -1,5 +1,7 @@
 # Terraform Provider DataHub
 
+[![CI](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml)
+
 Terraform provider to manage DataHub ingestion sources.
 
 This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI endpoints.
