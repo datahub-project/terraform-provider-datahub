@@ -72,7 +72,7 @@ type DatasourceIngestionInput struct {
 	Async      *bool // defaults to false if nil
 }
 
-// Datahub endpoint used: POST /openapi/v3/entity/datahubingestionsource
+// Datahub endpoint used: POST /openapi/v3/entity/datahubingestionsource.
 func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngestionInput) ([]byte, error) {
 	if c == nil {
 		return nil, errors.New("client is nil")
@@ -181,7 +181,7 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 	return respBody, nil
 }
 
-// Datahub endpoint used: GET /openapi/v3/entity/datahubingestionsource/{urn}
+// Datahub endpoint used: GET /openapi/v3/entity/datahubingestionsource/{urn}.
 func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([]byte, error) {
 	urn := fmt.Sprintf("urn:li:dataHubIngestionSource:%s", sourceID)
 	path := fmt.Sprintf("/openapi/v3/entity/datahubingestionsource/%s", urn)
@@ -207,7 +207,7 @@ func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([
 	return respBody, nil
 }
 
-// Datahub endpoint used: DELETE /openapi/v3/entity/datahubingestionsource/{urn}
+// Datahub endpoint used: DELETE /openapi/v3/entity/datahubingestionsource/{urn}.
 func (c *Client) DeleteIngestionSourceByID(ctx context.Context, sourceID string) error {
 	urn := fmt.Sprintf("urn:li:dataHubIngestionSource:%s", sourceID)
 	path := fmt.Sprintf("/openapi/v3/entity/datahubingestionsource/%s", urn)
