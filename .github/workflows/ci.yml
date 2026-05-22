@@ -60,11 +60,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
-      - run: TF_ACC=1 go test -v -cover -timeout=5m -parallel=10 ./...
+      - run: TF_ACC=1 go test -coverprofile=coverage.out -coverpkg=./internal/... -timeout=5m -parallel=10 ./...
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
 
   check:
     name: Check
