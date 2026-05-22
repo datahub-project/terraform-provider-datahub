@@ -241,7 +241,7 @@ func TestGetSecretByName(t *testing.T) {
 
 func TestGetSecretByURN(t *testing.T) {
 	t.Run("found_returns_secret", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"urn": "urn:li:dataHubSecret:my-secret",

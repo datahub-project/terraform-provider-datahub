@@ -94,9 +94,9 @@ type listSecretsResponse struct {
 // secretEntity is the OpenAPI v3 response shape for GET /openapi/v3/entity/datahubsecret/{urn}.
 // The encrypted secret value field inside dataHubSecretValue is intentionally ignored.
 type secretEntity struct {
-	URN                string              `json:"urn"`
-	DataHubSecretKey   *secretKeyAspect    `json:"dataHubSecretKey,omitempty"`
-	DataHubSecretValue *secretValueAspect  `json:"dataHubSecretValue,omitempty"`
+	URN                string             `json:"urn"`
+	DataHubSecretKey   *secretKeyAspect   `json:"dataHubSecretKey,omitempty"`
+	DataHubSecretValue *secretValueAspect `json:"dataHubSecretValue,omitempty"`
 }
 
 type secretKeyAspect struct {
