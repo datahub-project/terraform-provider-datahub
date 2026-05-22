@@ -12,9 +12,8 @@ import (
 )
 
 func TestAcc_Secret_Lifecycle(t *testing.T) {
-	server := datahubtesting.NewServer(t)
-	t.Setenv("DATAHUB_GMS_URL", server.URL)
-	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+	tg := datahubtesting.SetupTarget(t)
+	name := tg.Name("tfprovider-secret")
 
 	resource.Test(t, resource.TestCase{
 		// WriteOnly attribute requires Terraform CLI 1.11+.
@@ -22,6 +21,6 @@ func TestAcc_Secret_Lifecycle(t *testing.T) {
 			tfversion.SkipBelow(tfversion.Version1_11_0),
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps:                    datahubtesting.SecretLifecycleSteps(),
+		Steps:                    datahubtesting.SecretLifecycleSteps(name),
 	})
 }

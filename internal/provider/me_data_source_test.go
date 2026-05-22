@@ -11,12 +11,22 @@ import (
 )
 
 func TestAcc_MeDataSource_Read(t *testing.T) {
-	server := datahubtesting.NewServer(t)
-	t.Setenv("DATAHUB_GMS_URL", server.URL)
-	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+	tg := datahubtesting.SetupTarget(t)
+
+	var steps []resource.TestStep
+	if tg.IsLive() {
+		steps = datahubtesting.MeDataSourceStepsAny()
+	} else {
+		steps = datahubtesting.MeDataSourceStepsExact(
+			"urn:li:corpuser:testuser",
+			"testuser",
+			"Test User",
+			"testuser@example.com",
+		)
+	}
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps:                    datahubtesting.MeDataSourceSteps(),
+		Steps:                    steps,
 	})
 }
