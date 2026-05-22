@@ -9,7 +9,17 @@
 | `golangci-lint` | no | Only needed for `make lint`. Install via `mise` or see https://golangci-lint.run. |
 | `tfplugindocs` | no | Only needed for `make generate`. Managed by the `tools/` sub-module. |
 
-If you use [mise](https://mise.jdx.dev), run `mise install` in the repo root to get the pinned Go version.
+If you use [mise](https://mise.jdx.dev), run `mise install` in the repo root to get all pinned tools (Go, Terraform, golangci-lint, Python, uv).
+
+## First-time setup
+
+```bash
+mise install       # install all pinned tools and create the .venv
+make dev-override  # build the binary, generate dev.tfrc, install the datahub CLI
+cd .               # re-trigger mise to activate TF_CLI_CONFIG_FILE and .venv
+```
+
+After that, `terraform` uses your local binary and `datahub` is available from the project venv without any global install.
 
 ## Build the provider
 
@@ -76,9 +86,10 @@ For higher-fidelity coverage run the same scenarios against a real DataHub insta
 
 **Prerequisites**
 
+Run `make dev-override` (see "First-time setup") -- this installs the `datahub` CLI into the project venv. Confirm with:
+
 ```bash
-pip install acryl-datahub        # or 'uv pip install acryl-datahub'
-datahub version                  # confirm CLI is on PATH
+datahub version
 ```
 
 **Start the stack** (takes 5-10 minutes the first time):

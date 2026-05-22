@@ -14,7 +14,7 @@ COVER_PKG ?= ./internal/...
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-cloud coverage coverage-html dev-override
+.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-cloud coverage coverage-html dev-override dev-deps
 
 all: install
 
@@ -33,6 +33,7 @@ help:
 	@echo "  testacc-cloud Run acceptance tests against a DataHub cloud tenant (env-gated)"
 	@echo "  coverage      Run all tests with merged coverage; prints total"
 	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
+	@echo "  dev-deps      Install Python dev dependencies (datahub CLI) into .venv"
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -40,7 +41,11 @@ build:
 
 install: build
 
-dev-override:
+dev-deps:
+	uv venv --allow-existing .venv
+	UV_INDEX= uv pip install -r requirements-dev.txt
+
+dev-override: dev-deps
 	@{ \
 		echo 'provider_installation {'; \
 		echo '  dev_overrides {'; \

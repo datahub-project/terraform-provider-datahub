@@ -45,6 +45,9 @@ dev.tfrc
 .mise.env
 .terraform.lock.hcl
 
+# Python venv (managed by mise; populated by make dev-deps)
+.venv/
+
 # DataHub CLI config (provider.go reads ~/.datahubenv at runtime; this
 # guards against an accidental local copy being committed)
 .datahubenv
