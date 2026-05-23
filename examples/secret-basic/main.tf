@@ -18,31 +18,34 @@ provider "datahub" {
 #
 # Pass the secret value via the environment:
 #   TF_VAR_secret_value="..." terraform apply
-resource "datahub_secret" "demo_token" {
-  name             = "demo-api-token"
-  description      = "API token for the demo ingestion source"
+resource "datahub_secret" "example_secret" {
+  name             = "TF_EXAMPLE_SECRET"
+  description      = "Example secret value for the ingestion source recipe"
   value            = var.secret_value
   value_wo_version = 1 # increment this integer to rotate the secret
 }
 
-# An ingestion source that references the secret via ${demo-api-token}.
+# An ingestion source that references the secret via ${TF_EXAMPLE_SECRET}.
 # DataHub resolves the placeholder at run time, before the ingestion executor
 # runs the recipe, so the plaintext value never appears in DataHub's stored
 # recipe configuration.
-resource "datahub_ingestion_source" "demo" {
-  source_name = "Demo Source (uses secret)"
+resource "datahub_ingestion_source" "example" {
+  source_name = "TF Example Source (uses secret)"
 
   recipe = jsonencode({
     source = {
       type = "demo-data"
       config = {
-        # Reference the secret by its name inside ${...}.
-        # DataHub substitutes the decrypted value when executing the run.
-        api_token = "${demo-api-token}"
+        # DataHub secret references use the syntax ${SECRET_NAME}. In HCL you
+        # must write $${SECRET_NAME} (double $) so Terraform passes the literal
+        # string "${SECRET_NAME}" through to DataHub rather than trying to
+        # resolve it as an HCL variable. DataHub substitutes the decrypted
+        # secret value at run time.
+        api_token = "$${TF_EXAMPLE_SECRET}"
       }
     }
-    pipeline_name = "demo"
+    pipeline_name = "tf-example"
   })
 
-  depends_on = [datahub_secret.demo_token]
+  depends_on = [datahub_secret.example_secret]
 }

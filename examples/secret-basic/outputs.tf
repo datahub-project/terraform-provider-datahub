@@ -1,11 +1,11 @@
 output "secret_urn" {
-  description = "Full DataHub URN of the secret. Use this as ${demo-api-token} in other recipes."
-  value       = datahub_secret.demo_token.urn
+  description = "Full DataHub URN of the secret. Use this as $${TF_EXAMPLE_SECRET} in other recipes."
+  value       = datahub_secret.example_secret.urn
 }
 
 output "ingestion_source_id" {
   description = "Short ID of the ingestion source."
-  value       = datahub_ingestion_source.demo.source_id
+  value       = datahub_ingestion_source.example.source_id
 }
 
 output "next_steps" {
@@ -14,13 +14,13 @@ output "next_steps" {
 
   Secret and ingestion source created.
 
-    Secret URN:  ${datahub_secret.demo_token.urn}
-    Source ID:   ${datahub_ingestion_source.demo.source_id}
+    Secret URN:  ${datahub_secret.example_secret.urn}
+    Source ID:   ${datahub_ingestion_source.example.source_id}
     DataHub UI:  $DATAHUB_GMS_URL/settings/secrets  (view secret)
                  $DATAHUB_GMS_URL/ingestion         (view source)
 
   The secret value is encrypted in DataHub and not stored in terraform.tfstate.
-  Run `terraform state show datahub_secret.demo_token` to confirm that
+  Run `terraform state show datahub_secret.example_secret` to confirm that
   `value` is null in state.
 
   To rotate the secret:

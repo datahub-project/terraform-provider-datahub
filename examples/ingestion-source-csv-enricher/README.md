@@ -1,4 +1,4 @@
-# Ingestion Source CSV Enricher Demo
+# Ingestion Source CSV Enricher Example
 
 ## What this example does
 
@@ -32,11 +32,11 @@ Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 
 Outputs:
 
-ingestion_source_id = "terraform-csv-enricher-demo-<hash>"
+ingestion_source_id = "tf-csv-enricher-<hash>"
 next_steps          = <<EOT
   ...source URN, DataHub UI link, and copy-pasteable curl commands...
 EOT
-source_urn          = "urn:li:dataHubIngestionSource:terraform-csv-enricher-demo-<hash>"
+source_urn          = "urn:li:dataHubIngestionSource:tf-csv-enricher-<hash>"
 ```
 
 The `next_steps` output contains copy-pasteable curl commands to trigger an ingestion run and check the result, with the source URN already embedded.
@@ -49,7 +49,7 @@ Follow the steps printed in the `next_steps` output. In summary:
 2. Run the step-2 curl command to check the status and read the `report` field.
 3. The run succeeds. The `report` field summarises the ingested entities. Navigate to the DataHub UI search to find them.
 
-Alternatively, trigger and inspect the run from the DataHub UI: navigate to **Ingestion**, find **Terraform CSV Enricher Demo**, click **Execute**, then open the run log.
+Alternatively, trigger and inspect the run from the DataHub UI: navigate to **Ingestion**, find **TF CSV Enricher**, click **Execute**, then open the run log.
 
 ## Cleanup
 

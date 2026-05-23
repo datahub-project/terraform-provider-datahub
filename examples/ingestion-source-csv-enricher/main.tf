@@ -15,8 +15,8 @@ provider "datahub" {
 # See README.md. Creates a DataHub ingestion source using the csv-enricher
 # connector pointed at a stable test CSV in the DataHub OSS repo. Triggering
 # the source ingests real metadata artifacts that appear in DataHub search.
-resource "datahub_ingestion_source" "csv_enricher_demo" {
-  source_name = "Terraform CSV Enricher Demo"
+resource "datahub_ingestion_source" "csv_enricher" {
+  source_name = "TF CSV Enricher"
   # "default" is the standard executor ID for OSS DataHub and DataHub Cloud.
   # If your instance uses a named custom executor, change this value.
   # A future datahub_ingestion_executor data source will allow lookup by name.
@@ -31,7 +31,7 @@ resource "datahub_ingestion_source" "csv_enricher_demo" {
         write_semantics = "PATCH"
       }
     }
-    pipeline_name = "csv_enricher_demo"
+    pipeline_name = "tf-csv-enricher"
   })
 }
 
