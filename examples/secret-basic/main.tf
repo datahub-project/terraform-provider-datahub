@@ -19,13 +19,13 @@ provider "datahub" {
 # Pass the secret value via the environment:
 #   TF_VAR_secret_value="..." terraform apply
 resource "datahub_secret" "demo_token" {
-  name             = "tf-demo-api-token"
-  description      = "API token for the example ingestion source"
+  name             = "TF_EXAMPLE_SECRET"
+  description      = "Example secret value for the ingestion source recipe"
   value            = var.secret_value
   value_wo_version = 1 # increment this integer to rotate the secret
 }
 
-# An ingestion source that references the secret via ${tf-demo-api-token}.
+# An ingestion source that references the secret via ${TF_EXAMPLE_SECRET}.
 # DataHub resolves the placeholder at run time, before the ingestion executor
 # runs the recipe, so the plaintext value never appears in DataHub's stored
 # recipe configuration.
@@ -38,7 +38,7 @@ resource "datahub_ingestion_source" "example" {
       config = {
         # Reference the secret by its name inside ${...}.
         # DataHub substitutes the decrypted value when executing the run.
-        api_token = "$${tf-demo-api-token}"
+        api_token = "$${TF_EXAMPLE_SECRET}"
       }
     }
     pipeline_name = "tf-demo"
