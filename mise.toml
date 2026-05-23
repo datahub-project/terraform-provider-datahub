@@ -2,6 +2,7 @@
 go = "1.26.3"
 terraform = "1.15.4"
 golangci-lint = "2.12.2"
+jq = "1.8.1"
 python = "3.11.15"
 uv = "0.5.20"
 

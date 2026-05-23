@@ -9,7 +9,7 @@
 | `golangci-lint` | no | Only needed for `make lint`. Install via `mise` or see https://golangci-lint.run. |
 | `tfplugindocs` | no | Only needed for `make generate`. Managed by the `tools/` sub-module. |
 | Docker | no | Required for `make testacc-quickstart` only. |
-| `jq` | no | Required for `make testacc-local` and `make testacc-quickstart` (PAT minting). Install via `brew install jq` (macOS) or your system package manager (Linux). |
+| `jq` | no | Required for `make testacc-local` and `make testacc-quickstart` (PAT minting). Installed automatically by `mise install`. |
 
 If you use [mise](https://mise.jdx.dev), run `mise install` in the repo root to get all pinned tools (Go, Terraform, golangci-lint, Python, uv).
 
