@@ -36,8 +36,11 @@ resource "datahub_ingestion_source" "example" {
     source = {
       type = "demo-data"
       config = {
-        # Reference the secret by its name inside ${...}.
-        # DataHub substitutes the decrypted value when executing the run.
+        # DataHub secret references use the syntax ${SECRET_NAME}. In HCL you
+        # must write $${SECRET_NAME} (double $) so Terraform passes the literal
+        # string "${SECRET_NAME}" through to DataHub rather than trying to
+        # resolve it as an HCL variable. DataHub substitutes the decrypted
+        # secret value at run time.
         api_token = "$${TF_EXAMPLE_SECRET}"
       }
     }
