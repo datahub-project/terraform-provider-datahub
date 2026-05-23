@@ -5,7 +5,7 @@
 
 Terraform provider to manage DataHub ingestion sources.
 
-This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI endpoints.
+This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI v3 and GraphQL APIs.
 
 ## What it supports
 
