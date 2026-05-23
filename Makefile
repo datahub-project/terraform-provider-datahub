@@ -10,6 +10,7 @@ COVERAGE_FILE ?= coverage.out
 COVERAGE_HTML ?= coverage.html
 COVER_PKG ?= ./internal/...
 DATAHUB_GMS_URL ?= http://localhost:8080
+QUICKSTART_GMS_URL := http://localhost:8080
 TOKEN_ACTOR ?= urn:li:corpuser:datahub
 QUICKSTART_VERSION ?= v1.5.0.6
 QUICKSTART_HEALTH_TIMEOUT ?= 600
@@ -74,13 +75,13 @@ quickstart-up:
 		fi; \
 		sleep $(QUICKSTART_HEALTH_INTERVAL); \
 	done
-	@echo "Quickstart healthy at $(DATAHUB_GMS_URL)"
+	@echo "Quickstart healthy at $(QUICKSTART_GMS_URL)"
 
 quickstart-down:
 	datahub docker nuke
 
 quickstart-token:
-	@DATAHUB_GMS_URL=$(DATAHUB_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh
+	@DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh
 
 testacc-quickstart:
 	@if [ "$$KEEP_QUICKSTART" != "1" ]; then \
@@ -88,8 +89,8 @@ testacc-quickstart:
 	fi; \
 	set -e; \
 	$(MAKE) quickstart-up; \
-	TOKEN=$$(DATAHUB_GMS_URL=$(DATAHUB_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT"; exit 1; }; \
-	DATAHUB_GMS_URL=$(DATAHUB_GMS_URL) DATAHUB_GMS_TOKEN="$$TOKEN" $(MAKE) testacc-local
+	TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT"; exit 1; }; \
+	DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) DATAHUB_GMS_TOKEN="$$TOKEN" $(MAKE) testacc-local
 
 dev-override: dev-deps
 	@{ \
