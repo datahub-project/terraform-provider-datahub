@@ -1,8 +1,8 @@
 name: Live Acceptance
 
 # Reusable workflow called by release.yml (on every v* tag) and nightly-live.yml
-# (on schedule and run-live-ci labeled PRs). Boots a DataHub Quickstart, runs
-# the live acceptance tests, and always tears down on exit.
+# (on schedule, manual dispatch, and run-live-ci labeled PRs). Boots a DataHub
+# Quickstart, runs the live acceptance tests, and always tears down on exit.
 on:
   workflow_call:
 
@@ -17,11 +17,63 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Go module cache: caches ~/.cache/go/mod keyed on go.sum so `go test`
+      # does not re-download modules on every run.
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract the pinned Quickstart version from the Makefile for use as the
+      # Docker image cache key. Cache is invalidated automatically when the
+      # version bumps.
+      - name: Get Quickstart version
+        id: qs-version
+        run: |
+          version=$(sed -n 's/^QUICKSTART_VERSION ?= //p' Makefile)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Docker image cache: saves/restores the full set of images pulled by
+      # datahub docker quickstart. On a cache hit, docker load replaces the
+      # pull step and quickstart only needs to start containers (~1 min vs
+      # 5-10 min for a cold pull). Images survive docker nuke (nuke removes
+      # containers and volumes, not images), so the save step runs after the
+      # tests regardless of pass/fail.
+      - name: Restore Docker image cache
+        id: docker-cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-cache
+          key: docker-quickstart-${{ steps.qs-version.outputs.version }}
+
+      - name: Load cached Docker images
+        if: steps.docker-cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/docker-cache/images.tar
+
       - name: Install Python dev deps (datahub CLI)
         run: make dev-deps
+
       - name: Run Quickstart-backed acceptance tests
         run: make testacc-quickstart
+
+      # Save images after the tests so the next run can skip the pull.
+      # Runs on both pass and fail (but not cancellation) so a failed run
+      # still warms the cache for a retry. Skipped when the cache was already
+      # restored above.
+      - name: Save Docker images
+        if: steps.docker-cache.outputs.cache-hit != 'true' && !cancelled()
+        run: |
+          IMAGES=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -v '<none>' | tr '\n' ' ')
+          if [ -n "$IMAGES" ]; then
+            mkdir -p /tmp/docker-cache
+            docker save $IMAGES -o /tmp/docker-cache/images.tar
+          fi
+
       - name: Capture Quickstart logs on failure
         if: failure()
         run: |
