@@ -70,16 +70,16 @@ Sets `TF_ACC=1` and runs the Plugin Framework acceptance tests in `internal/prov
 
 The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automatically skipped if an older CLI is found.
 
-### Live tests: three-target model
+### Live tests: target overview
 
-The acceptance tests support three backends, selected at runtime via `DATAHUB_TEST_TARGET`:
+Each Makefile target enforces its own URL semantics — the target name is the source of truth for "what am I hitting":
 
-| Value | Makefile target | Notes |
+| Target | What it hits | URL source |
 |---|---|---|
-| unset / `mock` | `make testacc` | Default. In-memory mock server; no DataHub needed. CI gate. |
-| `local` | `make testacc-local` | Real DataHub started via `datahub docker quickstart`. Throw-away. |
-| `local` (automated) | `make testacc-quickstart` | Boots Quickstart, mints PAT, runs tests, nukes on exit. Release CI gate. |
-| `cloud` | `make testacc-cloud` | DataHub cloud tenant built for smoke-testing. Requires `DATAHUB_TEST_ALLOW_CLOUD=1`. |
+| `make testacc` | In-memory mock server | n/a — no network |
+| `make testacc-local` | Pre-existing local Quickstart at `http://localhost:8080` | Makefile hard-codes `localhost:8080`; shell env is ignored |
+| `make testacc-quickstart` | Fresh local Quickstart (boots + nukes) | Same as testacc-local |
+| `make testacc-remote` | Any remote DataHub (Cloud, self-hosted, staging) | `DATAHUB_GMS_URL` + `DATAHUB_GMS_TOKEN` from shell; loopback URLs refused |
 
 For live targets the test uses a randomized resource name (`tfprovider-secret-<random>` etc.) so repeated runs and concurrent developers do not collide.
 
@@ -93,9 +93,8 @@ make testacc-quickstart
 
 This target:
 1. Checks if a Quickstart is already healthy and reuses it; otherwise calls `datahub docker quickstart` (first pull takes 5-10 min).
-2. Mints a personal access token via the GMS GraphQL API.
-3. Runs `make testacc-local` with the URL and token set.
-4. Always calls `datahub docker nuke` on exit, whether tests pass or fail.
+2. Runs `make testacc-local`, which mints a fresh PAT against `http://localhost:8080` and runs tests.
+3. Always calls `datahub docker nuke` on exit, whether tests pass or fail.
 
 **Knobs**
 
@@ -103,7 +102,6 @@ This target:
 |---|---|---|
 | `FRESH=1` | off | Nuke any existing Quickstart before booting a fresh one. |
 | `KEEP_QUICKSTART=1` | off | Skip the automatic nuke on exit (for post-mortem inspection). |
-| `DATAHUB_GMS_URL` | `http://localhost:8080` | Override if Quickstart is bound to a different address. |
 
 ```bash
 # Always start fresh:
@@ -120,37 +118,24 @@ make quickstart-down
 - Ingestion sources: `http://localhost:9002/ingestion`
 - Secrets: Settings -> Secrets
 
-**Manual fallback**
-
-If you prefer to manage the Quickstart lifecycle yourself:
-
-```bash
-datahub docker quickstart
-# ... wait for http://localhost:9002 to load ...
-export DATAHUB_GMS_URL=http://localhost:8080
-export DATAHUB_GMS_TOKEN=<PAT from Settings -> Access Tokens, or any non-empty string>
-make testacc-local
-datahub docker nuke
-```
-
 **Caveats**
 
+- `testacc-local` and `testacc-quickstart` always hit `http://localhost:8080`. Any `DATAHUB_GMS_URL` or `DATAHUB_GMS_TOKEN` in your shell is ignored; the Makefile mints a fresh PAT for each run.
 - If a previous `datahub init` left a stale `~/.datahubenv`, the provider falls back to it when the env vars are empty. Either keep the env vars exported per session or remove `~/.datahubenv`.
 - A test that crashes between Create and Destroy can leak resources. Re-running is safe (names are randomized), but stale entities accumulate in DataHub until `datahub docker nuke`.
 - Live tests run in CI on release tag pushes (as a gate before GoReleaser), on a nightly schedule, and on PRs labeled `run-live-ci`.
 
-### Live tests against a DataHub cloud tenant
+### Live tests against a remote tenant
 
-`make testacc-cloud` runs the same `TestAcc_*` functions against a real DataHub cloud instance. The `DATAHUB_TEST_ALLOW_CLOUD=1` guard is required to prevent accidental use of a production tenant.
+`make testacc-remote` runs the same `TestAcc_*` functions against any non-loopback DataHub instance (DataHub Cloud, a self-hosted staging server, etc.). The target refuses loopback URLs at startup and echoes the target URL with a 3-second pause before tests begin.
 
 ```bash
 export DATAHUB_GMS_URL=https://your-tenant.acryl.io/api/gms
-export DATAHUB_GMS_TOKEN=<cloud PAT>
-export DATAHUB_TEST_ALLOW_CLOUD=1
-make testacc-cloud
+export DATAHUB_GMS_TOKEN=<PAT>
+make testacc-remote
 ```
 
-Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks. Cloud sweeper support is planned before v0.1.
+Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks.
 
 ### Inspect-then-destroy workflow
 

@@ -12,24 +12,21 @@ import (
 )
 
 // TargetKind identifies which DataHub backend an acceptance test is running
-// against. The active target is chosen at test setup time via the
-// DATAHUB_TEST_TARGET environment variable.
+// against. The active target is derived at setup time from whether
+// DATAHUB_GMS_URL is present in the process environment.
 type TargetKind int
 
 const (
 	// TargetMock points the provider at an in-memory mock server spun up
-	// per-test. This is the default and the only target used in CI.
+	// per-test. This is the default: SetupTarget selects it when
+	// DATAHUB_GMS_URL is absent from the environment. The only target used
+	// in CI on every PR push.
 	TargetMock TargetKind = iota
 
-	// TargetLocalLive points the provider at a real DataHub started locally
-	// via `datahub docker quickstart`. Throw-away environment, low stakes.
-	TargetLocalLive
-
-	// TargetCloudLive points the provider at a real DataHub cloud instance.
-	// Higher stakes: requires explicit DATAHUB_TEST_ALLOW_CLOUD=1
-	// acknowledgement. Intended only for tenants set up specifically for
-	// smoke-testing the provider.
-	TargetCloudLive
+	// TargetLive points the provider at a real DataHub instance (local
+	// Quickstart or remote tenant). SetupTarget selects it when
+	// DATAHUB_GMS_URL is present in the environment.
+	TargetLive
 )
 
 // Target is the active acceptance-test backend chosen at SetupTarget time.
@@ -41,8 +38,8 @@ type Target struct {
 	Kind TargetKind
 }
 
-// IsLive reports whether the target is a real DataHub instance (local or
-// cloud) rather than the in-memory mock.
+// IsLive reports whether the target is a real DataHub instance rather than
+// the in-memory mock.
 func (t *Target) IsLive() bool {
 	return t.Kind != TargetMock
 }
@@ -66,52 +63,34 @@ func (t *Target) Name(base string) string {
 	return base + "-" + strings.ToLower(acctest.RandString(8))
 }
 
-// SetupTarget reads DATAHUB_TEST_TARGET and configures the provider for the
-// requested backend. Call this from each acceptance test before resource.Test.
+// SetupTarget selects the acceptance-test backend from the process
+// environment and prepares it for use. Call this from each acceptance test
+// before resource.Test.
 //
-// Behavior by env-var value:
+// Selection logic:
 //
-//   - unset / "mock":  spin up an in-memory mock server and point
-//     DATAHUB_GMS_URL / DATAHUB_GMS_TOKEN at it via t.Setenv. The mock is
+//   - DATAHUB_GMS_URL absent or empty: spin up an in-memory mock server and
+//     inject DATAHUB_GMS_URL / DATAHUB_GMS_TOKEN via t.Setenv. The mock is
 //     torn down via t.Cleanup when the test ends.
-//   - "local":         expect DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN to point
-//     at a Quickstart instance running locally. Env vars must be set in the
-//     shell; this function does not call t.Setenv. Missing creds are a hard
-//     failure (not a skip).
-//   - "cloud":         same as local, plus DATAHUB_TEST_ALLOW_CLOUD must be
-//     set to "1" to confirm intentional use against a real cloud tenant.
 //
-// Any unrecognized value is a hard failure.
+//   - DATAHUB_GMS_URL present: treat as a live DataHub instance (local
+//     Quickstart or remote tenant). DATAHUB_GMS_TOKEN must also be set.
+//     Missing creds are a hard failure (not a skip). The Makefile targets
+//     testacc-local, testacc-quickstart, and testacc-remote each enforce
+//     their own URL constraints before invoking go test; this function trusts
+//     the environment they provide.
 func SetupTarget(t *testing.T) *Target {
 	t.Helper()
-	raw := strings.ToLower(strings.TrimSpace(os.Getenv("DATAHUB_TEST_TARGET")))
-	switch raw {
-	case "", "mock":
+	// Capture the initial environment before any t.Setenv calls.
+	gmsURL, live := os.LookupEnv("DATAHUB_GMS_URL")
+	if !live || strings.TrimSpace(gmsURL) == "" {
 		srv := NewServer(t)
 		t.Setenv("DATAHUB_GMS_URL", srv.URL)
 		t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
 		return &Target{Kind: TargetMock}
-	case "local", "local-live":
-		requireLiveEnv(t)
-		return &Target{Kind: TargetLocalLive}
-	case "cloud", "cloud-live":
-		requireLiveEnv(t)
-		if strings.TrimSpace(os.Getenv("DATAHUB_TEST_ALLOW_CLOUD")) == "" {
-			t.Fatalf("DATAHUB_TEST_TARGET=cloud requires DATAHUB_TEST_ALLOW_CLOUD=1 to acknowledge running against a real cloud instance")
-		}
-		return &Target{Kind: TargetCloudLive}
-	default:
-		t.Fatalf("unrecognized DATAHUB_TEST_TARGET=%q (want one of: mock, local, cloud)", raw)
-		return nil
-	}
-}
-
-func requireLiveEnv(t *testing.T) {
-	t.Helper()
-	if strings.TrimSpace(os.Getenv("DATAHUB_GMS_URL")) == "" {
-		t.Fatalf("DATAHUB_GMS_URL must be set for live targets")
 	}
 	if strings.TrimSpace(os.Getenv("DATAHUB_GMS_TOKEN")) == "" {
-		t.Fatalf("DATAHUB_GMS_TOKEN must be set for live targets")
+		t.Fatalf("DATAHUB_GMS_TOKEN must be set when DATAHUB_GMS_URL is set")
 	}
+	return &Target{Kind: TargetLive}
 }
