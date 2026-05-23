@@ -18,7 +18,7 @@ provider "datahub" {
 #
 # Pass the secret value via the environment:
 #   TF_VAR_secret_value="..." terraform apply
-resource "datahub_secret" "demo_token" {
+resource "datahub_secret" "example_secret" {
   name             = "TF_EXAMPLE_SECRET"
   description      = "Example secret value for the ingestion source recipe"
   value            = var.secret_value
@@ -44,8 +44,8 @@ resource "datahub_ingestion_source" "example" {
         api_token = "$${TF_EXAMPLE_SECRET}"
       }
     }
-    pipeline_name = "tf-demo"
+    pipeline_name = "tf-example"
   })
 
-  depends_on = [datahub_secret.demo_token]
+  depends_on = [datahub_secret.example_secret]
 }
