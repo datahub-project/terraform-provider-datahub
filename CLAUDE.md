@@ -120,6 +120,22 @@ Always include outputs that let the user verify or act on the result of their `t
 
 The goal: a user who has just applied the example can verify the result and take the logical next step without hunting through docs.
 
+## DataHub API: eventual-consistency trap
+
+DataHub exposes two read paths with very different consistency guarantees:
+
+- **GraphQL `list*` queries** (e.g. `listSecrets`, `listIngestionSources`): backed by OpenSearch/Elasticsearch. Eventual-consistency -- a resource created seconds ago may not yet appear. Never use these for Terraform Read or ImportState operations.
+- **OpenAPI v3 entity endpoint** (`GET /openapi/v3/entity/{type}/{urn}`): reads directly from MySQL (the primary datastore). Strongly consistent. Always use this for Read and ImportState.
+
+The wrong choice caused `datahub_secret` to show a spurious "plan to delete" immediately after creation: `listSecrets` returned empty because OpenSearch had not yet indexed the new resource. Fixed in PR #7 by switching `GetSecretByURN` and `ImportState` to the OpenAPI v3 path.
+
+**Rule for every new resource:**
+- Read / ImportState: `GET /openapi/v3/entity/{type}/{urn}` (MySQL, consistent)
+- Create / Update / Delete: GraphQL mutations -- OpenAPI write endpoints bypass service-layer business logic (e.g. SecretService encryption)
+- Search / list for non-managed lookup (data sources, imports by name): GraphQL `list*` is acceptable but document the lag risk
+
+The OpenAPI v3 entity endpoint for a type is always `/openapi/v3/entity/{lowercase-urn-type}/{urn}`, e.g. `/openapi/v3/entity/datahubsecret/{urn}`.
+
 ## DataHub domain vocabulary (quick reference)
 
 - **Ingestion Source** - the configured, persisted entity in DataHub that represents one source-of-metadata. Resource-shaped.
