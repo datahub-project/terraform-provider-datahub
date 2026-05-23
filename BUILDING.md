@@ -15,33 +15,16 @@ If you use [mise](https://mise.jdx.dev), run `mise install` in the repo root to 
 
 ## First-time setup
 
+Terraform's `dev_overrides` mechanism lets you use a locally-built binary without publishing a release. The Makefile generates a project-local config file (`dev.tfrc`) and wires it up via mise.
+
 ```bash
 mise install       # install all pinned tools and create the .venv
-make dev-override  # build the binary, generate dev.tfrc, install the datahub CLI
+make install       # build the provider binary into ./bin/
+make dev-override  # generate dev.tfrc and .mise.env; install the datahub CLI
 cd .               # re-trigger mise to activate TF_CLI_CONFIG_FILE and .venv
 ```
 
-After that, `terraform` uses your local binary and `datahub` is available from the project venv without any global install.
-
-## Build the provider
-
-```bash
-make install
-```
-
-Writes the binary to `./bin/terraform-provider-datahub`.
-
-## Local development with `dev_overrides`
-
-Terraform's `dev_overrides` mechanism lets you use a locally-built binary without publishing a release. The Makefile generates a project-local config file and wires it up via mise.
-
-```bash
-make install       # build the binary into ./bin/
-make dev-override  # generate dev.tfrc and .mise.env
-cd .               # re-trigger mise to set TF_CLI_CONFIG_FILE
-```
-
-After the last step, `terraform` in this directory uses your local binary instead of the Registry. To confirm:
+After that, `terraform` in this directory uses your local binary instead of the Registry, and `datahub` is available from the project venv without any global install. To confirm:
 
 ```bash
 echo $TF_CLI_CONFIG_FILE   # should print the path to dev.tfrc
@@ -49,6 +32,14 @@ terraform -chdir=examples/provider-install-verification plan
 ```
 
 The generated files (`dev.tfrc`, `.mise.env`) are already in `.gitignore`.
+
+## Build the provider
+
+```bash
+make install
+```
+
+Writes the binary to `./bin/terraform-provider-datahub`. Re-run this after any code change; `terraform` picks up the new binary immediately.
 
 ## Running tests
 
