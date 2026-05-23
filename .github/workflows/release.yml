@@ -49,4 +49,14 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
         with:
-          args: release --clean
+          args: release --clean --release-notes=.release-notes.md
+      - name: Verify release body
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BODY=$(gh release view "${GITHUB_REF_NAME}" --json body --jq .body)
+          if [ -z "$BODY" ]; then
+            echo "ERROR: published release body for ${GITHUB_REF_NAME} is empty" >&2
+            exit 1
+          fi
