@@ -22,6 +22,7 @@ func TestAcc_Secret_Lifecycle(t *testing.T) {
 			tfversion.SkipBelow(tfversion.Version1_11_0),
 		},
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.SecretCheckDestroy,
 		Steps:                    datahubtesting.SecretLifecycleSteps(name),
 	})
 }

@@ -4,12 +4,18 @@
 package datahubtesting
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 // providerBlock is the minimal provider configuration block used in all test
@@ -139,6 +145,66 @@ data "datahub_me" "test" {}
 			},
 		},
 	}
+}
+
+// IngestionSourceCheckDestroy is a TestCheckFunc that verifies every
+// datahub_ingestion_source in the post-destroy state has been removed from
+// DataHub. It constructs a fresh client from DATAHUB_GMS_URL and
+// DATAHUB_GMS_TOKEN at call time; for the mock target these are injected via
+// t.Setenv before the test runs.
+func IngestionSourceCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_ingestion_source" {
+			continue
+		}
+		sourceID := rs.Primary.Attributes["source_id"]
+		if sourceID == "" {
+			sourceID = rs.Primary.ID
+		}
+		_, getErr := client.GetIngestionSourceByID(ctx, sourceID)
+		if getErr == nil {
+			return fmt.Errorf("datahub_ingestion_source %q still exists after destroy", sourceID)
+		}
+		errLower := strings.ToLower(getErr.Error())
+		if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+			continue
+		}
+		return fmt.Errorf("CheckDestroy: unexpected error checking datahub_ingestion_source %q: %w", sourceID, getErr)
+	}
+	return nil
+}
+
+// SecretCheckDestroy is a TestCheckFunc that verifies every datahub_secret in
+// the post-destroy state has been removed from DataHub. GetSecretByURN returns
+// (nil, nil) on 404, so a non-nil secret means the delete did not propagate.
+func SecretCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_secret" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		secret, getErr := client.GetSecretByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_secret %q: %w", urn, getErr)
+		}
+		if secret != nil {
+			return fmt.Errorf("datahub_secret %q still exists after destroy", urn)
+		}
+	}
+	return nil
 }
 
 // MeDataSourceStepsAny returns test steps that read the datahub_me data

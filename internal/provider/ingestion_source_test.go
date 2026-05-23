@@ -17,6 +17,7 @@ func TestAcc_IngestionSource_Lifecycle(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.IngestionSourceCheckDestroy,
 		Steps:                    datahubtesting.IngestionSourceLifecycleSteps(name),
 	})
 }
