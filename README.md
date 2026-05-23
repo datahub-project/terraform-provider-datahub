@@ -3,7 +3,7 @@
 [![CI](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/datahub-project/terraform-provider-datahub/graph/badge.svg)](https://codecov.io/gh/datahub-project/terraform-provider-datahub)
 
-Terraform provider to manage DataHub ingestion sources.
+Terraform provider for DataHub. Manage ingestion sources, secrets, and more as code.
 
 This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI v3 and GraphQL APIs.
 
@@ -11,8 +11,11 @@ This provider is implemented with the Terraform Plugin Framework and talks to Da
 
 - Resources
   - `datahub_ingestion_source`: creates/updates/deletes a DataHub ingestion source from a recipe JSON string.
+  - `datahub_secret`: creates/updates/deletes a named encrypted secret, referenced as `${SECRET_NAME}` in ingestion recipes.
+- Data sources
+  - `datahub_me`: reads the authenticated user's identity; useful for smoke-testing provider credentials at plan time.
 
-Generated docs live under `docs/resources/`.
+Generated docs live under `docs/`.
 
 ## Requirements
 
@@ -36,7 +39,8 @@ DataHub ingestion source configurations (including the recipe JSON) are stored i
 
 Recommended approaches:
 
-- Use **DataHub Secrets** (UI Ingestion → Secrets) and reference secrets by name using the `${SECRET_NAME}` convention in your recipe/config.
+- Use **`datahub_secret`** to manage secrets as Terraform resources, then reference them by name in recipes as `${SECRET_NAME}`. This keeps secret values out of your recipe config and out of source control. See `examples/secret-basic/` for a working example.
+- Use **DataHub Secrets via the UI** (Ingestion → Secrets) if you prefer to manage them outside Terraform, then reference them the same way.
 - Use **environment variable substitution** in recipes (DataHub expands `${VAR_NAME}` in config).
 
 Terraform note: if you need a literal `${VAR_NAME}` to reach DataHub (for DataHub substitution), write it as `$${VAR_NAME}` in Terraform strings to prevent Terraform interpolation.
