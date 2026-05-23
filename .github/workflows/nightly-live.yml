@@ -7,6 +7,7 @@ name: Nightly Live
 #
 # Uses the live-acceptance reusable workflow (same logic as the release gate).
 on:
+  workflow_dispatch:
   schedule:
     - cron: "0 14 * * *"
   pull_request:
@@ -28,7 +29,8 @@ jobs:
     steps:
       - id: decide
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || \
+             [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "pull_request" ] && \
                [ "${{ contains(github.event.pull_request.labels.*.name, 'run-live-ci') }}" = "true" ]; then
