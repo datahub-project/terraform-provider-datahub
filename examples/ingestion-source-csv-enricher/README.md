@@ -12,7 +12,7 @@ When triggered, the ingestion run completes successfully and creates real metada
 
 - `DATAHUB_GMS_URL` set to your DataHub instance URL (e.g. `https://your-instance.acryl.io`)
 - `DATAHUB_GMS_TOKEN` set to a Personal Access Token with permission to manage ingestion sources
-- Terraform >= 1.0
+- Terraform >= 1.11
 - `jq` for the optional curl commands below (or use the DataHub UI instead)
 
 ## Run

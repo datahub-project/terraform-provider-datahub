@@ -16,7 +16,7 @@ Generated docs live under `docs/resources/`.
 
 ## Requirements
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
+- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.11
 - [Go](https://go.dev/doc/install) >= 1.26
 
 ## Provider configuration
