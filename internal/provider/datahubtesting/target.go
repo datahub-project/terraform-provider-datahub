@@ -54,30 +54,29 @@ func (tg *Target) IsCloud() bool {
 
 // RequireCloud skips the calling test if the target is not Cloud-capable.
 // Use this on every test that exercises Cloud-only resources such as
-// datahub_remote_executor_pool. The test runs normally against the mock
-// (which simulates Cloud) and against live Cloud (testacc-cloud). It is
-// skipped on live OSS targets (testacc-local, testacc-quickstart,
-// testacc-remote without DATAHUB_CLOUD=1).
+// datahub_remote_executor_pool. The test always runs against the mock
+// (which simulates Cloud). Against live targets it runs only when
+// DATAHUB_CLOUD=1 is set; otherwise it is skipped.
 func (tg *Target) RequireCloud(t *testing.T) {
 	t.Helper()
 	if !tg.isCloud {
-		t.Skip("skipping Cloud-only test: set DATAHUB_CLOUD=1 or use 'make testacc-cloud' to include Cloud-only tests")
+		t.Skip("skipping Cloud-only test: set DATAHUB_CLOUD=1 to include Cloud-only tests against a live Cloud instance")
 	}
 }
 
-// RequireOSS skips the calling test unless the target is a live OSS DataHub
-// instance. Use this for tests that specifically verify the provider's
-// graceful-error behavior on OSS (e.g. datahub_remote_executor_pool reporting
-// "DataHub Cloud Required"). Skips on mock (which simulates Cloud) and on
-// any live target with DATAHUB_CLOUD=1. Runs only on testacc-local,
-// testacc-quickstart, or testacc-remote (without DATAHUB_CLOUD=1).
+// RequireOSS skips the calling test unless the target is a live instance
+// with DATAHUB_CLOUD unset. Use this for tests that specifically verify the
+// provider's graceful-error behavior when Cloud-only features are absent
+// (e.g. datahub_remote_executor_pool reporting "DataHub Cloud Required").
+// Skips on mock (which simulates Cloud) and on any live target when
+// DATAHUB_CLOUD=1 is set.
 func (tg *Target) RequireOSS(t *testing.T) {
 	t.Helper()
 	if tg.Kind == TargetMock {
-		t.Skip("skipping OSS-error-path test: mock target always supports Cloud features; use testacc-local or testacc-quickstart to test against real OSS DataHub")
+		t.Skip("skipping OSS-error-path test: mock target always supports Cloud features; use testacc-local or testacc-quickstart (OSS DataHub) instead")
 	}
 	if tg.isCloud {
-		t.Skip("skipping OSS-error-path test: DATAHUB_CLOUD=1 is set; this test requires a live OSS DataHub instance (testacc-local or testacc-quickstart)")
+		t.Skip("skipping OSS-error-path test: DATAHUB_CLOUD=1 is set; this test requires an OSS DataHub instance (testacc-local or testacc-quickstart without DATAHUB_CLOUD=1)")
 	}
 }
 

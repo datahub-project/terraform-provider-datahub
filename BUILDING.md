@@ -63,20 +63,21 @@ The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automa
 
 ### Live tests: target overview
 
-Each Makefile target enforces its own URL semantics — the target name is the source of truth for "what am I hitting":
+Each Makefile target enforces WHERE and HOW tests run. The target name is the source of truth for location and launch method; DATAHUB_CLOUD=1 is a separate caller-supplied signal about what capabilities to expect.
 
-| Target | What it hits | Cloud-only tests? | URL source |
+| Target | Where | How | Cloud-only tests? |
 |---|---|---|---|
-| `make testacc` | In-memory mock server | Yes (mock simulates Cloud) | n/a - no network |
-| `make testacc-local` | Pre-existing local Quickstart at `http://localhost:8080` | No (OSS DataHub) | Makefile hard-codes `localhost:8080`; shell env is ignored |
-| `make testacc-quickstart` | Fresh local Quickstart (boots + nukes) | No (OSS DataHub) | Same as testacc-local |
-| `make testacc-remote` | Any remote DataHub instance | No (skipped unless `DATAHUB_CLOUD=1`) | `DATAHUB_GMS_URL` + `DATAHUB_GMS_TOKEN` from shell; loopback URLs refused |
-| `make testacc-cloud` | DataHub Cloud instance | Yes (sets `DATAHUB_CLOUD=1`) | `DATAHUB_GMS_URL` + `DATAHUB_GMS_TOKEN` from shell; loopback URLs refused |
+| `make testacc` | nowhere (no network) | in-memory mock | Yes - mock always simulates Cloud |
+| `make testacc-local` | `localhost:8080` | BYO OSS DataHub instance | Only if `DATAHUB_CLOUD=1` is set |
+| `make testacc-quickstart` | `localhost:8080` | boots a fresh OSS DataHub Quickstart | Only if `DATAHUB_CLOUD=1` is set |
+| `make testacc-remote` | anywhere (by `DATAHUB_GMS_URL`) | BYO remote instance | Only if `DATAHUB_CLOUD=1` is set |
+
+`testacc-local` and `testacc-quickstart` always hard-code `localhost:8080`; any `DATAHUB_GMS_URL` in the shell environment is ignored. `testacc-remote` requires `DATAHUB_GMS_URL` and refuses loopback URLs.
 
 **Which tests run where:**
 
-- *Cloud-only tests* (e.g. `TestAcc_RemoteExecutorPool_Lifecycle`) use `tg.RequireCloud(t)`. They run against mock and `testacc-cloud`. Skipped on `testacc-local`, `testacc-quickstart`, and `testacc-remote`.
-- *OSS-error-path tests* (e.g. `TestAcc_RemoteExecutorPool_OSS_RejectsWithCloudOnlyError`) use `tg.RequireOSS(t)`. They run only on `testacc-local`, `testacc-quickstart`, and `testacc-remote` (without `DATAHUB_CLOUD=1`). Skipped on mock and `testacc-cloud`.
+- *Cloud-only tests* (e.g. `TestAcc_RemoteExecutorPool_Lifecycle`) use `tg.RequireCloud(t)`. They always run against the mock (which simulates Cloud). Against any live target they run only when `DATAHUB_CLOUD=1` is set; otherwise they are skipped.
+- *OSS-error-path tests* (e.g. `TestAcc_RemoteExecutorPool_OSS_RejectsWithCloudOnlyError`) use `tg.RequireOSS(t)`. They are skipped on the mock (which simulates Cloud) and skipped on any live target when `DATAHUB_CLOUD=1` is set. They run on live targets when `DATAHUB_CLOUD` is unset.
 
 For live targets the test uses a randomized resource name (`tfprovider-secret-<random>` etc.) so repeated runs and concurrent developers do not collide.
 
@@ -124,7 +125,7 @@ make quickstart-down
 
 ### Live tests against a remote tenant
 
-`make testacc-remote` runs `TestAcc_*` functions against any non-loopback DataHub instance. Cloud-only tests are skipped (no `DATAHUB_CLOUD=1`), making this target safe to run against OSS or self-hosted DataHub.
+`make testacc-remote` runs `TestAcc_*` functions against any non-loopback DataHub instance. Set `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` in the shell before invoking it.
 
 ```bash
 export DATAHUB_GMS_URL=https://your-staging-instance.example.com/api/gms
@@ -132,14 +133,12 @@ export DATAHUB_GMS_TOKEN=<PAT>
 make testacc-remote
 ```
 
-### Live tests against DataHub Cloud
-
-`make testacc-cloud` is like `testacc-remote` but sets `DATAHUB_CLOUD=1`, enabling Cloud-only tests (`datahub_remote_executor_pool` etc.) while skipping OSS-error-path tests. Use this against a DataHub Cloud tenant.
+By default, Cloud-only tests are skipped. To include them (e.g. when pointing at a DataHub Cloud tenant), set `DATAHUB_CLOUD=1`:
 
 ```bash
 export DATAHUB_GMS_URL=https://your-tenant.acryl.io/gms
 export DATAHUB_GMS_TOKEN=<PAT>
-make testacc-cloud
+DATAHUB_CLOUD=1 make testacc-remote
 ```
 
 Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks.
