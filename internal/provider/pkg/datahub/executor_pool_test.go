@@ -58,6 +58,12 @@ func TestIsCloudOnlyError(t *testing.T) {
 		},
 		// UnknownType on an unrelated type should not be treated as Cloud-only.
 		{"Validation error (UnknownType) : Unknown type 'SomethingElse'", false},
+		// FieldUndefined on a sub-field of a result type must NOT be treated as Cloud-only.
+		// This happens on Cloud builds that don't expose a particular field (e.g. 'channel').
+		{
+			"Validation error of type FieldUndefined: Field 'channel' in type 'RemoteExecutorPool' is undefined @ 'getRemoteExecutorPool/channel'",
+			false,
+		},
 		{"permission denied", false},
 		{"internal server error", false},
 		{"executor pool my-pool already exists", false},
@@ -203,7 +209,6 @@ func TestGetRemoteExecutorPoolByURN(t *testing.T) {
 						"isEmbedded":     false,
 						"createdAt":      int64(1716000000000),
 						"state":          map[string]any{"status": "READY", "message": ""},
-						"channel":        "SQS",
 					},
 				},
 			})
@@ -225,9 +230,6 @@ func TestGetRemoteExecutorPoolByURN(t *testing.T) {
 		}
 		if pool.StateStatus != "READY" {
 			t.Errorf("StateStatus = %q, want READY", pool.StateStatus)
-		}
-		if pool.Channel != "SQS" {
-			t.Errorf("Channel = %q, want SQS", pool.Channel)
 		}
 	})
 

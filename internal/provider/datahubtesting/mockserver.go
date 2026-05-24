@@ -300,7 +300,6 @@ func (s *mockServer) poolGQL(p mockExecutorPool) map[string]any {
 			"status":  "READY",
 			"message": "",
 		},
-		"channel": "SQS",
 	}
 }
 

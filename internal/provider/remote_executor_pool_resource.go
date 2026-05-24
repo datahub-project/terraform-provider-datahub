@@ -38,7 +38,6 @@ type remoteExecutorPoolResourceModel struct {
 	IsEmbedded  types.Bool   `tfsdk:"is_embedded"`
 	StateStatus types.String `tfsdk:"state_status"`
 	StateMsg    types.String `tfsdk:"state_message"`
-	Channel     types.String `tfsdk:"channel"`
 	CreatedAt   types.Int64  `tfsdk:"created_at"`
 }
 
@@ -174,13 +173,6 @@ func (r *remoteExecutorPoolResource) Schema(_ context.Context, _ resource.Schema
 			"state_message": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Error message when `state_status` is `PROVISIONING_FAILED`, otherwise empty.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
-			},
-			"channel": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Communication channel used by executors in this pool (`SQS` or `KAFKA`). Managed by DataHub Cloud.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -490,10 +482,5 @@ func populatePoolModel(m *remoteExecutorPoolResourceModel, p *datahub.RemoteExec
 		m.StateMsg = types.StringValue(p.StateMsg)
 	} else {
 		m.StateMsg = types.StringNull()
-	}
-	if p.Channel != "" {
-		m.Channel = types.StringValue(p.Channel)
-	} else {
-		m.Channel = types.StringNull()
 	}
 }

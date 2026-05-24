@@ -55,7 +55,6 @@ type RemoteExecutorPool struct {
 	CreatedAt   int64
 	StateStatus string
 	StateMsg    string
-	Channel     string
 }
 
 // CreateRemoteExecutorPoolInput groups the fields accepted by createRemoteExecutorPool.
@@ -122,7 +121,6 @@ type remoteExecutorPoolGQL struct {
 		Status  string `json:"status"`
 		Message string `json:"message"`
 	} `json:"state"`
-	Channel string `json:"channel"`
 }
 
 func toRemoteExecutorPool(g *remoteExecutorPoolGQL) *RemoteExecutorPool {
@@ -132,7 +130,6 @@ func toRemoteExecutorPool(g *remoteExecutorPoolGQL) *RemoteExecutorPool {
 		IsDefault:  g.IsDefault,
 		IsEmbedded: g.IsEmbedded,
 		CreatedAt:  g.CreatedAt,
-		Channel:    g.Channel,
 	}
 	if g.Description != "" {
 		p.Description = g.Description
@@ -147,14 +144,30 @@ func toRemoteExecutorPool(g *remoteExecutorPoolGQL) *RemoteExecutorPool {
 // isCloudOnlyError returns true when the GraphQL error message indicates the
 // mutation, query, or input type is not defined on this GMS instance (OSS DataHub).
 // Two distinct graphql-java error codes appear in practice:
-//   - FieldUndefined: mutation/query field absent from the schema (older builds)
+//   - FieldUndefined: mutation/query field absent from the schema (older builds).
+//     Restricted to errors mentioning "in type 'Mutation'" or "in type 'Query'" to
+//     avoid false positives from FieldUndefined on sub-fields of result types (e.g.
+//     "Field 'channel' in type 'RemoteExecutorPool' is undefined" on Cloud builds
+//     that don't yet expose that field).
 //   - UnknownType: input type (e.g. CreateRemoteExecutorPoolInput) absent from
 //     the schema; seen on Quickstart v1.5.0.6 which registers no RemoteExecutorPool
 //     input types even when the field reference validation fires first
 func isCloudOnlyError(msg string) bool {
-	return strings.Contains(msg, "FieldUndefined") ||
-		(strings.Contains(msg, "UnknownType") && strings.Contains(msg, "RemoteExecutorPool")) ||
-		(strings.Contains(msg, "is undefined") && strings.Contains(msg, "RemoteExecutorPool"))
+	if strings.Contains(msg, "FieldUndefined") &&
+		(strings.Contains(msg, "in type 'Mutation'") || strings.Contains(msg, "in type 'Query'")) {
+		return true
+	}
+	if strings.Contains(msg, "UnknownType") && strings.Contains(msg, "RemoteExecutorPool") {
+		return true
+	}
+	// Catch "RemoteExecutorPool type is undefined"-style messages where the type itself is absent,
+	// but exclude subfield errors like "Field 'x' in type 'RemoteExecutorPool' is undefined"
+	// which indicate a schema version mismatch on a Cloud instance that does have executor pools.
+	if strings.Contains(msg, "is undefined") && strings.Contains(msg, "RemoteExecutorPool") &&
+		!strings.Contains(msg, "in type 'RemoteExecutorPool'") {
+		return true
+	}
+	return false
 }
 
 // ValidatePoolID returns an error if poolID fails the server-side format rules.
@@ -199,7 +212,6 @@ query getRemoteExecutorPool($urn: String!) {
       status
       message
     }
-    channel
   }
 }`
 

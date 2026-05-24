@@ -32,7 +32,6 @@ type remoteExecutorPoolDataSourceModel struct {
 	IsEmbedded  types.Bool   `tfsdk:"is_embedded"`
 	StateStatus types.String `tfsdk:"state_status"`
 	StateMsg    types.String `tfsdk:"state_message"`
-	Channel     types.String `tfsdk:"channel"`
 	CreatedAt   types.Int64  `tfsdk:"created_at"`
 }
 
@@ -95,10 +94,6 @@ func (d *remoteExecutorPoolDataSource) Schema(_ context.Context, _ datasource.Sc
 			"state_message": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Error message when `state_status` is `PROVISIONING_FAILED`, otherwise empty.",
-			},
-			"channel": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Communication channel used by executors in this pool (`SQS` or `KAFKA`).",
 			},
 			"created_at": schema.Int64Attribute{
 				Computed:            true,
@@ -177,11 +172,6 @@ func (d *remoteExecutorPoolDataSource) Read(ctx context.Context, req datasource.
 		state.StateMsg = types.StringValue(pool.StateMsg)
 	} else {
 		state.StateMsg = types.StringNull()
-	}
-	if pool.Channel != "" {
-		state.Channel = types.StringValue(pool.Channel)
-	} else {
-		state.Channel = types.StringNull()
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, state)...)
