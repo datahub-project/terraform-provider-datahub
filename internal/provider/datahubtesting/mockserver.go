@@ -24,6 +24,14 @@ import (
 	"testing"
 )
 
+// mockExecutorPool mirrors the RemoteExecutorPool GraphQL shape.
+type mockExecutorPool struct {
+	URN         string
+	PoolID      string
+	Description string
+	IsDefault   bool
+}
+
 // mockIngestionSource mirrors the JSON shape that pkg/datahub sends and reads.
 type mockIngestionSource struct {
 	Urn                       string `json:"urn"`
@@ -62,6 +70,8 @@ type mockServer struct {
 	mu               sync.Mutex
 	ingestionSources map[string]mockIngestionSource
 	secrets          map[string]mockSecret
+	pools            map[string]mockExecutorPool
+	defaultPoolID    string
 }
 
 // NewServer starts an in-memory httptest.Server that mimics the DataHub API
@@ -72,12 +82,14 @@ func NewServer(t *testing.T) *httptest.Server {
 	s := &mockServer{
 		ingestionSources: make(map[string]mockIngestionSource),
 		secrets:          make(map[string]mockSecret),
+		pools:            make(map[string]mockExecutorPool),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -109,6 +121,16 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeleteSecret(w, req.Variables)
 	case strings.Contains(q, "listSecrets"):
 		s.handleListSecrets(w, req.Variables)
+	case strings.Contains(q, "createRemoteExecutorPool"):
+		s.handleCreateExecutorPool(w, req.Variables)
+	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):
+		s.handleUpdateDefaultExecutorPool(w, req.Variables)
+	case strings.Contains(q, "updateRemoteExecutorPool"):
+		s.handleUpdateExecutorPool(w, req.Variables)
+	case strings.Contains(q, "getRemoteExecutorPool"):
+		s.handleGetExecutorPool(w, req.Variables)
+	case strings.Contains(q, "listRemoteExecutorPools"):
+		s.handleListExecutorPools(w)
 	default:
 		http.Error(w, `{"errors":[{"message":"unknown operation"}]}`, http.StatusBadRequest)
 	}
@@ -265,6 +287,147 @@ func (s *mockServer) handleIngestionSourceCollection(w http.ResponseWriter, r *h
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// poolGQL builds the GraphQL JSON shape for a mockExecutorPool.
+func (s *mockServer) poolGQL(p mockExecutorPool) map[string]any {
+	return map[string]any{
+		"urn":            p.URN,
+		"executorPoolId": p.PoolID,
+		"description":    p.Description,
+		"isDefault":      p.IsDefault,
+		"isEmbedded":     false,
+		"createdAt":      int64(0),
+		"state": map[string]any{
+			"status":  "READY",
+			"message": "",
+		},
+		"channel": "SQS",
+	}
+}
+
+func (s *mockServer) handleCreateExecutorPool(w http.ResponseWriter, variables map[string]any) {
+	input, _ := variables["input"].(map[string]any)
+	poolID, _ := input["executorPoolId"].(string)
+	desc, _ := input["description"].(string)
+	isDefault, _ := input["isDefault"].(bool)
+
+	urn := "urn:li:dataHubRemoteExecutorPool:" + poolID
+
+	s.mu.Lock()
+	s.pools[poolID] = mockExecutorPool{URN: urn, PoolID: poolID, Description: desc, IsDefault: isDefault}
+	if isDefault {
+		// demote previous default
+		if s.defaultPoolID != "" && s.defaultPoolID != poolID {
+			prev := s.pools[s.defaultPoolID]
+			prev.IsDefault = false
+			s.pools[s.defaultPoolID] = prev
+		}
+		s.defaultPoolID = poolID
+	}
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"createRemoteExecutorPool": urn},
+	})
+}
+
+func (s *mockServer) handleUpdateExecutorPool(w http.ResponseWriter, variables map[string]any) {
+	input, _ := variables["input"].(map[string]any)
+	urn, _ := input["urn"].(string)
+	poolID := strings.TrimPrefix(urn, "urn:li:dataHubRemoteExecutorPool:")
+	desc, _ := input["description"].(string)
+
+	s.mu.Lock()
+	if p, ok := s.pools[poolID]; ok {
+		p.Description = desc
+		s.pools[poolID] = p
+	}
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"updateRemoteExecutorPool": true},
+	})
+}
+
+func (s *mockServer) handleUpdateDefaultExecutorPool(w http.ResponseWriter, variables map[string]any) {
+	urn, _ := variables["urn"].(string)
+	poolID := strings.TrimPrefix(urn, "urn:li:dataHubRemoteExecutorPool:")
+
+	s.mu.Lock()
+	if s.defaultPoolID != "" && s.defaultPoolID != poolID {
+		prev := s.pools[s.defaultPoolID]
+		prev.IsDefault = false
+		s.pools[s.defaultPoolID] = prev
+	}
+	if p, ok := s.pools[poolID]; ok {
+		p.IsDefault = true
+		s.pools[poolID] = p
+	}
+	s.defaultPoolID = poolID
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"updateDefaultRemoteExecutorPool": true},
+	})
+}
+
+func (s *mockServer) handleGetExecutorPool(w http.ResponseWriter, variables map[string]any) {
+	urn, _ := variables["urn"].(string)
+	poolID := strings.TrimPrefix(urn, "urn:li:dataHubRemoteExecutorPool:")
+
+	s.mu.Lock()
+	p, ok := s.pools[poolID]
+	s.mu.Unlock()
+
+	if !ok {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"getRemoteExecutorPool": nil},
+		})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"getRemoteExecutorPool": s.poolGQL(p)},
+	})
+}
+
+func (s *mockServer) handleListExecutorPools(w http.ResponseWriter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	pools := make([]map[string]any, 0, len(s.pools))
+	for _, p := range s.pools {
+		pools = append(pools, s.poolGQL(p))
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"listRemoteExecutorPools": map[string]any{
+				"remoteExecutorPools": pools,
+				"total":               len(pools),
+			},
+		},
+	})
+}
+
+// handleExecutorPoolItem handles DELETE /openapi/v3/entity/datahubremoteexecutorpool/{urn}.
+func (s *mockServer) handleExecutorPoolItem(w http.ResponseWriter, r *http.Request) {
+	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/datahubremoteexecutorpool/")
+	poolID := strings.TrimPrefix(urn, "urn:li:dataHubRemoteExecutorPool:")
+
+	switch r.Method {
+	case http.MethodDelete:
+		s.mu.Lock()
+		delete(s.pools, poolID)
+		if s.defaultPoolID == poolID {
+			s.defaultPoolID = ""
+		}
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 // handleIngestionSourceItem handles GET and DELETE on a single entity by URN.

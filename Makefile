@@ -20,7 +20,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps
+.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-remote testacc-cloud testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps
 
 all: install
 
@@ -35,9 +35,10 @@ help:
 	@echo "  generate      Run go generate in tools/"
 	@echo "  test          Run unit tests"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (TF_ACC=1)"
-	@echo "  testacc-local      Run acc tests against a pre-existing local Quickstart (always localhost)"
-	@echo "  testacc-quickstart Boot a fresh Quickstart, run acc tests, nuke on exit"
-	@echo "  testacc-remote     Run acc tests against a remote tenant (DATAHUB_GMS_URL + DATAHUB_GMS_TOKEN required; loopback URLs refused)"
+	@echo "  testacc-local      Run acc tests against a pre-existing local Quickstart (always localhost; OSS DataHub)"
+	@echo "  testacc-quickstart Boot a fresh Quickstart, run acc tests, nuke on exit (OSS DataHub)"
+	@echo "  testacc-remote     Run acc tests against a remote tenant (DATAHUB_GMS_URL + DATAHUB_GMS_TOKEN required; loopback URLs refused; Cloud-only tests skipped)"
+	@echo "  testacc-cloud      Like testacc-remote but sets DATAHUB_CLOUD=1; includes Cloud-only tests (e.g. datahub_remote_executor_pool)"
 	@echo "  coverage           Run all tests with merged coverage; prints total"
 	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
 	@echo "  dev-deps      Install Python dev dependencies (datahub CLI) into .venv"
@@ -138,11 +139,31 @@ testacc-remote:
 			exit 1 ;; \
 	esac
 	@echo ""
-	@echo "==> testacc-remote will run against: $$DATAHUB_GMS_URL"
+	@echo "==> testacc-remote will run against: $$DATAHUB_GMS_URL (OSS mode; Cloud-only tests skipped)"
+	@echo "==> To include Cloud-only tests, use 'make testacc-cloud' instead."
 	@echo "==> Starting in 3s. Ctrl-C to abort."
 	@echo ""
 	@sleep 3
 	TF_ACC=1 $(GO) test -v -timeout 30m ./...
+
+testacc-cloud:
+	@if [ -z "$$DATAHUB_GMS_URL" ] || [ -z "$$DATAHUB_GMS_TOKEN" ]; then \
+		echo "DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN must be set; see BUILDING.md."; \
+		exit 1; \
+	fi
+	@case "$$DATAHUB_GMS_URL" in \
+		*://localhost[:/]*|*://localhost|*://127.0.0.1[:/]*|*://127.0.0.1|*://\[::1\][:/]*|*://\[::1\]) \
+			echo "testacc-cloud refuses loopback URL $$DATAHUB_GMS_URL; use testacc-remote for OSS testing."; \
+			exit 1 ;; \
+	esac
+	@echo ""
+	@echo "==> testacc-cloud will run against: $$DATAHUB_GMS_URL (DataHub Cloud mode)"
+	@echo "==> Cloud-only tests (datahub_remote_executor_pool etc.) will be included."
+	@echo "==> OSS-error-path tests (TestAcc_*_OSS_*) will be skipped."
+	@echo "==> Starting in 3s. Ctrl-C to abort."
+	@echo ""
+	@sleep 3
+	DATAHUB_CLOUD=1 TF_ACC=1 $(GO) test -v -timeout 30m ./...
 
 coverage:
 	TF_ACC=1 $(GO) test -coverprofile=$(COVERAGE_FILE) -coverpkg=$(COVER_PKG) -timeout 120m ./...

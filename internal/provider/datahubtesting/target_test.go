@@ -11,7 +11,7 @@ import (
 )
 
 // TestSetupTarget_mock verifies that an absent (or empty) DATAHUB_GMS_URL
-// selects mock mode: Kind=TargetMock, IsLive()=false, Name() unchanged.
+// selects mock mode: Kind=TargetMock, IsLive()=false, Name() unchanged, IsCloud()=true.
 func TestSetupTarget_mock(t *testing.T) {
 	t.Setenv("DATAHUB_GMS_URL", "") // empty treated same as absent by SetupTarget
 	tg := datahubtesting.SetupTarget(t)
@@ -21,6 +21,9 @@ func TestSetupTarget_mock(t *testing.T) {
 	if tg.IsLive() {
 		t.Fatal("IsLive() should be false for TargetMock")
 	}
+	if !tg.IsCloud() {
+		t.Fatal("IsCloud() should be true for TargetMock (mock simulates Cloud)")
+	}
 	if got := tg.Name("base"); got != "base" {
 		t.Fatalf("Name(%q) = %q, want %q", "base", got, "base")
 	}
@@ -28,9 +31,11 @@ func TestSetupTarget_mock(t *testing.T) {
 
 // TestSetupTarget_live verifies that a present DATAHUB_GMS_URL (with token)
 // selects live mode: Kind=TargetLive, IsLive()=true, Name() has a random suffix.
+// Without DATAHUB_CLOUD=1, IsCloud() is false (OSS assumed).
 func TestSetupTarget_live(t *testing.T) {
 	t.Setenv("DATAHUB_GMS_URL", "http://localhost:18080")
 	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+	t.Setenv("DATAHUB_CLOUD", "") // ensure not set
 	tg := datahubtesting.SetupTarget(t)
 	if tg.Kind != datahubtesting.TargetLive {
 		t.Fatalf("expected TargetLive, got %v", tg.Kind)
@@ -38,8 +43,26 @@ func TestSetupTarget_live(t *testing.T) {
 	if !tg.IsLive() {
 		t.Fatal("IsLive() should be true for TargetLive")
 	}
+	if tg.IsCloud() {
+		t.Fatal("IsCloud() should be false when DATAHUB_CLOUD is not set")
+	}
 	name := tg.Name("pfx")
 	if !strings.HasPrefix(name, "pfx-") || len(name) <= len("pfx-") {
 		t.Fatalf("Name(%q) = %q, want prefix %q followed by a random suffix", "pfx", name, "pfx-")
+	}
+}
+
+// TestSetupTarget_live_cloud verifies that DATAHUB_CLOUD=1 sets IsCloud()=true
+// on a live target.
+func TestSetupTarget_live_cloud(t *testing.T) {
+	t.Setenv("DATAHUB_GMS_URL", "http://localhost:18080")
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+	t.Setenv("DATAHUB_CLOUD", "1")
+	tg := datahubtesting.SetupTarget(t)
+	if tg.Kind != datahubtesting.TargetLive {
+		t.Fatalf("expected TargetLive, got %v", tg.Kind)
+	}
+	if !tg.IsCloud() {
+		t.Fatal("IsCloud() should be true when DATAHUB_CLOUD=1")
 	}
 }

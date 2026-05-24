@@ -2,7 +2,7 @@
 
 Terraform Plugin Framework provider that talks to the DataHub OpenAPI v3 REST surface. Manages DataHub configuration and data objects (Ingestion Sources today; more to follow). Does not provision DataHub infrastructure.
 
-The provider works against the open-source DataHub API and also against DataHub Cloud, since both expose the same OpenAPI surface.
+The provider works against the open-source DataHub API and also against DataHub Cloud, since both expose the same OpenAPI surface. Some resources are Cloud-only (see "Cloud-only resources" below).
 
 ## Home and donation status
 
@@ -31,6 +31,14 @@ When adding files:
 
 - **OSS API targeted.** Works against both open-source DataHub and DataHub Cloud via the OpenAPI v3 endpoints. Avoid Cloud-only proprietary endpoints unless gated and documented.
 - **Configuration and data only.** This provider does not provision DataHub servers, Kubernetes clusters, databases, or other infrastructure. Use a separate Terraform stack (or a different provider) for that.
+
+## Cloud-only resources
+
+Some resources and data sources target DataHub Cloud exclusively and will fail with a clear error on OSS DataHub. These are documented in each resource's description. Applying against OSS is a supported no-op only when every resource in the config is OSS-compatible.
+
+| Resource / Data Source | Reason |
+|---|---|
+| `datahub_remote_executor_pool` (resource + data source) | The `dataHubRemoteExecutorPool` entity type and its GraphQL mutations do not exist in OSS DataHub. The underlying mutations are also classified as `category: internal` in DataHub Cloud, meaning they carry no external API stability guarantee and may change between Cloud releases without notice. |
 
 ## Resource naming
 

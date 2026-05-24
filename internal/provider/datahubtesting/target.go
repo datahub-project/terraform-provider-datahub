@@ -35,13 +35,50 @@ const (
 // predicates) that let test functions adapt without branching on env vars
 // themselves.
 type Target struct {
-	Kind TargetKind
+	Kind    TargetKind
+	isCloud bool
 }
 
 // IsLive reports whether the target is a real DataHub instance rather than
 // the in-memory mock.
-func (t *Target) IsLive() bool {
-	return t.Kind != TargetMock
+func (tg *Target) IsLive() bool {
+	return tg.Kind != TargetMock
+}
+
+// IsCloud reports whether the target is known to be a DataHub Cloud instance.
+// It returns true for the in-memory mock (which always supports Cloud features)
+// and for live targets when DATAHUB_CLOUD=1 is set in the environment.
+func (tg *Target) IsCloud() bool {
+	return tg.isCloud
+}
+
+// RequireCloud skips the calling test if the target is not Cloud-capable.
+// Use this on every test that exercises Cloud-only resources such as
+// datahub_remote_executor_pool. The test runs normally against the mock
+// (which simulates Cloud) and against live Cloud (testacc-cloud). It is
+// skipped on live OSS targets (testacc-local, testacc-quickstart,
+// testacc-remote without DATAHUB_CLOUD=1).
+func (tg *Target) RequireCloud(t *testing.T) {
+	t.Helper()
+	if !tg.isCloud {
+		t.Skip("skipping Cloud-only test: set DATAHUB_CLOUD=1 or use 'make testacc-cloud' to include Cloud-only tests")
+	}
+}
+
+// RequireOSS skips the calling test unless the target is a live OSS DataHub
+// instance. Use this for tests that specifically verify the provider's
+// graceful-error behavior on OSS (e.g. datahub_remote_executor_pool reporting
+// "DataHub Cloud Required"). Skips on mock (which simulates Cloud) and on
+// any live target with DATAHUB_CLOUD=1. Runs only on testacc-local,
+// testacc-quickstart, or testacc-remote (without DATAHUB_CLOUD=1).
+func (tg *Target) RequireOSS(t *testing.T) {
+	t.Helper()
+	if tg.Kind == TargetMock {
+		t.Skip("skipping OSS-error-path test: mock target always supports Cloud features; use testacc-local or testacc-quickstart to test against real OSS DataHub")
+	}
+	if tg.isCloud {
+		t.Skip("skipping OSS-error-path test: DATAHUB_CLOUD=1 is set; this test requires a live OSS DataHub instance (testacc-local or testacc-quickstart)")
+	}
 }
 
 // Name returns a resource name suitable for the active target.
@@ -87,10 +124,12 @@ func SetupTarget(t *testing.T) *Target {
 		srv := NewServer(t)
 		t.Setenv("DATAHUB_GMS_URL", srv.URL)
 		t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
-		return &Target{Kind: TargetMock}
+		// Mock always simulates Cloud: it supports all Cloud-only operations.
+		return &Target{Kind: TargetMock, isCloud: true}
 	}
 	if strings.TrimSpace(os.Getenv("DATAHUB_GMS_TOKEN")) == "" {
 		t.Fatalf("DATAHUB_GMS_TOKEN must be set when DATAHUB_GMS_URL is set")
 	}
-	return &Target{Kind: TargetLive}
+	isCloud := strings.TrimSpace(os.Getenv("DATAHUB_CLOUD")) == "1"
+	return &Target{Kind: TargetLive, isCloud: isCloud}
 }

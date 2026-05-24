@@ -18,9 +18,10 @@ provider "datahub" {
 # the source ingests real metadata artifacts that appear in DataHub search.
 resource "datahub_ingestion_source" "csv_enricher" {
   source_name = "TF CSV Enricher"
-  # "default" is the standard executor ID for OSS DataHub and DataHub Cloud.
-  # If your instance uses a named custom executor, change this value.
-  # A future datahub_ingestion_executor data source will allow lookup by name.
+  # "default" routes ingestion to the built-in executor on both OSS DataHub
+  # and DataHub Cloud. For DataHub Cloud customers running ingestion in their
+  # own VPC, create a datahub_remote_executor_pool resource instead and set
+  # remote_executor_id to that pool's pool_id attribute.
   remote_executor_id = "default"
   recipe = jsonencode({
     source = {
