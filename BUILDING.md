@@ -65,12 +65,12 @@ The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automa
 
 Each Makefile target enforces WHERE and HOW tests run. The target name is the source of truth for location and launch method; DATAHUB_CLOUD=1 is a separate caller-supplied signal about what capabilities to expect.
 
-| Target | Where | How | Cloud-only tests? |
-|---|---|---|---|
-| `make testacc` | nowhere (no network) | in-memory mock | Yes - mock always simulates Cloud |
-| `make testacc-local` | `localhost:8080` | BYO OSS DataHub instance | Only if `DATAHUB_CLOUD=1` is set |
-| `make testacc-quickstart` | `localhost:8080` | boots a fresh OSS DataHub Quickstart | Only if `DATAHUB_CLOUD=1` is set |
-| `make testacc-remote` | anywhere (by `DATAHUB_GMS_URL`) | BYO remote instance | Only if `DATAHUB_CLOUD=1` is set |
+| Target | Where | How | Without `DATAHUB_CLOUD=1` | With `DATAHUB_CLOUD=1` |
+|---|---|---|---|---|
+| `make testacc` | nowhere (no network) | in-memory mock | All tests (mock simulates Cloud) | n/a - mock always runs all |
+| `make testacc-local` | `localhost:8080` | BYO instance | OSS error-path tests | Cloud lifecycle tests |
+| `make testacc-quickstart` | `localhost:8080` | boots fresh OSS Quickstart | OSS error-path tests | Cloud lifecycle tests |
+| `make testacc-remote` | anywhere (`DATAHUB_GMS_URL`) | BYO remote instance | OSS error-path tests | Cloud lifecycle tests |
 
 `testacc-local` and `testacc-quickstart` always hard-code `localhost:8080`; any `DATAHUB_GMS_URL` in the shell environment is ignored. `testacc-remote` requires `DATAHUB_GMS_URL` and refuses loopback URLs.
 
@@ -133,7 +133,7 @@ export DATAHUB_GMS_TOKEN=<PAT>
 make testacc-remote
 ```
 
-By default, Cloud-only tests are skipped. To include them (e.g. when pointing at a DataHub Cloud tenant), set `DATAHUB_CLOUD=1`:
+`DATAHUB_CLOUD=1` toggles which half of the test suite runs. Without it, OSS error-path tests verify that Cloud-only resources fail cleanly on non-Cloud instances. With it, Cloud lifecycle tests verify full CRUD against a real Cloud tenant:
 
 ```bash
 export DATAHUB_GMS_URL=https://your-tenant.acryl.io/gms
