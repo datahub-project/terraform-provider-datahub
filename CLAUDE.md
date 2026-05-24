@@ -126,6 +126,14 @@ Runnable examples follow the standard HashiCorp convention for file separation:
 - `variables.tf` — input variables (add when the example needs parameterisation)
 - `README.md` — prerequisites, run instructions, follow-up actions, cleanup
 
+### Ingestion source types in examples
+
+When an example includes a `datahub_ingestion_source` to illustrate a point (e.g. wiring up an executor pool), choose the source `type` to make the surrounding story self-evident:
+
+- Prefer private-network types (`postgres`, `mysql`, `mssql`) when demonstrating VPC or executor pool patterns. A database behind a firewall is immediately understood as something that needs a private executor -- the connection story requires no explanation.
+- Avoid cloud-warehouse types (`bigquery`, `snowflake`, `redshift`) in executor pool examples: these services are reachable from the internet and do not need private VPC access, which undercuts the narrative.
+- `csv-enricher` and `demo-data` are fine for fully generic demonstrations where the source type is irrelevant to the point being made.
+
 ### Outputs
 
 Always include outputs that let the user verify or act on the result of their `terraform apply` without leaving the terminal. At minimum:
