@@ -4,6 +4,7 @@
 package datahubtesting
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -205,9 +206,9 @@ func detectIsCloud(gmsURL, token string) (bool, error) {
 
 // getConfigBody performs a GET request and decodes the JSON body into a map.
 func getConfigBody(url, token string) (map[string]any, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("new request: %w", err)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -215,7 +216,7 @@ func getConfigBody(url, token string) (map[string]any, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("do: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
