@@ -20,5 +20,5 @@ output "helm_values_snippet" {
 
 output "ingestion_source_urn" {
   description = "The URN of the ingestion source configured to run on this pool."
-  value       = datahub_ingestion_source.csv_enricher.urn
+  value       = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.csv_enricher.source_id}"
 }
