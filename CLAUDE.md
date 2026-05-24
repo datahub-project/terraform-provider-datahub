@@ -2,7 +2,7 @@
 
 Terraform Plugin Framework provider that talks to the DataHub OpenAPI v3 REST surface. Manages DataHub configuration and data objects (Ingestion Sources today; more to follow). Does not provision DataHub infrastructure.
 
-The provider works against the open-source DataHub API and also against DataHub Cloud, since both expose the same OpenAPI surface.
+The provider works against the open-source DataHub API and also against DataHub Cloud, since both expose the same OpenAPI surface. Some resources are Cloud-only (see "Cloud-only resources" below).
 
 ## Home and donation status
 
@@ -31,6 +31,14 @@ When adding files:
 
 - **OSS API targeted.** Works against both open-source DataHub and DataHub Cloud via the OpenAPI v3 endpoints. Avoid Cloud-only proprietary endpoints unless gated and documented.
 - **Configuration and data only.** This provider does not provision DataHub servers, Kubernetes clusters, databases, or other infrastructure. Use a separate Terraform stack (or a different provider) for that.
+
+## Cloud-only resources
+
+Some resources and data sources target DataHub Cloud exclusively and will fail with a clear error on OSS DataHub. These are documented in each resource's description. Applying against OSS is a supported no-op only when every resource in the config is OSS-compatible.
+
+| Resource / Data Source | Reason |
+|---|---|
+| `datahub_remote_executor_pool` (resource + data source) | The `dataHubRemoteExecutorPool` entity type and its GraphQL mutations do not exist in OSS DataHub. The underlying mutations are also classified as `category: internal` in DataHub Cloud, meaning they carry no external API stability guarantee and may change between Cloud releases without notice. |
 
 ## Resource naming
 
@@ -117,6 +125,14 @@ Runnable examples follow the standard HashiCorp convention for file separation:
 - `outputs.tf` — all `output` blocks; never mix them into `main.tf`
 - `variables.tf` — input variables (add when the example needs parameterisation)
 - `README.md` — prerequisites, run instructions, follow-up actions, cleanup
+
+### Ingestion source types in examples
+
+When an example includes a `datahub_ingestion_source` to illustrate a point (e.g. wiring up an executor pool), choose the source `type` to make the surrounding story self-evident:
+
+- Prefer private-network types (`postgres`, `mysql`, `mssql`) when demonstrating VPC or executor pool patterns. A database behind a firewall is immediately understood as something that needs a private executor -- the connection story requires no explanation.
+- Avoid cloud-warehouse types (`bigquery`, `snowflake`, `redshift`) in executor pool examples: these services are reachable from the internet and do not need private VPC access, which undercuts the narrative.
+- `csv-enricher` and `demo-data` are fine for fully generic demonstrations where the source type is irrelevant to the point being made.
 
 ### Outputs
 

@@ -236,6 +236,7 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewMeDataSource,
+		NewRemoteExecutorPoolDataSource,
 	}
 }
 
@@ -244,5 +245,6 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 	return []func() resource.Resource{
 		NewIngestionSourceResource,
 		NewSecretResource,
+		NewRemoteExecutorPoolResource,
 	}
 }

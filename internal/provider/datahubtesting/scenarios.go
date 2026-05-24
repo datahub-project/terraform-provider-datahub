@@ -207,6 +207,112 @@ func SecretCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// RemoteExecutorPoolLifecycleSteps returns test steps covering create,
+// description update, and import for datahub_remote_executor_pool.
+//
+// poolID must be unique within the target DataHub instance. Mock callers may
+// pass a fixed string; live callers should pass a randomized name from
+// LiveResourceID.
+func RemoteExecutorPoolLifecycleSteps(poolID string) []resource.TestStep {
+	const addr = "datahub_remote_executor_pool.test"
+	urn := "urn:li:dataHubRemoteExecutorPool:" + poolID
+
+	return []resource.TestStep{
+		{
+			// Create with description.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_remote_executor_pool" "test" {
+  pool_id     = %q
+  description = "initial description"
+}
+`, poolID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("pool_id"), knownvalue.StringExact(poolID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("initial description")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("is_default"), knownvalue.Bool(false)),
+			},
+		},
+		{
+			// Update description in-place (pool_id unchanged, no replace).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_remote_executor_pool" "test" {
+  pool_id     = %q
+  description = "updated description"
+}
+`, poolID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("updated description")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+			},
+		},
+		{
+			// Import by URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// RemoteExecutorPoolDataSourceSteps returns test steps that create a pool via
+// the resource and then read it back via the data source in the same config.
+// This ensures the pool exists for the data source lookup.
+func RemoteExecutorPoolDataSourceSteps(poolID string) []resource.TestStep {
+	const addr = "data.datahub_remote_executor_pool.test"
+	urn := "urn:li:dataHubRemoteExecutorPool:" + poolID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_remote_executor_pool" "seed" {
+  pool_id     = %q
+  description = "data source test pool"
+}
+
+data "datahub_remote_executor_pool" "test" {
+  pool_id    = datahub_remote_executor_pool.seed.pool_id
+}
+`, poolID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("pool_id"), knownvalue.StringExact(poolID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+			},
+		},
+	}
+}
+
+// RemoteExecutorPoolCheckDestroy verifies every datahub_remote_executor_pool
+// in the post-destroy state has been removed from DataHub.
+func RemoteExecutorPoolCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_remote_executor_pool" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		pool, getErr := client.GetRemoteExecutorPoolByURN(ctx, urn)
+		if getErr != nil {
+			errLower := strings.ToLower(getErr.Error())
+			if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+				continue
+			}
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_remote_executor_pool %q: %w", urn, getErr)
+		}
+		if pool != nil {
+			return fmt.Errorf("datahub_remote_executor_pool %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
 // MeDataSourceStepsAny returns test steps that read the datahub_me data
 // source and verify the identity fields are populated (non-null) without
 // asserting specific values. Use this in live tests where the identity is

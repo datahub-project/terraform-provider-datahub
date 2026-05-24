@@ -63,14 +63,25 @@ The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automa
 
 ### Live tests: target overview
 
-Each Makefile target enforces its own URL semantics — the target name is the source of truth for "what am I hitting":
+Each Makefile target enforces WHERE and HOW tests run. The target name is the source of truth for location and launch method. Cloud vs OSS is **auto-detected** from the live instance via `GET /config`; no flag is required.
 
-| Target | What it hits | URL source |
-|---|---|---|
-| `make testacc` | In-memory mock server | n/a — no network |
-| `make testacc-local` | Pre-existing local Quickstart at `http://localhost:8080` | Makefile hard-codes `localhost:8080`; shell env is ignored |
-| `make testacc-quickstart` | Fresh local Quickstart (boots + nukes) | Same as testacc-local |
-| `make testacc-remote` | Any remote DataHub (Cloud, self-hosted, staging) | `DATAHUB_GMS_URL` + `DATAHUB_GMS_TOKEN` from shell; loopback URLs refused |
+| Target | Where | How | Cloud/OSS detection |
+|---|---|---|---|
+| `make testacc` | nowhere (no network) | in-memory mock | Always Cloud (mock simulates Cloud) |
+| `make testacc-local` | `localhost:8080` | BYO instance | Auto-detected via `GET /config` |
+| `make testacc-quickstart` | `localhost:8080` | boots fresh OSS Quickstart | Auto-detected (always OSS) |
+| `make testacc-remote` | anywhere (`DATAHUB_GMS_URL`) | BYO remote instance | Auto-detected via `GET /config` |
+
+`testacc-local` and `testacc-quickstart` always hard-code `localhost:8080`; any `DATAHUB_GMS_URL` in the shell environment is ignored. `testacc-remote` requires `DATAHUB_GMS_URL` and refuses loopback URLs.
+
+**Auto-detection:** `SetupTarget` probes `GET /config` (or `GET /api/gms/config` if behind a frontend proxy) and reads `datahub.serverEnv`. A value of `"cloud"` enables Cloud-only tests; `"core"` enables OSS error-path tests. If the probe fails, OSS mode is assumed and a warning is logged.
+
+**Overriding detection:** Set `DATAHUB_CLOUD=1` to force Cloud mode, or `DATAHUB_CLOUD=0` to force OSS mode, regardless of what the probe returns.
+
+**Which tests run where:**
+
+- *Cloud-only tests* (e.g. `TestAcc_RemoteExecutorPool_Lifecycle`) use `tg.RequireCloud(t)`. They always run against the mock. Against live targets they run when the instance is detected (or forced) as Cloud.
+- *OSS error-path tests* (e.g. `TestAcc_RemoteExecutorPool_OSS_RejectsWithCloudOnlyError`) use `tg.RequireOSS(t)`. They are skipped on the mock and on any live target detected (or forced) as Cloud. They run on live targets detected (or forced) as OSS.
 
 For live targets the test uses a randomized resource name (`tfprovider-secret-<random>` etc.) so repeated runs and concurrent developers do not collide.
 
@@ -118,12 +129,27 @@ make quickstart-down
 
 ### Live tests against a remote tenant
 
-`make testacc-remote` runs the same `TestAcc_*` functions against any non-loopback DataHub instance (DataHub Cloud, a self-hosted staging server, etc.). The target refuses loopback URLs at startup and echoes the target URL with a 3-second pause before tests begin.
+`make testacc-remote` runs `TestAcc_*` functions against any non-loopback DataHub instance. Set `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` in the shell before invoking it.
 
 ```bash
-export DATAHUB_GMS_URL=https://your-tenant.acryl.io/api/gms
+export DATAHUB_GMS_URL=https://your-staging-instance.example.com/api/gms
 export DATAHUB_GMS_TOKEN=<PAT>
 make testacc-remote
+```
+
+Cloud vs OSS is auto-detected. Just point at your tenant and run — the right tests will be selected automatically:
+
+```bash
+export DATAHUB_GMS_URL=https://your-tenant.acryl.io/gms
+export DATAHUB_GMS_TOKEN=<PAT>
+make testacc-remote
+```
+
+If auto-detection gives the wrong result (e.g. probe blocked by a firewall), override it explicitly:
+
+```bash
+DATAHUB_CLOUD=1 make testacc-remote   # force Cloud mode
+DATAHUB_CLOUD=0 make testacc-remote   # force OSS mode
 ```
 
 Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks.

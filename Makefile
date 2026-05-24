@@ -34,17 +34,20 @@ help:
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
 	@echo "  test          Run unit tests"
-	@echo "  testacc            Run acceptance tests against the in-memory mock (TF_ACC=1)"
-	@echo "  testacc-local      Run acc tests against a pre-existing local Quickstart (always localhost)"
-	@echo "  testacc-quickstart Boot a fresh Quickstart, run acc tests, nuke on exit"
-	@echo "  testacc-remote     Run acc tests against a remote tenant (DATAHUB_GMS_URL + DATAHUB_GMS_TOKEN required; loopback URLs refused)"
+	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
+	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
+	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
+	@echo "  testacc-quickstart Boot a fresh OSS DataHub Quickstart at localhost, run acceptance tests, then nuke;"
+	@echo "                     KEEP_QUICKSTART=1 to skip nuke; auto-detected as OSS"
+	@echo "  testacc-remote     Run acceptance tests against a remote DataHub instance"
+	@echo "                     (DATAHUB_GMS_URL + DATAHUB_GMS_TOKEN required; loopback URLs refused);"
+	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
 	@echo "  coverage           Run all tests with merged coverage; prints total"
-	@echo "  coverage-html Run coverage, then write $(COVERAGE_HTML)"
-	@echo "  dev-deps      Install Python dev dependencies (datahub CLI) into .venv"
-	@echo "  quickstart-up    Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first; QUICKSTART_VERSION=vX.Y.Z overrides image"
-	@echo "  quickstart-down  Tear down the Quickstart (datahub docker nuke)"
-	@echo "  quickstart-token Mint a DataHub PAT against the running Quickstart"
-	@echo "  testacc-quickstart Boot Quickstart, run live acc tests, nuke on exit; KEEP_QUICKSTART=1 skips nuke"
+	@echo "  coverage-html      Run coverage, then write $(COVERAGE_HTML)"
+	@echo "  dev-deps           Install Python dev dependencies (datahub CLI) into .venv"
+	@echo "  quickstart-up      Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first; QUICKSTART_VERSION=vX.Y.Z overrides image"
+	@echo "  quickstart-down    Tear down the Quickstart (datahub docker nuke)"
+	@echo "  quickstart-token   Mint a DataHub PAT against the running Quickstart"
 
 build:
 	@mkdir -p "$(BIN_DIR)"
@@ -121,7 +124,7 @@ test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
 
 testacc:
-	TF_ACC=1 $(GO) test -v -cover -timeout 120m ./...
+	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= $(GO) test -v -cover -timeout 120m ./...
 
 testacc-local:
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
@@ -139,6 +142,30 @@ testacc-remote:
 	esac
 	@echo ""
 	@echo "==> testacc-remote will run against: $$DATAHUB_GMS_URL"
+	@if [ -n "$$DATAHUB_CLOUD" ]; then \
+		if [ "$$DATAHUB_CLOUD" = "1" ]; then \
+			echo "==> Mode: Cloud (DATAHUB_CLOUD=1 forced) -- Cloud-only tests will run"; \
+		else \
+			echo "==> Mode: OSS (DATAHUB_CLOUD=0 forced) -- Cloud-only tests skipped"; \
+		fi; \
+	else \
+		GMS=$$(printf '%s' "$$DATAHUB_GMS_URL" | sed 's|/$$||'); \
+		RESP=$$(curl -sS -H "Authorization: Bearer $$DATAHUB_GMS_TOKEN" -w "\n%{http_code}" "$$GMS/config" 2>&1); \
+		CODE=$$(printf '%s' "$$RESP" | tail -1); \
+		BODY=$$(printf '%s' "$$RESP" | sed '$$d'); \
+		ENV=$$(printf '%s' "$$BODY" | jq -r '.datahub.serverEnv // empty' 2>/dev/null); \
+		if [ -z "$$ENV" ]; then \
+			ENV=$$(curl -sS -H "Authorization: Bearer $$DATAHUB_GMS_TOKEN" "$$GMS/api/gms/config" 2>/dev/null | jq -r '.datahub.serverEnv // empty' 2>/dev/null); \
+		fi; \
+		if [ "$$ENV" = "cloud" ]; then \
+			echo "==> Mode: DataHub Cloud auto-detected (serverEnv=cloud) -- Cloud-only tests will run"; \
+		elif [ -n "$$ENV" ]; then \
+			echo "==> Mode: OSS DataHub auto-detected (serverEnv=$$ENV) -- Cloud-only tests skipped"; \
+		else \
+			echo "==> Mode: probe failed (HTTP $$CODE); treating as OSS. Set DATAHUB_CLOUD=1 to force Cloud."; \
+		fi; \
+	fi
+	@echo "==> (Set DATAHUB_CLOUD=1 or DATAHUB_CLOUD=0 to override detection)"
 	@echo "==> Starting in 3s. Ctrl-C to abort."
 	@echo ""
 	@sleep 3
