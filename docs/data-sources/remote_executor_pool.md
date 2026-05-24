@@ -12,7 +12,7 @@ description: |-
     pool_id = "default"
   }
   
-  resource "datahub_ingestion_source" "bigquery" {
+  resource "datahub_ingestion_source" "postgres_warehouse" {
     # ...
     remote_executor_id = data.datahub_remote_executor_pool.default.pool_id
   }
@@ -39,7 +39,7 @@ data "datahub_remote_executor_pool" "default" {
   pool_id = "default"
 }
 
-resource "datahub_ingestion_source" "bigquery" {
+resource "datahub_ingestion_source" "postgres_warehouse" {
   # ...
   remote_executor_id = data.datahub_remote_executor_pool.default.pool_id
 }

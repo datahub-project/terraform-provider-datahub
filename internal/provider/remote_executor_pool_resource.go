@@ -105,7 +105,7 @@ func (r *remoteExecutorPoolResource) Schema(_ context.Context, _ resource.Schema
 			"resource \"datahub_remote_executor_pool\" \"analytics\" {\n" +
 			"  pool_id = \"analytics-team\"\n" +
 			"}\n\n" +
-			"resource \"datahub_ingestion_source\" \"bigquery\" {\n" +
+			"resource \"datahub_ingestion_source\" \"postgres_warehouse\" {\n" +
 			"  # ...\n" +
 			"  remote_executor_id = datahub_remote_executor_pool.analytics.pool_id\n" +
 			"}\n" +

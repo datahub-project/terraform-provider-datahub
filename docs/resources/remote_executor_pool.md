@@ -24,7 +24,7 @@ description: |-
     pool_id = "analytics-team"
   }
   
-  resource "datahub_ingestion_source" "bigquery" {
+  resource "datahub_ingestion_source" "postgres_warehouse" {
     # ...
     remote_executor_id = datahub_remote_executor_pool.analytics.pool_id
   }
@@ -68,7 +68,7 @@ resource "datahub_remote_executor_pool" "analytics" {
   pool_id = "analytics-team"
 }
 
-resource "datahub_ingestion_source" "bigquery" {
+resource "datahub_ingestion_source" "postgres_warehouse" {
   # ...
   remote_executor_id = datahub_remote_executor_pool.analytics.pool_id
 }

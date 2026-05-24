@@ -55,7 +55,7 @@ func (d *remoteExecutorPoolDataSource) Schema(_ context.Context, _ datasource.Sc
 			"data \"datahub_remote_executor_pool\" \"default\" {\n" +
 			"  pool_id = \"default\"\n" +
 			"}\n\n" +
-			"resource \"datahub_ingestion_source\" \"bigquery\" {\n" +
+			"resource \"datahub_ingestion_source\" \"postgres_warehouse\" {\n" +
 			"  # ...\n" +
 			"  remote_executor_id = data.datahub_remote_executor_pool.default.pool_id\n" +
 			"}\n" +
