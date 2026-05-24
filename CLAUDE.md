@@ -4,9 +4,9 @@ Terraform Plugin Framework provider that talks to the DataHub OpenAPI v3 REST su
 
 The provider works against the open-source DataHub API and also against DataHub Cloud, since both expose the same OpenAPI surface.
 
-## Target home and donation status
+## Home and donation status
 
-This project is being prepared for donation to the open-source DataHub community. Once published:
+This project was donated to the open-source DataHub community and is live. v0.1.0 shipped 2026-05-23.
 
 - GitHub repository: `github.com/datahub-project/terraform-provider-datahub`
 - Terraform Registry source: `registry.terraform.io/datahub-project/datahub`
