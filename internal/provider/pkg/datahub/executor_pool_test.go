@@ -46,6 +46,18 @@ func TestIsCloudOnlyError(t *testing.T) {
 			"RemoteExecutorPool type is undefined",
 			true,
 		},
+		// UnknownType: graphql-java error when the input type is absent from the schema.
+		// Seen on Quickstart v1.5.0.6 for createRemoteExecutorPool / updateRemoteExecutorPool.
+		{
+			"Validation error (UnknownType) : Unknown type 'CreateRemoteExecutorPoolInput'",
+			true,
+		},
+		{
+			"Validation error (UnknownType) : Unknown type 'UpdateRemoteExecutorPoolInput'",
+			true,
+		},
+		// UnknownType on an unrelated type should not be treated as Cloud-only.
+		{"Validation error (UnknownType) : Unknown type 'SomethingElse'", false},
 		{"permission denied", false},
 		{"internal server error", false},
 		{"executor pool my-pool already exists", false},

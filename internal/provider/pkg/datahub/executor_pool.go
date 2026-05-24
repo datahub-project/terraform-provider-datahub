@@ -145,9 +145,15 @@ func toRemoteExecutorPool(g *remoteExecutorPoolGQL) *RemoteExecutorPool {
 }
 
 // isCloudOnlyError returns true when the GraphQL error message indicates the
-// mutation or query is not defined on this GMS instance (OSS DataHub).
+// mutation, query, or input type is not defined on this GMS instance (OSS DataHub).
+// Two distinct graphql-java error codes appear in practice:
+//   - FieldUndefined: mutation/query field absent from the schema (older builds)
+//   - UnknownType: input type (e.g. CreateRemoteExecutorPoolInput) absent from
+//     the schema; seen on Quickstart v1.5.0.6 which registers no RemoteExecutorPool
+//     input types even when the field reference validation fires first
 func isCloudOnlyError(msg string) bool {
 	return strings.Contains(msg, "FieldUndefined") ||
+		(strings.Contains(msg, "UnknownType") && strings.Contains(msg, "RemoteExecutorPool")) ||
 		(strings.Contains(msg, "is undefined") && strings.Contains(msg, "RemoteExecutorPool"))
 }
 
