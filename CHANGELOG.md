@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `datahub_ingestion_source` data source: look up an existing ingestion source by
+  `source_id`. Returns all resource attributes (`source_name`, `source_type`, `recipe`,
+  schedule, executor, etc.) as read-only outputs.
 - `datahub_remote_executor_pool` resource (DataHub Cloud only): create, update,
   and delete Remote Executor Pools. Supports `pool_id`, `description`, and
   `is_default`. Create waits for the pool to reach `READY` state before
