@@ -178,6 +178,33 @@ func TestGetRemoteExecutorPoolByURN(t *testing.T) {
 		}
 	})
 
+	t.Run("deleted_pool_null_propagation_treated_as_not_found", func(t *testing.T) {
+		// After deletion, some Cloud builds return the pool as null with a non-null
+		// field violation error (graphql-java propagates createdAt=null to parent).
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"getRemoteExecutorPool": nil},
+				"errors": []map[string]any{
+					{
+						"message": "The field at path '/getRemoteExecutorPool/createdAt' was declared as a non null type, " +
+							"but the code involved in retrieving data has wrongly returned a null value.  " +
+							"The non-nullable type is 'Long' within parent type 'RemoteExecutorPool'",
+					},
+				},
+			})
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		pool, err := c.GetRemoteExecutorPoolByURN(t.Context(), "urn:li:dataHubRemoteExecutorPool:deleted-pool")
+		if err != nil {
+			t.Fatalf("unexpected error for deleted pool null propagation = %v", err)
+		}
+		if pool != nil {
+			t.Errorf("expected nil for deleted pool, got %+v", pool)
+		}
+	})
+
 	t.Run("not_found_returns_nil", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

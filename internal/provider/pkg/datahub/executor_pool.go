@@ -141,6 +141,18 @@ func toRemoteExecutorPool(g *remoteExecutorPoolGQL) *RemoteExecutorPool {
 	return p
 }
 
+// isDeletedPoolNullPropagation returns true when the error is a graphql-java
+// non-null propagation from within a getRemoteExecutorPool result. This occurs
+// after deletion: the pool entity is removed but the server may return a sparse
+// record where a non-nullable field (e.g. createdAt: Long!) is null. graphql-java
+// bubbles the null up to the parent, setting getRemoteExecutorPool to null and
+// placing this error in the errors array. Callers should treat this the same as
+// a not-found nil response.
+func isDeletedPoolNullPropagation(msg string) bool {
+	return strings.Contains(msg, "at path '/getRemoteExecutorPool/") &&
+		strings.Contains(msg, "non null type")
+}
+
 // isCloudOnlyError returns true when the GraphQL error message indicates the
 // mutation, query, or input type is not defined on this GMS instance (OSS DataHub).
 // Two distinct graphql-java error codes appear in practice:
@@ -327,6 +339,13 @@ func (c *Client) GetRemoteExecutorPoolByURN(ctx context.Context, urn string) (*R
 		msg := gqlResp.Errors[0].Message
 		if isCloudOnlyError(msg) {
 			return nil, ErrExecutorPoolCloudOnly
+		}
+		// After deletion, the pool entity may exist as a sparse record with
+		// non-nullable fields null; graphql-java propagates the null to the
+		// parent, setting getRemoteExecutorPool = null and placing an error
+		// in the array. Treat this the same as not found.
+		if isDeletedPoolNullPropagation(msg) && gqlResp.Data.GetRemoteExecutorPool == nil {
+			return nil, nil
 		}
 		return nil, fmt.Errorf("DataHub API error: %s", msg)
 	}
