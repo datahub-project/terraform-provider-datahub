@@ -49,12 +49,6 @@ var ErrExecutorPoolCloudOnly = errors.New(
 // Mirrors the server-side validation in CreateRemoteExecutorPoolResolver.java.
 var poolIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
-// reservedPoolIDs mirrors AcrylConstants.RESERVED_REMOTE_EXECUTOR_POOL_IDS.
-var reservedPoolIDs = map[string]bool{
-	"default":  true,
-	"embedded": true,
-}
-
 // RemoteExecutorPool is the read-shape returned by getRemoteExecutorPool.
 type RemoteExecutorPool struct {
 	URN         string
@@ -558,7 +552,7 @@ func (c *Client) WaitForRemoteExecutorPoolReady(ctx context.Context, urn string,
 		}
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, fmt.Errorf("context cancelled while waiting for pool READY: %w", ctx.Err())
 		case <-time.After(5 * time.Second):
 		}
 	}

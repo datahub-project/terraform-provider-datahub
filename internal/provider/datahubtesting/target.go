@@ -93,8 +93,8 @@ func (tg *Target) RequireOSS(t *testing.T) {
 // concurrent developers sharing a single DataHub instance. The
 // "tfprovider-" prefix convention used throughout these tests gives a
 // future sweeper a stable substring to match on.
-func (t *Target) Name(base string) string {
-	if t.Kind == TargetMock {
+func (tg *Target) Name(base string) string {
+	if tg.Kind == TargetMock {
 		return base
 	}
 	return base + "-" + strings.ToLower(acctest.RandString(8))

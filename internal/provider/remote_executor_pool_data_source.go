@@ -156,11 +156,11 @@ func (d *remoteExecutorPoolDataSource) Read(ctx context.Context, req datasource.
 	}
 
 	state := remoteExecutorPoolDataSourceModel{
-		PoolID:    types.StringValue(pool.PoolID),
-		URN:       types.StringValue(pool.URN),
-		IsDefault: types.BoolValue(pool.IsDefault),
+		PoolID:     types.StringValue(pool.PoolID),
+		URN:        types.StringValue(pool.URN),
+		IsDefault:  types.BoolValue(pool.IsDefault),
 		IsEmbedded: types.BoolValue(pool.IsEmbedded),
-		CreatedAt: types.Int64Value(pool.CreatedAt),
+		CreatedAt:  types.Int64Value(pool.CreatedAt),
 	}
 
 	if pool.Description != "" {
