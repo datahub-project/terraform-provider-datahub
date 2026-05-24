@@ -142,7 +142,30 @@ testacc-remote:
 	esac
 	@echo ""
 	@echo "==> testacc-remote will run against: $$DATAHUB_GMS_URL"
-	@echo "==> Cloud vs OSS auto-detected via GET /config. Set DATAHUB_CLOUD=1 or DATAHUB_CLOUD=0 to override."
+	@if [ -n "$$DATAHUB_CLOUD" ]; then \
+		if [ "$$DATAHUB_CLOUD" = "1" ]; then \
+			echo "==> Mode: Cloud (DATAHUB_CLOUD=1 forced) -- Cloud-only tests will run"; \
+		else \
+			echo "==> Mode: OSS (DATAHUB_CLOUD=0 forced) -- Cloud-only tests skipped"; \
+		fi; \
+	else \
+		GMS=$$(printf '%s' "$$DATAHUB_GMS_URL" | sed 's|/$$||'); \
+		RESP=$$(curl -sS -H "Authorization: Bearer $$DATAHUB_GMS_TOKEN" -w "\n%{http_code}" "$$GMS/config" 2>&1); \
+		CODE=$$(printf '%s' "$$RESP" | tail -1); \
+		BODY=$$(printf '%s' "$$RESP" | sed '$$d'); \
+		ENV=$$(printf '%s' "$$BODY" | jq -r '.datahub.serverEnv // empty' 2>/dev/null); \
+		if [ -z "$$ENV" ]; then \
+			ENV=$$(curl -sS -H "Authorization: Bearer $$DATAHUB_GMS_TOKEN" "$$GMS/api/gms/config" 2>/dev/null | jq -r '.datahub.serverEnv // empty' 2>/dev/null); \
+		fi; \
+		if [ "$$ENV" = "cloud" ]; then \
+			echo "==> Mode: DataHub Cloud auto-detected (serverEnv=cloud) -- Cloud-only tests will run"; \
+		elif [ -n "$$ENV" ]; then \
+			echo "==> Mode: OSS DataHub auto-detected (serverEnv=$$ENV) -- Cloud-only tests skipped"; \
+		else \
+			echo "==> Mode: probe failed (HTTP $$CODE); treating as OSS. Set DATAHUB_CLOUD=1 to force Cloud."; \
+		fi; \
+	fi
+	@echo "==> (Set DATAHUB_CLOUD=1 or DATAHUB_CLOUD=0 to override detection)"
 	@echo "==> Starting in 3s. Ctrl-C to abort."
 	@echo ""
 	@sleep 3
