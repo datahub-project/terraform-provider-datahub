@@ -4,11 +4,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    # Extract the current version's section from CHANGELOG.md into .release-notes.md,
-    # stripping the heading line (GitHub Release UI shows the version in its own title bar).
-    # Also stops before the reference-link definitions block at the bottom of the file.
-    - bash -c 'VERSION="${GORELEASER_CURRENT_TAG#v}"; awk -v v="$VERSION" "/^## \\[/{if (p) exit; if (\$0 ~ \"^## \\\\[\" v \"\\\\]\") {p=1; next}} /^\\[/{if (p) exit} p" CHANGELOG.md > .release-notes.md'
-    - bash -c 'test -s .release-notes.md || { echo "ERROR: .release-notes.md is empty - no CHANGELOG section found for ${GORELEASER_CURRENT_TAG}; update CHANGELOG.md before tagging" >&2; exit 1; }'
+    - bash scripts/extract-release-notes.sh
 builds:
 - env:
     # goreleaser does not work with CGO, it could also complicate
