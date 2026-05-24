@@ -129,8 +129,6 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "getRemoteExecutorPool"):
 		s.handleGetExecutorPool(w, req.Variables)
-	case strings.Contains(q, "listRemoteExecutorPools"):
-		s.handleListExecutorPools(w)
 	default:
 		http.Error(w, `{"errors":[{"message":"unknown operation"}]}`, http.StatusBadRequest)
 	}
@@ -389,25 +387,6 @@ func (s *mockServer) handleGetExecutorPool(w http.ResponseWriter, variables map[
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"getRemoteExecutorPool": s.poolGQL(p)},
-	})
-}
-
-func (s *mockServer) handleListExecutorPools(w http.ResponseWriter) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	pools := make([]map[string]any, 0, len(s.pools))
-	for _, p := range s.pools {
-		pools = append(pools, s.poolGQL(p))
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data": map[string]any{
-			"listRemoteExecutorPools": map[string]any{
-				"remoteExecutorPools": pools,
-				"total":               len(pools),
-			},
-		},
 	})
 }
 

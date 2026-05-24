@@ -14,14 +14,10 @@
 //   - Update description: updateRemoteExecutorPool(input)
 //   - Set default: updateDefaultRemoteExecutorPool(urn)
 //   - Delete: DELETE /openapi/v3/entity/datahubremoteexecutorpool/{urn}
-//   - List:   listRemoteExecutorPools(input) - paginated, OpenSearch-backed
 //
 // Read uses GraphQL (getRemoteExecutorPool) because this entity type is
 // not registered for the OSS OpenAPI v3 entity endpoint. The GraphQL read
 // goes through EntityClient batch loading which is strongly consistent.
-//
-// List uses OpenSearch and may lag after creation; use GetRemoteExecutorPoolByID
-// (URN-based) for reads immediately after mutations.
 
 package datahub
 
@@ -115,18 +111,6 @@ type getRemoteExecutorPoolResponse struct {
 	} `json:"errors"`
 }
 
-type listRemoteExecutorPoolsResponse struct {
-	Data struct {
-		ListRemoteExecutorPools struct {
-			RemoteExecutorPools []remoteExecutorPoolGQL `json:"remoteExecutorPools"`
-			Total               int                     `json:"total"`
-		} `json:"listRemoteExecutorPools"`
-	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
-}
-
 type remoteExecutorPoolGQL struct {
 	URN            string `json:"urn"`
 	ExecutorPoolID string `json:"executorPoolId"`
@@ -210,26 +194,6 @@ query getRemoteExecutorPool($urn: String!) {
       message
     }
     channel
-  }
-}`
-
-const listRemoteExecutorPoolsQuery = `
-query listRemoteExecutorPools($input: ListRemoteExecutorPoolsInput!) {
-  listRemoteExecutorPools(input: $input) {
-    remoteExecutorPools {
-      urn
-      executorPoolId
-      description
-      isDefault
-      isEmbedded
-      createdAt
-      state {
-        status
-        message
-      }
-      channel
-    }
-    total
   }
 }`
 
@@ -556,60 +520,4 @@ func (c *Client) WaitForRemoteExecutorPoolReady(ctx context.Context, urn string,
 		case <-time.After(5 * time.Second):
 		}
 	}
-}
-
-// ListRemoteExecutorPools fetches all pools. Backed by OpenSearch; may lag
-// briefly after creation. Use GetRemoteExecutorPoolByURN for strongly-consistent
-// reads after mutations.
-func (c *Client) ListRemoteExecutorPools(ctx context.Context) ([]*RemoteExecutorPool, error) {
-	if c == nil {
-		return nil, errors.New("client is nil")
-	}
-
-	body := map[string]any{
-		"query": listRemoteExecutorPoolsQuery,
-		"variables": map[string]any{
-			"input": map[string]any{
-				"start": 0,
-				"count": 200,
-			},
-		},
-	}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/api/graphql", body)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_INGESTION privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf("unexpected HTTP %d from DataHub executor pool API", res.StatusCode)
-	}
-
-	var gqlResp listRemoteExecutorPoolsResponse
-	if err := json.NewDecoder(res.Body).Decode(&gqlResp); err != nil {
-		return nil, fmt.Errorf("parsing listRemoteExecutorPools response: %w", err)
-	}
-
-	if len(gqlResp.Errors) > 0 {
-		msg := gqlResp.Errors[0].Message
-		if isCloudOnlyError(msg) {
-			return nil, ErrExecutorPoolCloudOnly
-		}
-		return nil, fmt.Errorf("DataHub API error: %s", msg)
-	}
-
-	pools := make([]*RemoteExecutorPool, 0, len(gqlResp.Data.ListRemoteExecutorPools.RemoteExecutorPools))
-	for i := range gqlResp.Data.ListRemoteExecutorPools.RemoteExecutorPools {
-		pools = append(pools, toRemoteExecutorPool(&gqlResp.Data.ListRemoteExecutorPools.RemoteExecutorPools[i]))
-	}
-	return pools, nil
 }

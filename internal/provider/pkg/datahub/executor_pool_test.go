@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ossGraphQLHandler returns a handler that responds with the FieldUndefined
@@ -267,6 +268,178 @@ func TestDeleteRemoteExecutorPool(t *testing.T) {
 		err := c.DeleteRemoteExecutorPool(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool")
 		if err == nil {
 			t.Fatal("expected error for 500, got nil")
+		}
+	})
+}
+
+func TestUpdateRemoteExecutorPool(t *testing.T) {
+	t.Run("success_returns_nil", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"updateRemoteExecutorPool": true},
+			})
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		desc := "new description"
+		if err := c.UpdateRemoteExecutorPool(t.Context(), UpdateRemoteExecutorPoolInput{
+			URN:         "urn:li:dataHubRemoteExecutorPool:my-pool",
+			Description: &desc,
+		}); err != nil {
+			t.Fatalf("UpdateRemoteExecutorPool() error = %v", err)
+		}
+	})
+
+	t.Run("oss_FieldUndefined_returns_ErrExecutorPoolCloudOnly", func(t *testing.T) {
+		srv := httptest.NewServer(ossGraphQLHandler("updateRemoteExecutorPool"))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		if err := c.UpdateRemoteExecutorPool(t.Context(), UpdateRemoteExecutorPoolInput{
+			URN: "urn:li:dataHubRemoteExecutorPool:my-pool",
+		}); !errors.Is(err, ErrExecutorPoolCloudOnly) {
+			t.Fatalf("error = %v, want ErrExecutorPoolCloudOnly", err)
+		}
+	})
+
+	t.Run("http_401_returns_error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		err := c.UpdateRemoteExecutorPool(t.Context(), UpdateRemoteExecutorPoolInput{
+			URN: "urn:li:dataHubRemoteExecutorPool:my-pool",
+		})
+		if err == nil {
+			t.Fatal("expected error for 401, got nil")
+		}
+	})
+
+	t.Run("empty_urn_returns_error", func(t *testing.T) {
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
+		if err := c.UpdateRemoteExecutorPool(t.Context(), UpdateRemoteExecutorPoolInput{}); err == nil {
+			t.Fatal("expected error for empty URN, got nil")
+		}
+	})
+}
+
+func TestSetDefaultRemoteExecutorPool(t *testing.T) {
+	t.Run("success_returns_nil", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"updateDefaultRemoteExecutorPool": true},
+			})
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		if err := c.SetDefaultRemoteExecutorPool(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool"); err != nil {
+			t.Fatalf("SetDefaultRemoteExecutorPool() error = %v", err)
+		}
+	})
+
+	t.Run("oss_FieldUndefined_returns_ErrExecutorPoolCloudOnly", func(t *testing.T) {
+		srv := httptest.NewServer(ossGraphQLHandler("updateDefaultRemoteExecutorPool"))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		if err := c.SetDefaultRemoteExecutorPool(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool"); !errors.Is(err, ErrExecutorPoolCloudOnly) {
+			t.Fatalf("error = %v, want ErrExecutorPoolCloudOnly", err)
+		}
+	})
+
+	t.Run("http_401_returns_error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		if err := c.SetDefaultRemoteExecutorPool(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool"); err == nil {
+			t.Fatal("expected error for 401, got nil")
+		}
+	})
+
+	t.Run("empty_urn_returns_error", func(t *testing.T) {
+		c := newTestClient(t, httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})))
+		if err := c.SetDefaultRemoteExecutorPool(t.Context(), ""); err == nil {
+			t.Fatal("expected error for empty URN, got nil")
+		}
+	})
+}
+
+func TestWaitForRemoteExecutorPoolReady(t *testing.T) {
+	t.Run("provisioning_failed_returns_error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"getRemoteExecutorPool": map[string]any{
+						"urn":            "urn:li:dataHubRemoteExecutorPool:my-pool",
+						"executorPoolId": "my-pool",
+						"state":          map[string]any{"status": "PROVISIONING_FAILED", "message": "SQS queue creation failed"},
+					},
+				},
+			})
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		_, err := c.WaitForRemoteExecutorPoolReady(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool", 0)
+		if err == nil {
+			t.Fatal("expected error for PROVISIONING_FAILED, got nil")
+		}
+		if !strings.Contains(err.Error(), "provisioning failed") {
+			t.Errorf("error = %q, want to contain 'provisioning failed'", err.Error())
+		}
+		if !strings.Contains(err.Error(), "SQS queue creation failed") {
+			t.Errorf("error = %q, want to contain state message", err.Error())
+		}
+	})
+
+	t.Run("timeout_returns_error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"getRemoteExecutorPool": map[string]any{
+						"urn":            "urn:li:dataHubRemoteExecutorPool:my-pool",
+						"executorPoolId": "my-pool",
+						"state":          map[string]any{"status": "PROVISIONING_IN_PROGRESS", "message": ""},
+					},
+				},
+			})
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		_, err := c.WaitForRemoteExecutorPoolReady(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool", time.Millisecond)
+		if err == nil {
+			t.Fatal("expected timeout error, got nil")
+		}
+		if !strings.Contains(err.Error(), "did not reach READY") {
+			t.Errorf("error = %q, want to contain 'did not reach READY'", err.Error())
+		}
+	})
+
+	t.Run("ready_returns_pool", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"getRemoteExecutorPool": map[string]any{
+						"urn":            "urn:li:dataHubRemoteExecutorPool:my-pool",
+						"executorPoolId": "my-pool",
+						"state":          map[string]any{"status": "READY", "message": ""},
+					},
+				},
+			})
+		}))
+		defer srv.Close()
+		c := newTestClient(t, srv)
+		pool, err := c.WaitForRemoteExecutorPoolReady(t.Context(), "urn:li:dataHubRemoteExecutorPool:my-pool", 0)
+		if err != nil {
+			t.Fatalf("WaitForRemoteExecutorPoolReady() error = %v", err)
+		}
+		if pool == nil {
+			t.Fatal("pool is nil, want non-nil")
 		}
 	})
 }
