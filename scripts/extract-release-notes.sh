@@ -8,6 +8,8 @@
 # with bare "["), so no dangling bracket references appear in the release body.
 set -euo pipefail
 
+rm -f .release-notes.md
+
 VERSION="${GORELEASER_CURRENT_TAG#v}"
 
 awk -v v="$VERSION" '
