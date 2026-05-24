@@ -238,7 +238,11 @@ func (r *remoteExecutorPoolResource) Create(ctx context.Context, req resource.Cr
 	// pools start READY immediately so the first poll returns without sleeping.
 	pool, err := r.client.WaitForRemoteExecutorPoolReady(ctx, urn, 0)
 	if err != nil {
-		resp.Diagnostics.AddError("DataHub API Error", "Pool was created but did not reach READY state: "+err.Error())
+		if errors.Is(err, datahub.ErrExecutorPoolCloudOnly) {
+			resp.Diagnostics.AddError("DataHub Cloud Required", err.Error())
+		} else {
+			resp.Diagnostics.AddError("DataHub API Error", "Pool was created but did not reach READY state: "+err.Error())
+		}
 		return
 	}
 	if pool != nil {
