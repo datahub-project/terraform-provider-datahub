@@ -34,7 +34,7 @@ help:
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
 	@echo "  test          Run unit tests"
-	@echo "  testacc            Run acceptance tests against the in-memory mock (TF_ACC=1)"
+	@echo "  testacc            Run acceptance tests against the in-memory mock (always; ignores DATAHUB_GMS_URL)"
 	@echo "  testacc-local      Run acc tests against a pre-existing local Quickstart (always localhost; OSS DataHub)"
 	@echo "  testacc-quickstart Boot a fresh Quickstart, run acc tests, nuke on exit (OSS DataHub)"
 	@echo "  testacc-remote     Run acc tests against a remote tenant (DATAHUB_GMS_URL + DATAHUB_GMS_TOKEN required; loopback URLs refused; Cloud-only tests skipped)"
@@ -122,7 +122,7 @@ test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
 
 testacc:
-	TF_ACC=1 $(GO) test -v -cover -timeout 120m ./...
+	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= DATAHUB_CLOUD= $(GO) test -v -cover -timeout 120m ./...
 
 testacc-local:
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
