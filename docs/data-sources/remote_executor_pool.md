@@ -61,13 +61,22 @@ data "datahub_remote_executor_pool" "default" {
   pool_id = "default"
 }
 
-# Reference the default pool's ID in an ingestion source.
-resource "datahub_ingestion_source" "bigquery" {
-  source_name        = "BigQuery Production"
+# Route a private-network ingestion source through the default pool.
+# A Postgres database inside your VPC is the canonical use case: DataHub
+# Cloud cannot reach it directly, so ingestion must run on a Remote Executor
+# deployed inside the same network.
+resource "datahub_ingestion_source" "warehouse" {
+  source_name        = "Warehouse Postgres"
   remote_executor_id = data.datahub_remote_executor_pool.default.pool_id
   recipe = jsonencode({
     source = {
-      type = "bigquery"
+      type = "postgres"
+      config = {
+        host_port = "postgres.internal:5432"
+        database  = "warehouse"
+        username  = "${POSTGRES_USER}"
+        password  = "${POSTGRES_PASSWORD}"
+      }
     }
   })
 }
@@ -82,7 +91,6 @@ resource "datahub_ingestion_source" "bigquery" {
 
 ### Read-Only
 
-- `channel` (String) Communication channel used by executors in this pool (`SQS` or `KAFKA`).
 - `created_at` (Number) UTC timestamp (milliseconds since epoch) when this pool was created.
 - `description` (String) Human-readable description of the pool.
 - `is_default` (Boolean) Whether this pool is the global default for new ingestion sources.

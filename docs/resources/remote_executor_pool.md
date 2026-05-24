@@ -101,7 +101,6 @@ resource "datahub_remote_executor_pool" "analytics" {
 
 ### Read-Only
 
-- `channel` (String) Communication channel used by executors in this pool (`SQS` or `KAFKA`). Managed by DataHub Cloud.
 - `created_at` (Number) UTC timestamp (milliseconds since epoch) when this pool was created.
 - `id` (String) The ID of this resource.
 - `is_embedded` (Boolean) Whether this pool is embedded in the DataHub Cloud coordinator pod. Managed by DataHub Cloud; not configurable.
