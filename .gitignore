@@ -2,6 +2,9 @@
 bin/
 dist/
 
+# GoReleaser-generated release notes (built from CHANGELOG.md at release time)
+.release-notes.md
+
 # Go test and coverage outputs
 *.test
 *.out

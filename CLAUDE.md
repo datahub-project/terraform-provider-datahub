@@ -136,6 +136,17 @@ The wrong choice caused `datahub_secret` to show a spurious "plan to delete" imm
 
 The OpenAPI v3 entity endpoint for a type is always `/openapi/v3/entity/{lowercase-urn-type}/{urn}`, e.g. `/openapi/v3/entity/datahubsecret/{urn}`.
 
+## CHANGELOG.md editing conventions
+
+The `before.hooks` in `.goreleaser.yml` extract the current version's section from `CHANGELOG.md` at release time using an awk script. The script has two constraints that are non-obvious at edit time:
+
+1. **Use inline links inside version sections.** The awk stops when it hits a line starting with bare `[` (the reference-definition block at the bottom of the file). A reference-style link definition inside a section body — e.g. `[my-link]: https://...` on its own line — would prematurely terminate the extract. Always use inline form: `[label](url)`.
+2. **Keep the `## [X.Y.Z]` heading format.** The awk matches on `^## \[X.Y.Z\]`; the version number must be in square brackets immediately after `## `.
+
+The reference-link definitions block at the very bottom of the file (`[X.Y.Z]: https://...`) must stay in that position and continue to use bare `[` lines — this is what the awk uses as the extract stop signal.
+
+If a `## [X.Y.Z]` section is missing for the version being tagged, GoReleaser fails before building any artifacts (the hook asserts `.release-notes.md` is non-empty). Fix: add the CHANGELOG entry, then re-tag.
+
 ## DataHub domain vocabulary (quick reference)
 
 - **Ingestion Source** - the configured, persisted entity in DataHub that represents one source-of-metadata. Resource-shaped.
