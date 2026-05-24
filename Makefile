@@ -35,14 +35,13 @@ help:
 	@echo "  generate      Run go generate in tools/"
 	@echo "  test          Run unit tests"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
-	@echo "  testacc-local      Run acceptance tests against an OSS DataHub instance already running at localhost:8080 (BYO);"
-	@echo "                     without DATAHUB_CLOUD=1: OSS error-path tests run; with it: Cloud lifecycle tests run"
+	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
+	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
 	@echo "  testacc-quickstart Boot a fresh OSS DataHub Quickstart at localhost, run acceptance tests, then nuke;"
-	@echo "                     KEEP_QUICKSTART=1 to skip nuke;"
-	@echo "                     without DATAHUB_CLOUD=1: OSS error-path tests run; with it: Cloud lifecycle tests run"
+	@echo "                     KEEP_QUICKSTART=1 to skip nuke; auto-detected as OSS"
 	@echo "  testacc-remote     Run acceptance tests against a remote DataHub instance"
 	@echo "                     (DATAHUB_GMS_URL + DATAHUB_GMS_TOKEN required; loopback URLs refused);"
-	@echo "                     without DATAHUB_CLOUD=1: OSS error-path tests run; with it: Cloud lifecycle tests run"
+	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
 	@echo "  coverage           Run all tests with merged coverage; prints total"
 	@echo "  coverage-html      Run coverage, then write $(COVERAGE_HTML)"
 	@echo "  dev-deps           Install Python dev dependencies (datahub CLI) into .venv"
@@ -125,7 +124,7 @@ test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
 
 testacc:
-	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= DATAHUB_CLOUD= $(GO) test -v -cover -timeout 120m ./...
+	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= $(GO) test -v -cover -timeout 120m ./...
 
 testacc-local:
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
@@ -143,7 +142,7 @@ testacc-remote:
 	esac
 	@echo ""
 	@echo "==> testacc-remote will run against: $$DATAHUB_GMS_URL"
-	@echo "==> Without DATAHUB_CLOUD=1: OSS error-path tests run. With DATAHUB_CLOUD=1: Cloud lifecycle tests run."
+	@echo "==> Cloud vs OSS auto-detected via GET /config. Set DATAHUB_CLOUD=1 or DATAHUB_CLOUD=0 to override."
 	@echo "==> Starting in 3s. Ctrl-C to abort."
 	@echo ""
 	@sleep 3

@@ -63,21 +63,25 @@ The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automa
 
 ### Live tests: target overview
 
-Each Makefile target enforces WHERE and HOW tests run. The target name is the source of truth for location and launch method; DATAHUB_CLOUD=1 is a separate caller-supplied signal about what capabilities to expect.
+Each Makefile target enforces WHERE and HOW tests run. The target name is the source of truth for location and launch method. Cloud vs OSS is **auto-detected** from the live instance via `GET /config`; no flag is required.
 
-| Target | Where | How | Without `DATAHUB_CLOUD=1` | With `DATAHUB_CLOUD=1` |
-|---|---|---|---|---|
-| `make testacc` | nowhere (no network) | in-memory mock | All tests (mock simulates Cloud) | n/a - mock always runs all |
-| `make testacc-local` | `localhost:8080` | BYO instance | OSS error-path tests | Cloud lifecycle tests |
-| `make testacc-quickstart` | `localhost:8080` | boots fresh OSS Quickstart | OSS error-path tests | Cloud lifecycle tests |
-| `make testacc-remote` | anywhere (`DATAHUB_GMS_URL`) | BYO remote instance | OSS error-path tests | Cloud lifecycle tests |
+| Target | Where | How | Cloud/OSS detection |
+|---|---|---|---|
+| `make testacc` | nowhere (no network) | in-memory mock | Always Cloud (mock simulates Cloud) |
+| `make testacc-local` | `localhost:8080` | BYO instance | Auto-detected via `GET /config` |
+| `make testacc-quickstart` | `localhost:8080` | boots fresh OSS Quickstart | Auto-detected (always OSS) |
+| `make testacc-remote` | anywhere (`DATAHUB_GMS_URL`) | BYO remote instance | Auto-detected via `GET /config` |
 
 `testacc-local` and `testacc-quickstart` always hard-code `localhost:8080`; any `DATAHUB_GMS_URL` in the shell environment is ignored. `testacc-remote` requires `DATAHUB_GMS_URL` and refuses loopback URLs.
 
+**Auto-detection:** `SetupTarget` probes `GET /config` (or `GET /api/gms/config` if behind a frontend proxy) and reads `datahub.serverEnv`. A value of `"cloud"` enables Cloud-only tests; `"core"` enables OSS error-path tests. If the probe fails, OSS mode is assumed and a warning is logged.
+
+**Overriding detection:** Set `DATAHUB_CLOUD=1` to force Cloud mode, or `DATAHUB_CLOUD=0` to force OSS mode, regardless of what the probe returns.
+
 **Which tests run where:**
 
-- *Cloud-only tests* (e.g. `TestAcc_RemoteExecutorPool_Lifecycle`) use `tg.RequireCloud(t)`. They always run against the mock (which simulates Cloud). Against any live target they run only when `DATAHUB_CLOUD=1` is set; otherwise they are skipped.
-- *OSS-error-path tests* (e.g. `TestAcc_RemoteExecutorPool_OSS_RejectsWithCloudOnlyError`) use `tg.RequireOSS(t)`. They are skipped on the mock (which simulates Cloud) and skipped on any live target when `DATAHUB_CLOUD=1` is set. They run on live targets when `DATAHUB_CLOUD` is unset.
+- *Cloud-only tests* (e.g. `TestAcc_RemoteExecutorPool_Lifecycle`) use `tg.RequireCloud(t)`. They always run against the mock. Against live targets they run when the instance is detected (or forced) as Cloud.
+- *OSS error-path tests* (e.g. `TestAcc_RemoteExecutorPool_OSS_RejectsWithCloudOnlyError`) use `tg.RequireOSS(t)`. They are skipped on the mock and on any live target detected (or forced) as Cloud. They run on live targets detected (or forced) as OSS.
 
 For live targets the test uses a randomized resource name (`tfprovider-secret-<random>` etc.) so repeated runs and concurrent developers do not collide.
 
@@ -133,12 +137,19 @@ export DATAHUB_GMS_TOKEN=<PAT>
 make testacc-remote
 ```
 
-`DATAHUB_CLOUD=1` toggles which half of the test suite runs. Without it, OSS error-path tests verify that Cloud-only resources fail cleanly on non-Cloud instances. With it, Cloud lifecycle tests verify full CRUD against a real Cloud tenant:
+Cloud vs OSS is auto-detected. Just point at your tenant and run — the right tests will be selected automatically:
 
 ```bash
 export DATAHUB_GMS_URL=https://your-tenant.acryl.io/gms
 export DATAHUB_GMS_TOKEN=<PAT>
-DATAHUB_CLOUD=1 make testacc-remote
+make testacc-remote
+```
+
+If auto-detection gives the wrong result (e.g. probe blocked by a firewall), override it explicitly:
+
+```bash
+DATAHUB_CLOUD=1 make testacc-remote   # force Cloud mode
+DATAHUB_CLOUD=0 make testacc-remote   # force OSS mode
 ```
 
 Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks.
