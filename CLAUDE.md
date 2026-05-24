@@ -59,15 +59,24 @@ The resource `datahub_ingestion_source` follows this rule: it maps to URN type `
 - Build: `make install` (writes to `./bin/terraform-provider-datahub`)
 - Verify: `go build ./...` and `go vet ./...`
 - Generate docs: `cd tools && go generate ./...`
-- Tests: none yet (a known gap; unit tests on `pkg/datahub/` and `pkg/tools/uid/` are low-hanging fruit that don't need a live DataHub instance).
+- Tests: `make test` (unit + mock acceptance); `make testacc` (live acceptance, requires a running DataHub instance)
 
-## Pre-release strategy
+## Tool version maintenance
 
-Targeting an initial `v0.1.0` release rather than `v1.0.0`. The `0.x` prefix is the Terraform Registry's accepted signal for "API is not stable yet"; breaking changes remain permitted until the project chooses to flip to `v1.0`. This avoids the "release-and-immediately-deprecate" pattern.
+Dependabot has no `mise` ecosystem support — tool versions pinned in `mise.toml` are a blind spot not covered by any automated process.
 
-Pre-release work that is known and open (no decision recorded yet):
+Before cutting a release (or if `mise.toml` has not changed in a long time), check and update pinned tools:
 
-- No tests exist. Adding unit tests for at least `internal/provider/pkg/datahub/` and `internal/provider/pkg/tools/uid/` before v0.1.0 would materially raise contributor confidence.
+```bash
+mise outdated --local          # check what is stale (--local scopes to this project only)
+mise upgrade --bump            # install newer versions and rewrite pins in mise.toml
+```
+
+Always use `--local`; without it, global mise tools (e.g. `awscli`) appear as noise.
+
+## Release strategy
+
+The project is on `0.x` versioning. The `0.x` prefix is the Terraform Registry's accepted signal for "API is not stable yet"; breaking changes remain permitted until the project chooses to flip to `v1.0`.
 
 ## New resource and data source design checklist
 
