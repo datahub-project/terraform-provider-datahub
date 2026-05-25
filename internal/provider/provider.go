@@ -93,20 +93,27 @@ func (p *datahubProvider) Metadata(_ context.Context, _ provider.MetadataRequest
 // Schema defines the provider-level schema for configuration data.
 func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Terraform provider for managing DataHub ingestion sources via the DataHub APIs.\n\n" +
-			"**Security note:** DataHub ingestion recipes and source configurations are stored in DataHub. If you embed credentials (tokens, passwords, private keys) directly into a recipe/config, they can end up stored in DataHub metadata and exposed to users/services with access to view ingestion source configs.\n\n" +
-			"For production, prefer DataHub Secrets and environment variable substitution (e.g. `${SECRET_NAME}` / `${MY_PASSWORD}`) instead of hard-coding credentials. See https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#handling-sensitive-information-in-recipes.",
+		MarkdownDescription: "Terraform provider for managing DataHub platform configuration as code.\n\n" +
+			"**What this provider manages:** Platform-level configuration that controls how metadata " +
+			"flows into DataHub -- ingestion source recipes, encrypted secrets referenced in those " +
+			"recipes, and Remote Executor Pool registrations for private-network ingestion.\n\n" +
+			"**What this provider does not do:** It does not provision a DataHub instance; for that, " +
+			"see [DataHub Cloud](https://datahub.com/cloud) or the " +
+			"[DataHub deployment guides](https://docs.datahub.com/docs/category/deployment-guides). " +
+			"It also does not manage the data assets and metadata that DataHub ingests -- datasets, " +
+			"dashboards, tags, glossary terms, ownership, and similar enrichment are populated by " +
+			"your ingestion pipelines, not Terraform.",
 		Attributes: map[string]schema.Attribute{
 			"gms_url": schema.StringAttribute{
-				MarkdownDescription: "DataHub GMS URL. For example: https://datahub.example.com. " +
-					"If not set, the provider will read DATAHUB_GMS_URL from the environment, " +
-					"or fall back to gms.server in ~/.datahubenv.",
+				MarkdownDescription: "DataHub GMS URL. For example: `https://datahub.example.com`. " +
+					"If not set, the provider will read `DATAHUB_GMS_URL` from the environment, " +
+					"or fall back to `gms.server` in `~/.datahubenv`.",
 				Optional: true,
 			},
 			"gms_token": schema.StringAttribute{
-				MarkdownDescription: "Datahub GMS token for authentication." +
-					"If not filled, the provider will attempt to read the token from the DATAHUB_GMS_TOKEN environment variable and " +
-					"as a last resort, from the local Datahub CLI configuration located at ~/.datahubenv.",
+				MarkdownDescription: "DataHub GMS token for authentication. " +
+					"If not set, the provider will read the token from the `DATAHUB_GMS_TOKEN` environment variable, " +
+					"or fall back to the local DataHub CLI configuration at `~/.datahubenv`.",
 				Optional:  true,
 				Sensitive: true,
 			},
