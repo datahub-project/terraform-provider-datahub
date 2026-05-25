@@ -20,3 +20,13 @@ func TestAcc_IngestionSourceDataSource_Read(t *testing.T) {
 		Steps:                    datahubtesting.IngestionSourceDataSourceSteps(sourceID),
 	})
 }
+
+func TestAcc_IngestionSourceDataSource_NotFound(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	sourceID := tg.Name("tfprovider-ds-missing")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.IngestionSourceDataSourceNotFoundSteps(sourceID),
+	})
+}

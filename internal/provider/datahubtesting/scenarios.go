@@ -453,3 +453,20 @@ resource "datahub_ingestion_source" "test" {
 		},
 	}
 }
+
+// IngestionSourceDataSourceNotFoundSteps returns a test step that reads the
+// datahub_ingestion_source data source with a source_id that does not exist.
+// The data source must surface an "Ingestion source not found" diagnostic error
+// rather than panic or produce empty state.
+func IngestionSourceDataSourceNotFoundSteps(sourceID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+data "datahub_ingestion_source" "test" {
+  source_id = %q
+}
+`, sourceID),
+			ExpectError: regexp.MustCompile(`Ingestion source not found`),
+		},
+	}
+}

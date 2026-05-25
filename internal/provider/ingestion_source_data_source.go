@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -157,8 +158,7 @@ func (d *ingestionSourceDataSource) Read(ctx context.Context, req datasource.Rea
 	sourceID := config.SourceID.ValueString()
 	body, err := d.client.GetIngestionSourceByID(ctx, sourceID)
 	if err != nil {
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+		if errors.Is(err, datahub.ErrNotFound) {
 			resp.Diagnostics.AddError(
 				"Ingestion source not found",
 				fmt.Sprintf("No ingestion source with ID %q was found in DataHub. Verify the source_id and retry.", sourceID),
