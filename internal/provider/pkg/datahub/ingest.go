@@ -210,6 +210,9 @@ func (c *Client) GetIngestionSourceByID(ctx context.Context, sourceID string) ([
 	if err != nil {
 		return nil, fmt.Errorf("reading response body: %w", err)
 	}
+	if res.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("ingestion source %q: %w", sourceID, ErrNotFound)
+	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return nil, fmt.Errorf("unexpected status %s: %s", res.Status, respBody)
 	}
@@ -232,6 +235,9 @@ func (c *Client) DeleteIngestionSourceByID(ctx context.Context, sourceID string)
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("ingestion source %q: %w", sourceID, ErrNotFound)
+	}
 	if res.StatusCode >= http.StatusBadRequest {
 		respBody, _ := io.ReadAll(res.Body)
 		return fmt.Errorf("unexpected status %s: %s", res.Status, respBody)

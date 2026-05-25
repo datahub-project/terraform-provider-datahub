@@ -5,9 +5,9 @@ package datahubtesting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -170,8 +170,7 @@ func IngestionSourceCheckDestroy(s *terraform.State) error {
 		if getErr == nil {
 			return fmt.Errorf("datahub_ingestion_source %q still exists after destroy", sourceID)
 		}
-		errLower := strings.ToLower(getErr.Error())
-		if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+		if errors.Is(getErr, datahub.ErrNotFound) {
 			continue
 		}
 		return fmt.Errorf("CheckDestroy: unexpected error checking datahub_ingestion_source %q: %w", sourceID, getErr)
@@ -300,10 +299,6 @@ func RemoteExecutorPoolCheckDestroy(s *terraform.State) error {
 		}
 		pool, getErr := client.GetRemoteExecutorPoolByURN(ctx, urn)
 		if getErr != nil {
-			errLower := strings.ToLower(getErr.Error())
-			if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
-				continue
-			}
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_remote_executor_pool %q: %w", urn, getErr)
 		}
 		if pool != nil {
