@@ -72,6 +72,9 @@ type mockServer struct {
 	secrets          map[string]mockSecret
 	pools            map[string]mockExecutorPool
 	defaultPoolID    string
+	// failDeleteFor holds source IDs whose next DELETE should return 500.
+	// Entries are consumed on first use. Used by the /test-control endpoint.
+	failDeleteFor map[string]struct{}
 }
 
 // NewServer starts an in-memory httptest.Server that mimics the DataHub API
@@ -83,6 +86,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		ingestionSources: make(map[string]mockIngestionSource),
 		secrets:          make(map[string]mockSecret),
 		pools:            make(map[string]mockExecutorPool),
+		failDeleteFor:    make(map[string]struct{}),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
@@ -90,6 +94,9 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
+	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
+	// registers a one-shot 500 response for the next DELETE on that source.
+	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -428,6 +435,13 @@ func (s *mockServer) handleIngestionSourceItem(w http.ResponseWriter, r *http.Re
 
 	case http.MethodDelete:
 		s.mu.Lock()
+		_, shouldFail := s.failDeleteFor[sourceID]
+		if shouldFail {
+			delete(s.failDeleteFor, sourceID)
+			s.mu.Unlock()
+			http.Error(w, "forced delete failure", http.StatusInternalServerError)
+			return
+		}
 		delete(s.ingestionSources, sourceID)
 		s.mu.Unlock()
 		w.WriteHeader(http.StatusOK)
@@ -435,4 +449,24 @@ func (s *mockServer) handleIngestionSourceItem(w http.ResponseWriter, r *http.Re
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// handleForceDeleteFail registers a one-shot 500 response for the next DELETE
+// on the given source. Called from test PreConfig functions via:
+//
+//	POST /test-control/force-delete-fail/{sourceID}
+func (s *mockServer) handleForceDeleteFail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sourceID := strings.TrimPrefix(r.URL.Path, "/test-control/force-delete-fail/")
+	if sourceID == "" {
+		http.Error(w, "missing sourceID", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	s.failDeleteFor[sourceID] = struct{}{}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }

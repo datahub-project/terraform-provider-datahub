@@ -7,6 +7,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -248,8 +249,7 @@ func (r *ingestionSourceResource) Read(ctx context.Context, req resource.ReadReq
 
 	body, err := r.client.GetIngestionSourceByID(ctx, sourceID)
 	if err != nil {
-		errLower := strings.ToLower(err.Error())
-		if strings.Contains(errLower, "404") || strings.Contains(errLower, "not found") {
+		if errors.Is(err, datahub.ErrNotFound) {
 			resp.State.RemoveResource(ctx)
 			return
 		}
@@ -385,12 +385,9 @@ func (r *ingestionSourceResource) Delete(ctx context.Context, req resource.Delet
 	}
 
 	err := r.client.DeleteIngestionSourceByID(ctx, sourceID)
-	if err != nil {
-		errLower := strings.ToLower(err.Error())
-		if !strings.Contains(errLower, "404") && !strings.Contains(errLower, "not found") {
-			resp.Diagnostics.AddError("Datahub API Error", err.Error())
-			return
-		}
+	if err != nil && !errors.Is(err, datahub.ErrNotFound) {
+		resp.Diagnostics.AddError("Datahub API Error", err.Error())
+		return
 	}
 
 	resp.State.RemoveResource(ctx)

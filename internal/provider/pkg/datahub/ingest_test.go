@@ -5,6 +5,7 @@ package datahub
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -197,7 +198,7 @@ func TestGetIngestionSourceByID(t *testing.T) {
 		}
 	})
 
-	t.Run("server_404_returns_error", func(t *testing.T) {
+	t.Run("server_404_returns_ErrNotFound", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			http.NotFound(w, nil)
 		}))
@@ -206,6 +207,9 @@ func TestGetIngestionSourceByID(t *testing.T) {
 		_, err := c.GetIngestionSourceByID(t.Context(), "missing")
 		if err == nil {
 			t.Fatal("expected error for 404, got nil")
+		}
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("expected errors.Is(err, ErrNotFound) = true, got err = %v", err)
 		}
 	})
 }
@@ -229,6 +233,21 @@ func TestDeleteIngestionSourceByID(t *testing.T) {
 		}
 		if !strings.Contains(gotPath, "src-to-delete") {
 			t.Errorf("path = %q, want to contain source ID", gotPath)
+		}
+	})
+
+	t.Run("server_404_returns_ErrNotFound", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.NotFound(w, nil)
+		}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		err := c.DeleteIngestionSourceByID(t.Context(), "missing")
+		if err == nil {
+			t.Fatal("expected error for 404, got nil")
+		}
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("expected errors.Is(err, ErrNotFound) = true, got err = %v", err)
 		}
 	})
 
