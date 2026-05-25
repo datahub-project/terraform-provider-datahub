@@ -32,7 +32,7 @@ Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
 Outputs:
 
 recipe_connector_type = "datahub-gc"
-source_name           = "DataHub GC"
+source_name           = "datahub-gc"
 source_type           = "datahub-gc"
 urn                   = "urn:li:dataHubIngestionSource:datahub-gc"
 ```
