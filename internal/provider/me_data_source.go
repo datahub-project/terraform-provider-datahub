@@ -41,7 +41,8 @@ func (d *meDataSource) Metadata(_ context.Context, req datasource.MetadataReques
 
 func (d *meDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Returns the identity of the authenticated DataHub user.\n\n" +
+		MarkdownDescription: ossAndCloudBadge +
+			"Returns the identity of the authenticated DataHub user.\n\n" +
 			"Reading this data source makes a lightweight GraphQL call to DataHub. Referencing it in " +
 			"your configuration is a convenient way to smoke-test provider credentials at `terraform plan` " +
 			"time without creating any resources.",

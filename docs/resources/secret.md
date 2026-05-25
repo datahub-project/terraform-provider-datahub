@@ -3,6 +3,7 @@
 page_title: "datahub_secret Resource - datahub"
 subcategory: ""
 description: |-
+  DataHub ✅ | DataHub Cloud ✅
   Creates and manages a DataHub Secret.
   DataHub Secrets are named, encrypted values stored by DataHub and referenced in ingestion recipes via ${SECRET_NAME} placeholders. At run time, the DataHub ingestion executor resolves the placeholders by calling the DataHub GraphQL API and substituting the decrypted values into the recipe before execution.
   Security model
@@ -23,6 +24,8 @@ description: |-
 ---
 
 # datahub_secret (Resource)
+
+**DataHub ✅ | DataHub Cloud ✅**
 
 Creates and manages a DataHub Secret.
 

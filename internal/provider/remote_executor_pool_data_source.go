@@ -45,9 +45,8 @@ func (d *remoteExecutorPoolDataSource) Metadata(_ context.Context, req datasourc
 
 func (d *remoteExecutorPoolDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Looks up an existing DataHub Remote Executor Pool by pool ID.\n\n" +
-			"**DataHub Cloud only.** Remote Executor Pools are a DataHub Cloud feature. Reading this " +
-			"data source against an OSS DataHub instance will fail with a clear error.\n\n" +
+		MarkdownDescription: cloudOnlyBadge +
+			"Looks up an existing DataHub Remote Executor Pool by pool ID.\n\n" +
 			"## Common use cases\n\n" +
 			"**Reference the reserved `default` pool** (auto-provisioned by DataHub Cloud; cannot be " +
 			"created via the `datahub_remote_executor_pool` resource):\n\n" +

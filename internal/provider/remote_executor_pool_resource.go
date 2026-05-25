@@ -68,9 +68,8 @@ func (r *remoteExecutorPoolResource) Metadata(_ context.Context, req resource.Me
 
 func (r *remoteExecutorPoolResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates and manages a DataHub Remote Executor Pool.\n\n" +
-			"**DataHub Cloud only.** Remote Executor Pools are a DataHub Cloud feature. Applying this " +
-			"resource against an OSS DataHub instance will fail with a clear error.\n\n" +
+		MarkdownDescription: cloudOnlyBadge +
+			"Creates and manages a DataHub Remote Executor Pool.\n\n" +
 			"**API stability notice.** The underlying GraphQL mutations used by this resource are " +
 			"classified as `internal` in DataHub Cloud and carry no external API stability guarantee. " +
 			"They may change between Cloud releases without notice. This is documented as a known risk " +

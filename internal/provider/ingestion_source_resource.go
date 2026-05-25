@@ -88,7 +88,8 @@ func (r *ingestionSourceResource) Metadata(_ context.Context, req resource.Metad
 
 func (r *ingestionSourceResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.\n\n" +
+		MarkdownDescription: ossAndCloudBadge +
+			"Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.\n\n" +
 			"This is similar in spirit to `aws_iam_policy`: the resource stores a JSON document (the recipe) in the target system (DataHub).\n\n" +
 			"## Argument Reference\n\n" +
 			"- `source_id` (Optional) Unique id for the ingestion source. If omitted, it is derived from `source_name` as `<sanitized-source_name>-<hash>`. This becomes the Terraform resource id.\n" +

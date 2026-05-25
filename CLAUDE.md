@@ -42,14 +42,14 @@ Some resources and data sources target DataHub Cloud exclusively and will fail w
 
 ## When to mention OSS vs Cloud
 
-**Default: say nothing.** The provider targets both OSS DataHub and DataHub Cloud via the same OpenAPI surface. That is the baseline expectation -- saying "works with OSS and Cloud" when there is no feature difference is noise, not signal.
+**Every resource and data source schema description must begin with an availability badge.** Two constants are defined in `internal/provider/availability.go`:
 
-**Do mention OSS vs Cloud when:**
-- A resource or data source is Cloud-only (add it to the table above and document the behaviour in the schema description).
-- A specific behaviour, error, or workaround differs between OSS and Cloud in a way the user must act on.
-- A code comment, diagnostic message, or doc section explains why something is gated (e.g. "this GraphQL mutation does not exist in OSS DataHub").
+- `ossAndCloudBadge` -- for resources and data sources that work on both OSS DataHub and DataHub Cloud. Renders as: **DataHub ✅ | DataHub Cloud ✅**
+- `cloudOnlyBadge` -- for resources and data sources that are DataHub Cloud only. Renders as: **DataHub ❌ | DataHub Cloud ✅**
 
-**Ask before adding an OSS/Cloud callout.** In commit messages, PR summaries, code comments, and schema descriptions, check whether the OSS/Cloud distinction is load-bearing for the reader. If it isn't, omit it. When in doubt, ask the user.
+Use the constant, never inline the badge string. For Cloud-only resources, also add an entry to the table above.
+
+**In other contexts (commit messages, PR summaries, code comments, diagnostic messages)**, default to silence on OSS vs Cloud unless the distinction is load-bearing for the reader. When in doubt, ask the user.
 
 ## Resource naming
 

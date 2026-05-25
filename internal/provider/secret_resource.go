@@ -64,7 +64,8 @@ func (r *secretResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *secretResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Creates and manages a DataHub Secret.\n\n" +
+		MarkdownDescription: ossAndCloudBadge +
+			"Creates and manages a DataHub Secret.\n\n" +
 			"DataHub Secrets are named, encrypted values stored by DataHub and referenced in ingestion recipes " +
 			"via `${SECRET_NAME}` placeholders. At run time, the DataHub ingestion executor resolves the " +
 			"placeholders by calling the DataHub GraphQL API and substituting the decrypted values into the " +

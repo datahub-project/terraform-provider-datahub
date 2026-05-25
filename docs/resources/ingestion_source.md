@@ -3,6 +3,7 @@
 page_title: "datahub_ingestion_source Resource - datahub"
 subcategory: ""
 description: |-
+  DataHub ✅ | DataHub Cloud ✅
   Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.
   This is similar in spirit to aws_iam_policy: the resource stores a JSON document (the recipe) in the target system (DataHub).
   Argument Reference
@@ -14,6 +15,8 @@ description: |-
 ---
 
 # datahub_ingestion_source (Resource)
+
+**DataHub ✅ | DataHub Cloud ✅**
 
 Creates and manages a DataHub Ingestion Source using a raw recipe JSON string.
 
