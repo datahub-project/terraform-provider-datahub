@@ -53,7 +53,8 @@ func (d *ingestionSourceDataSource) Metadata(_ context.Context, req datasource.M
 
 func (d *ingestionSourceDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Looks up an existing DataHub Ingestion Source by `source_id`.\n\n" +
+		MarkdownDescription: ossAndCloudBadge +
+			"Looks up an existing DataHub Ingestion Source by `source_id`.\n\n" +
 			"Use this data source to reference an ingestion source that already exists in DataHub " +
 			"-- for example, one created via the DataHub UI or a different Terraform root module.\n\n" +
 			"## Finding `source_id` for a UI-created source\n\n" +

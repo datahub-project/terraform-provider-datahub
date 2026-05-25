@@ -3,11 +3,14 @@
 page_title: "datahub_me Data Source - datahub"
 subcategory: ""
 description: |-
+  DataHub ✅ | DataHub Cloud ✅
   Returns the identity of the authenticated DataHub user.
   Reading this data source makes a lightweight GraphQL call to DataHub. Referencing it in your configuration is a convenient way to smoke-test provider credentials at terraform plan time without creating any resources.
 ---
 
 # datahub_me (Data Source)
+
+**DataHub ✅ | DataHub Cloud ✅**
 
 Returns the identity of the authenticated DataHub user.
 

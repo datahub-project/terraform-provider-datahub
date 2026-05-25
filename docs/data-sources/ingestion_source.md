@@ -3,6 +3,7 @@
 page_title: "datahub_ingestion_source Data Source - datahub"
 subcategory: ""
 description: |-
+  DataHub ✅ | DataHub Cloud ✅
   Looks up an existing DataHub Ingestion Source by source_id.
   Use this data source to reference an ingestion source that already exists in DataHub -- for example, one created via the DataHub UI or a different Terraform root module.
   Finding source_id for a UI-created source
@@ -17,6 +18,8 @@ description: |-
 ---
 
 # datahub_ingestion_source (Data Source)
+
+**DataHub ✅ | DataHub Cloud ✅**
 
 Looks up an existing DataHub Ingestion Source by `source_id`.
 
