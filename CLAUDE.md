@@ -49,6 +49,12 @@ Some resources and data sources target DataHub Cloud exclusively and will fail w
 - A specific behaviour, error, or workaround differs between OSS and Cloud in a way the user must act on.
 - A code comment, diagnostic message, or doc section explains why something is gated (e.g. "this GraphQL mutation does not exist in OSS DataHub").
 
+**Cloud-only badge.** For resources and data sources that are Cloud-only, prepend the `cloudOnlyBadge` constant (defined in `internal/provider/availability.go`) to the schema `MarkdownDescription`. This renders as:
+
+> **DataHub ❌ | DataHub Cloud ✅**
+
+Use this constant -- do not write the badge inline. Add the resource or data source to the Cloud-only table in this section.
+
 **Ask before adding an OSS/Cloud callout.** In commit messages, PR summaries, code comments, and schema descriptions, check whether the OSS/Cloud distinction is load-bearing for the reader. If it isn't, omit it. When in doubt, ask the user.
 
 ## Resource naming

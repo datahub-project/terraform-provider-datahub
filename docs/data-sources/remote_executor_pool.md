@@ -3,8 +3,8 @@
 page_title: "datahub_remote_executor_pool Data Source - datahub"
 subcategory: ""
 description: |-
+  DataHub ❌ | DataHub Cloud ✅
   Looks up an existing DataHub Remote Executor Pool by pool ID.
-  DataHub Cloud only. Remote Executor Pools are a DataHub Cloud feature. Reading this data source against an OSS DataHub instance will fail with a clear error.
   Common use cases
   Reference the reserved default pool (auto-provisioned by DataHub Cloud; cannot be created via the datahub_remote_executor_pool resource):
   
@@ -26,9 +26,9 @@ description: |-
 
 # datahub_remote_executor_pool (Data Source)
 
-Looks up an existing DataHub Remote Executor Pool by pool ID.
+**DataHub ❌ | DataHub Cloud ✅**
 
-**DataHub Cloud only.** Remote Executor Pools are a DataHub Cloud feature. Reading this data source against an OSS DataHub instance will fail with a clear error.
+Looks up an existing DataHub Remote Executor Pool by pool ID.
 
 ## Common use cases
 
