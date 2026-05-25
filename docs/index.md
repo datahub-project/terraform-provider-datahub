@@ -5,7 +5,6 @@ description: |-
   Terraform provider for managing DataHub platform configuration as code.
   What this provider manages: Platform-level configuration that controls how metadata flows into DataHub -- ingestion source recipes, encrypted secrets referenced in those recipes, and Remote Executor Pool registrations for private-network ingestion.
   What this provider does not do: It does not provision a DataHub instance; for that, see DataHub Cloud https://datahub.com/cloud or the DataHub deployment guides https://docs.datahub.com/docs/category/deployment-guides. It also does not manage the data assets and metadata that DataHub ingests -- datasets, dashboards, tags, glossary terms, ownership, and similar enrichment are populated by your ingestion pipelines, not Terraform.
-  Security note: Avoid embedding credentials directly in ingestion recipes -- they are stored in DataHub and can be exposed to users with access to view ingestion configs. Use DataHub Secrets https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and ${SECRET_NAME} substitution instead.
 ---
 
 # DataHub Provider
@@ -15,8 +14,6 @@ Terraform provider for managing DataHub platform configuration as code.
 **What this provider manages:** Platform-level configuration that controls how metadata flows into DataHub -- ingestion source recipes, encrypted secrets referenced in those recipes, and Remote Executor Pool registrations for private-network ingestion.
 
 **What this provider does not do:** It does not provision a DataHub instance; for that, see [DataHub Cloud](https://datahub.com/cloud) or the [DataHub deployment guides](https://docs.datahub.com/docs/category/deployment-guides). It also does not manage the data assets and metadata that DataHub ingests -- datasets, dashboards, tags, glossary terms, ownership, and similar enrichment are populated by your ingestion pipelines, not Terraform.
-
-**Security note:** Avoid embedding credentials directly in ingestion recipes -- they are stored in DataHub and can be exposed to users with access to view ingestion configs. Use [DataHub Secrets](https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets) and `${SECRET_NAME}` substitution instead.
 
 ## Example Usage
 
@@ -30,15 +27,32 @@ terraform {
   }
 }
 
-# Configuration via environment variables (recommended for CI and production):
-#   DATAHUB_GMS_URL   - DataHub GMS URL, e.g. https://datahub.example.com
+# Provider credentials are read from environment variables by default:
+#
+#   DATAHUB_GMS_URL   - DataHub GMS URL, e.g. https://your-instance.acryl.io/gms
 #   DATAHUB_GMS_TOKEN - DataHub personal access token
 #
-# Both attributes can also be set explicitly, or omitted entirely to fall back
-# to the local DataHub CLI config (~/.datahubenv).
-provider "datahub" {
-  gms_url   = "https://datahub.example.com"
-  gms_token = var.datahub_token
+# If you prefer Terraform input variables, export them via TF_VAR_* instead:
+#
+#   TF_VAR_datahub_gms_url   - passed as var.datahub_gms_url
+#   TF_VAR_datahub_gms_token - passed as var.datahub_gms_token
+#
+# and configure the provider explicitly:
+#
+#   provider "datahub" {
+#     gms_url   = var.datahub_gms_url
+#     gms_token = var.datahub_gms_token
+#   }
+#
+# Both attributes can also be omitted entirely to fall back to the local
+# DataHub CLI config at ~/.datahubenv.
+provider "datahub" {}
+
+data "datahub_me" "current" {}
+
+output "current_urn" {
+  description = "DataHub URN of the authenticated user."
+  value       = data.datahub_me.current.urn
 }
 ```
 
@@ -47,5 +61,5 @@ provider "datahub" {
 
 ### Optional
 
-- `gms_token` (String, Sensitive) DataHub GMS token for authentication. If not set, the provider will read the token from the DATAHUB_GMS_TOKEN environment variable, or fall back to the local DataHub CLI configuration at ~/.datahubenv.
-- `gms_url` (String) DataHub GMS URL. For example: https://datahub.example.com. If not set, the provider will read DATAHUB_GMS_URL from the environment, or fall back to gms.server in ~/.datahubenv.
+- `gms_token` (String, Sensitive) DataHub GMS token for authentication. If not set, the provider will read the token from the `DATAHUB_GMS_TOKEN` environment variable, or fall back to the local DataHub CLI configuration at `~/.datahubenv`.
+- `gms_url` (String) DataHub GMS URL. For example: `https://datahub.example.com`. If not set, the provider will read `DATAHUB_GMS_URL` from the environment, or fall back to `gms.server` in `~/.datahubenv`.

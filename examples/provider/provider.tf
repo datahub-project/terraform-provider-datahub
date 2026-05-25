@@ -7,13 +7,30 @@ terraform {
   }
 }
 
-# Configuration via environment variables (recommended for CI and production):
-#   DATAHUB_GMS_URL   - DataHub GMS URL, e.g. https://datahub.example.com
+# Provider credentials are read from environment variables by default:
+#
+#   DATAHUB_GMS_URL   - DataHub GMS URL, e.g. https://your-instance.acryl.io/gms
 #   DATAHUB_GMS_TOKEN - DataHub personal access token
 #
-# Both attributes can also be set explicitly, or omitted entirely to fall back
-# to the local DataHub CLI config (~/.datahubenv).
-provider "datahub" {
-  gms_url   = "https://datahub.example.com"
-  gms_token = var.datahub_token
+# If you prefer Terraform input variables, export them via TF_VAR_* instead:
+#
+#   TF_VAR_datahub_gms_url   - passed as var.datahub_gms_url
+#   TF_VAR_datahub_gms_token - passed as var.datahub_gms_token
+#
+# and configure the provider explicitly:
+#
+#   provider "datahub" {
+#     gms_url   = var.datahub_gms_url
+#     gms_token = var.datahub_gms_token
+#   }
+#
+# Both attributes can also be omitted entirely to fall back to the local
+# DataHub CLI config at ~/.datahubenv.
+provider "datahub" {}
+
+data "datahub_me" "current" {}
+
+output "current_urn" {
+  description = "DataHub URN of the authenticated user."
+  value       = data.datahub_me.current.urn
 }
