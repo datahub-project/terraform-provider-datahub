@@ -4,10 +4,13 @@
 package datahubtesting
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -325,6 +328,92 @@ data "datahub_me" "test" {}
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("type"), knownvalue.NotNull()),
 			},
+		},
+	}
+}
+
+// IngestionSourceDriftSteps returns test steps that verify drift detection:
+// the resource Read function handles a 404 from the server by calling
+// RemoveResource, allowing Terraform to plan a re-create on the next apply.
+//
+// Step 1 creates the resource. Step 2 deletes it out-of-band via the DataHub
+// client (simulating an external deletion), then re-applies the same config.
+// Terraform's refresh phase calls Read, which receives ErrNotFound and removes
+// the resource from state; Terraform then plans and applies a fresh create.
+//
+// sourceID must be explicitly provided (not derived) so the PreConfig knows
+// which ID to delete. Works against both mock and live targets.
+func IngestionSourceDriftSteps(sourceID, sourceName string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_ingestion_source" "test" {
+  source_id   = %q
+  source_name = %q
+  recipe      = jsonencode({source = {type = "file", config = {filename = "/tmp/test.json"}}})
+}
+`, sourceID, sourceName)
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			// Delete the resource out-of-band, then apply the same config.
+			// Terraform refreshes: Read returns ErrNotFound -> RemoveResource.
+			// Terraform then plans to create and applies successfully.
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("IngestionSourceDriftSteps PreConfig: %v", err))
+				}
+				// Ignore ErrNotFound in case the resource was already gone.
+				if delErr := client.DeleteIngestionSourceByID(context.Background(), sourceID); delErr != nil && !errors.Is(delErr, datahub.ErrNotFound) {
+					panic(fmt.Sprintf("IngestionSourceDriftSteps PreConfig: delete failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+		},
+	}
+}
+
+// IngestionSourceDeleteErrorSteps returns test steps that verify the resource
+// Delete function handles a non-404 server error by surfacing a diagnostic.
+//
+// This scenario uses the mock server's /test-control/force-delete-fail endpoint
+// to make the next DELETE return 500. It is mock-only; callers should skip on
+// live targets via tg.IsLive().
+//
+// Step 1 creates the resource. Step 2 registers the force-fail, then applies an
+// empty config (removing the resource from the plan). Terraform refreshes (GET
+// still returns 200), plans to delete, calls Delete, receives a 500 error, and
+// surfaces "Datahub API Error". The step expects that error; cleanup destroys
+// the resource successfully on the subsequent terraform destroy.
+func IngestionSourceDeleteErrorSteps(sourceID, sourceName string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_ingestion_source" "test" {
+  source_id   = %q
+  source_name = %q
+  recipe      = jsonencode({source = {type = "file", config = {filename = "/tmp/test.json"}}})
+}
+`, sourceID, sourceName)
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			// Register force-fail for this source, then remove it from the config.
+			// Terraform refreshes (GET: 200, resource stays in state), plans to
+			// delete, calls the provider Delete, which calls DeleteIngestionSourceByID.
+			// The mock returns 500; the resource adds a "Datahub API Error" diagnostic.
+			PreConfig: func() {
+				url := os.Getenv("DATAHUB_GMS_URL") + "/test-control/force-delete-fail/" + sourceID
+				resp, err := http.Post(url, "", bytes.NewReader(nil)) //nolint:noctx
+				if err != nil {
+					panic(fmt.Sprintf("IngestionSourceDeleteErrorSteps PreConfig: POST force-fail: %v", err))
+				}
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusNoContent {
+					panic(fmt.Sprintf("IngestionSourceDeleteErrorSteps PreConfig: unexpected status %d", resp.StatusCode))
+				}
+			},
+			Config:      providerBlock, // empty: triggers delete of the resource
+			ExpectError: regexp.MustCompile(`Datahub API Error`),
 		},
 	}
 }
