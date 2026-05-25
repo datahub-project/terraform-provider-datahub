@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-05-24
+## [0.2.0] - 2026-05-25
 
 ### Added
 
@@ -25,11 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `channel` attributes.
 - `examples/executor-pool-basic`: runnable example that provisions a pool and
   routes an ingestion source to it; includes copy-pasteable Helm values output.
+- Availability badges (`DataHub ✅ | DataHub Cloud ✅` or `DataHub ❌ | DataHub Cloud ✅`)
+  on every resource and data source schema description so users can see at a glance
+  which surfaces require DataHub Cloud.
 
 ### Changed
 
 - `examples/ingestion-source-csv-enricher`: updated comment on `remote_executor_id`
   to refer users to `datahub_remote_executor_pool` for custom-pool use cases.
+- Provider index page (`docs/index.md`): rewritten description focusing on what the
+  provider manages and what it does not; page title now renders as "DataHub Provider"
+  (was "datahub Provider"); example usage updated to env-var-first pattern with a
+  `datahub_me` credential validator.
+
+### Fixed
+
+- Internal 404 handling: replaced string-matching on `"not found"` in HTTP error
+  bodies with an `ErrNotFound` sentinel value throughout the client layer. All
+  resources and data sources now handle not-found consistently via `errors.Is`.
 
 **API stability notice.** The GraphQL mutations backing `datahub_remote_executor_pool`
 are classified as `internal` in DataHub Cloud and carry no external API stability
