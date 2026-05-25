@@ -4,7 +4,6 @@ version: 2
 before:
   hooks:
     - go mod tidy
-    - bash scripts/extract-release-notes.sh {{ .Version }}
 builds:
 - env:
     # goreleaser does not work with CGO, it could also complicate
