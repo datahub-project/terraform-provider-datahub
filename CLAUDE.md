@@ -40,6 +40,17 @@ Some resources and data sources target DataHub Cloud exclusively and will fail w
 |---|---|
 | `datahub_remote_executor_pool` (resource + data source) | The `dataHubRemoteExecutorPool` entity type and its GraphQL mutations do not exist in OSS DataHub. The underlying mutations are also classified as `category: internal` in DataHub Cloud, meaning they carry no external API stability guarantee and may change between Cloud releases without notice. |
 
+## When to mention OSS vs Cloud
+
+**Default: say nothing.** The provider targets both OSS DataHub and DataHub Cloud via the same OpenAPI surface. That is the baseline expectation -- saying "works with OSS and Cloud" when there is no feature difference is noise, not signal.
+
+**Do mention OSS vs Cloud when:**
+- A resource or data source is Cloud-only (add it to the table above and document the behaviour in the schema description).
+- A specific behaviour, error, or workaround differs between OSS and Cloud in a way the user must act on.
+- A code comment, diagnostic message, or doc section explains why something is gated (e.g. "this GraphQL mutation does not exist in OSS DataHub").
+
+**Ask before adding an OSS/Cloud callout.** In commit messages, PR summaries, code comments, and schema descriptions, check whether the OSS/Cloud distinction is load-bearing for the reader. If it isn't, omit it. When in doubt, ask the user.
+
 ## Resource naming
 
 **Rule: when a Terraform Provider resource directly represents a DataHub URN entity type, the resource name is the snake_case form of the URN type.**

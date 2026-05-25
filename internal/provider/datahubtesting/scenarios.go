@@ -311,6 +311,42 @@ func RemoteExecutorPoolCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// IngestionSourceDataSourceSteps returns test steps for the datahub_ingestion_source
+// data source. It seeds an ingestion source via the resource in the same config, then
+// reads it back and asserts source_id and urn match.
+//
+// sourceID is used as the source_id attribute and must be unique within the target
+// DataHub instance.
+func IngestionSourceDataSourceSteps(sourceID string) []resource.TestStep {
+	const addr = "data.datahub_ingestion_source.test"
+	urn := "urn:li:dataHubIngestionSource:" + sourceID
+	sourceName := "DS test - " + sourceID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_ingestion_source" "seed" {
+  source_id   = %q
+  source_name = %q
+  source_type = "file"
+  recipe      = jsonencode({source = {type = "file", config = {filename = "/tmp/test.json"}}})
+}
+
+data "datahub_ingestion_source" "test" {
+  source_id = datahub_ingestion_source.seed.source_id
+}
+`, sourceID, sourceName),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("source_id"), knownvalue.StringExact(sourceID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("source_name"), knownvalue.StringExact(sourceName)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("source_type"), knownvalue.StringExact("file")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("recipe"), knownvalue.NotNull()),
+			},
+		},
+	}
+}
+
 // MeDataSourceStepsAny returns test steps that read the datahub_me data
 // source and verify the identity fields are populated (non-null) without
 // asserting specific values. Use this in live tests where the identity is
@@ -414,6 +450,23 @@ resource "datahub_ingestion_source" "test" {
 			},
 			Config:      providerBlock, // empty: triggers delete of the resource
 			ExpectError: regexp.MustCompile(`Datahub API Error`),
+		},
+	}
+}
+
+// IngestionSourceDataSourceNotFoundSteps returns a test step that reads the
+// datahub_ingestion_source data source with a source_id that does not exist.
+// The data source must surface an "Ingestion source not found" diagnostic error
+// rather than panic or produce empty state.
+func IngestionSourceDataSourceNotFoundSteps(sourceID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+data "datahub_ingestion_source" "test" {
+  source_id = %q
+}
+`, sourceID),
+			ExpectError: regexp.MustCompile(`Ingestion source not found`),
 		},
 	}
 }
