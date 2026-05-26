@@ -760,7 +760,7 @@ func (r *connectionResource) Create(ctx context.Context, req resource.CreateRequ
 	urn := "urn:li:dataHubConnection:" + connID
 
 	returnedURN, err := r.client.UpsertConnection(ctx, datahub.UpsertConnectionInput{
-		URN:      urn,
+		ID:       connID,
 		Name:     plan.Name.ValueString(),
 		Platform: platform,
 		Blob:     blob,
@@ -854,13 +854,10 @@ func (r *connectionResource) Update(ctx context.Context, req resource.UpdateRequ
 		return
 	}
 
-	urn := state.URN.ValueString()
-	if urn == "" {
-		urn = state.ID.ValueString()
-	}
+	connID := state.ConnectionID.ValueString()
 
 	_, err = r.client.UpsertConnection(ctx, datahub.UpsertConnectionInput{
-		URN:      urn,
+		ID:       connID,
 		Name:     plan.Name.ValueString(),
 		Platform: platform,
 		Blob:     blob,

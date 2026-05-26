@@ -22,29 +22,24 @@ type mockConnection struct {
 // handleCreateOrUpdateConnection handles upsertConnection GraphQL mutations.
 func (s *mockServer) handleCreateOrUpdateConnection(w http.ResponseWriter, variables map[string]any) {
 	input, _ := variables["input"].(map[string]any)
-	urnVal, _ := input["urn"].(string)
+	id, _ := input["id"].(string)
 	name, _ := input["name"].(string)
-	platform, _ := input["platform"].(string)
+	platformURN, _ := input["platformUrn"].(string)
 
-	details, _ := input["details"].(map[string]any)
-	blob, _ := details["blob"].(string)
+	jsonBlock, _ := input["json"].(map[string]any)
+	blob, _ := jsonBlock["blob"].(string)
 
-	// Derive ID from URN or generate one from name.
-	id := strings.TrimPrefix(urnVal, "urn:li:dataHubConnection:")
-	if id == "" || id == urnVal {
-		// No URN provided on create: use name as fallback.
+	if id == "" {
 		id = strings.ReplaceAll(strings.ToLower(name), " ", "-")
 	}
-	if urnVal == "" {
-		urnVal = "urn:li:dataHubConnection:" + id
-	}
+	urnVal := "urn:li:dataHubConnection:" + id
 
 	s.mu.Lock()
 	s.connections[id] = mockConnection{
 		URN:      urnVal,
 		ID:       id,
 		Name:     name,
-		Platform: platform,
+		Platform: platformURN,
 		Blob:     blob,
 	}
 	s.mu.Unlock()

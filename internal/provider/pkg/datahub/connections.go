@@ -36,8 +36,9 @@ type Connection struct {
 // Blob is a JSON string containing the per-platform configuration. It is sent
 // directly to DataHub, which encrypts it before persisting.
 type UpsertConnectionInput struct {
-	// URN is the full connection URN. Empty on create; must be set on update.
-	URN  string
+	// ID is the connection_id (URN suffix). The server constructs the full URN
+	// as urn:li:dataHubConnection:<ID>. Required.
+	ID   string
 	Name string
 	// Platform is the URN suffix (e.g., "databricks"), not the full URN.
 	Platform string
@@ -101,6 +102,9 @@ func (c *Client) UpsertConnection(ctx context.Context, in UpsertConnectionInput)
 	if in.Name == "" {
 		return "", errors.New("name is required")
 	}
+	if in.ID == "" {
+		return "", errors.New("id is required")
+	}
 	if in.Platform == "" {
 		return "", errors.New("platform is required")
 	}
@@ -116,13 +120,11 @@ mutation upsertConnection($input: UpsertDataHubConnectionInput!) {
 }`
 
 	inputVars := map[string]any{
-		"name":     in.Name,
-		"type":     "JSON",
-		"platform": "urn:li:dataPlatform:" + in.Platform,
-		"details":  map[string]any{"blob": in.Blob},
-	}
-	if in.URN != "" {
-		inputVars["urn"] = in.URN
+		"id":          in.ID,
+		"name":        in.Name,
+		"type":        "JSON",
+		"platformUrn": "urn:li:dataPlatform:" + in.Platform,
+		"json":        map[string]any{"blob": in.Blob},
 	}
 
 	body := map[string]any{
@@ -159,9 +161,7 @@ mutation upsertConnection($input: UpsertDataHubConnectionInput!) {
 
 	urn := gqlResp.Data.UpsertConnection.URN
 	if urn == "" {
-		// Construct from the connection_id we sent.
-		id := strings.TrimPrefix(in.URN, "urn:li:dataHubConnection:")
-		urn = "urn:li:dataHubConnection:" + id
+		urn = "urn:li:dataHubConnection:" + in.ID
 	}
 	return urn, nil
 }
