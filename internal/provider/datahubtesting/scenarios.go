@@ -552,10 +552,10 @@ resource "datahub_connection" "test" {
   name             = "Snowflake Prod"
   config_wo_version = 1
   snowflake {
-    account_id = "xy12345.us-east-1"
-    warehouse  = "COMPUTE_WH"
-    database   = "ANALYTICS"
-    auth_type  = "USER_PASS"
+    account_id  = "xy12345.us-east-1"
+    username    = "datahub_user"
+    warehouse   = "COMPUTE_WH"
+    auth_type   = "DEFAULT_AUTHENTICATOR"
     password_wo = "s3cr3t"
   }
 }
@@ -706,14 +706,13 @@ func connectionImportIgnoreAttrs() []string {
 		"databricks.client_id_wo",
 		"databricks.client_secret_wo",
 		"snowflake.account_id",
+		"snowflake.username",
 		"snowflake.warehouse",
-		"snowflake.database",
 		"snowflake.role",
 		"snowflake.auth_type",
 		"snowflake.password_wo",
 		"snowflake.private_key_wo",
 		"snowflake.private_key_passphrase_wo",
-		"bigquery.project_id",
 		"bigquery.private_key_json_wo",
 		"redshift.host_port",
 		"redshift.database",

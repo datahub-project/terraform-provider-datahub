@@ -31,10 +31,10 @@ resource "datahub_connection" "snowflake" {
 
   snowflake {
     account_id  = var.snowflake_account_id
+    username    = var.snowflake_username
     warehouse   = var.snowflake_warehouse
-    database    = var.snowflake_database
     role        = var.snowflake_role
-    auth_type   = "USER_PASS"
+    auth_type   = "DEFAULT_AUTHENTICATOR"
     password_wo = var.snowflake_password
   }
 }

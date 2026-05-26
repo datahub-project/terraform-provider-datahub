@@ -26,6 +26,8 @@ terraform init
 terraform apply
 ```
 
+The example uses `auth_type = "DEFAULT_AUTHENTICATOR"` (username + password). For key-pair authentication set `auth_type = "KEY_PAIR_AUTHENTICATOR"` and supply `private_key_wo` instead.
+
 After apply, open **Settings > Integrations** in DataHub Cloud -- the Snowflake card should appear with your connection name.
 
 ## Using the connection in an ingestion source

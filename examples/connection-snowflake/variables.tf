@@ -15,14 +15,15 @@ variable "snowflake_account_id" {
   type        = string
 }
 
-variable "snowflake_warehouse" {
-  description = "Snowflake warehouse name (e.g. COMPUTE_WH)."
+variable "snowflake_username" {
+  description = "Snowflake service user username."
   type        = string
 }
 
-variable "snowflake_database" {
-  description = "Default Snowflake database for metadata ingestion."
+variable "snowflake_warehouse" {
+  description = "Snowflake warehouse name (e.g. COMPUTE_WH). Optional."
   type        = string
+  default     = ""
 }
 
 variable "snowflake_role" {

@@ -63,8 +63,8 @@ type databricksModel struct {
 
 type snowflakeModel struct {
 	AccountID              types.String `tfsdk:"account_id"`
+	Username               types.String `tfsdk:"username"`
 	Warehouse              types.String `tfsdk:"warehouse"`
-	Database               types.String `tfsdk:"database"`
 	Role                   types.String `tfsdk:"role"`
 	AuthType               types.String `tfsdk:"auth_type"`
 	PasswordWO             types.String `tfsdk:"password_wo"`
@@ -73,7 +73,6 @@ type snowflakeModel struct {
 }
 
 type bigqueryModel struct {
-	ProjectID      types.String `tfsdk:"project_id"`
 	PrivateKeyJSON types.String `tfsdk:"private_key_json_wo"`
 }
 
@@ -166,18 +165,17 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"| Field | Description |\n" +
 			"|---|---|\n" +
 			"| `account_id` | Snowflake account identifier (e.g., `xy12345.us-east-1`) |\n" +
-			"| `warehouse` | Snowflake warehouse name |\n" +
-			"| `database` | Default database |\n" +
-			"| `role` | Snowflake role |\n" +
-			"| `auth_type` | `USER_PASS` or `KEY_PAIR` |\n" +
-			"| `password_wo` | Password (required when `auth_type = USER_PASS`) |\n" +
-			"| `private_key_wo` | PEM-encoded private key (required when `auth_type = KEY_PAIR`) |\n" +
-			"| `private_key_passphrase_wo` | Private key passphrase (optional, for encrypted keys) |\n\n" +
+			"| `username` | Snowflake username (optional when using key-pair auth without a username) |\n" +
+			"| `warehouse` | Snowflake warehouse name (optional) |\n" +
+			"| `role` | Snowflake role (optional) |\n" +
+			"| `auth_type` | `DEFAULT_AUTHENTICATOR` (password) or `KEY_PAIR_AUTHENTICATOR` |\n" +
+			"| `password_wo` | Password (used when `auth_type = DEFAULT_AUTHENTICATOR`) |\n" +
+			"| `private_key_wo` | PEM-encoded private key (required when `auth_type = KEY_PAIR_AUTHENTICATOR`) |\n" +
+			"| `private_key_passphrase_wo` | Private key passphrase (optional, for encrypted private keys) |\n\n" +
 			"### BigQuery field reference\n\n" +
 			"| Field | Description |\n" +
 			"|---|---|\n" +
-			"| `project_id` | GCP project ID |\n" +
-			"| `private_key_json_wo` | Full service account JSON key file contents |\n\n" +
+			"| `private_key_json_wo` | Full service account JSON key file contents (the JSON string from the downloaded key file). The project ID is read from inside the JSON. |\n\n" +
 			"### Redshift field reference\n\n" +
 			"| Field | Description |\n" +
 			"|---|---|\n" +
@@ -282,17 +280,17 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 						Sensitive:           true,
 						MarkdownDescription: "Snowflake account identifier (e.g., `xy12345.us-east-1`).",
 					},
+					"username": schema.StringAttribute{
+						Optional:            true,
+						WriteOnly:           true,
+						Sensitive:           true,
+						MarkdownDescription: "Snowflake username.",
+					},
 					"warehouse": schema.StringAttribute{
 						Optional:            true,
 						WriteOnly:           true,
 						Sensitive:           true,
 						MarkdownDescription: "Snowflake warehouse name.",
-					},
-					"database": schema.StringAttribute{
-						Optional:            true,
-						WriteOnly:           true,
-						Sensitive:           true,
-						MarkdownDescription: "Default database name.",
 					},
 					"role": schema.StringAttribute{
 						Optional:            true,
@@ -304,19 +302,19 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 						Optional:            true,
 						WriteOnly:           true,
 						Sensitive:           true,
-						MarkdownDescription: "Authentication type: `USER_PASS` or `KEY_PAIR`.",
+						MarkdownDescription: "Authentication type: `DEFAULT_AUTHENTICATOR` (password-based) or `KEY_PAIR_AUTHENTICATOR`.",
 					},
 					"password_wo": schema.StringAttribute{
 						Optional:            true,
 						WriteOnly:           true,
 						Sensitive:           true,
-						MarkdownDescription: "Snowflake password. Required when `auth_type = USER_PASS`.",
+						MarkdownDescription: "Snowflake password. Used when `auth_type = DEFAULT_AUTHENTICATOR`.",
 					},
 					"private_key_wo": schema.StringAttribute{
 						Optional:            true,
 						WriteOnly:           true,
 						Sensitive:           true,
-						MarkdownDescription: "PEM-encoded private key. Required when `auth_type = KEY_PAIR`.",
+						MarkdownDescription: "PEM-encoded private key. Required when `auth_type = KEY_PAIR_AUTHENTICATOR`.",
 					},
 					"private_key_passphrase_wo": schema.StringAttribute{
 						Optional:            true,
@@ -329,17 +327,11 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"bigquery": schema.SingleNestedBlock{
 				MarkdownDescription: "Configuration for a BigQuery connection. See field reference in the resource description.",
 				Attributes: map[string]schema.Attribute{
-					"project_id": schema.StringAttribute{
-						Optional:            true,
-						WriteOnly:           true,
-						Sensitive:           true,
-						MarkdownDescription: "GCP project ID.",
-					},
 					"private_key_json_wo": schema.StringAttribute{
 						Optional:            true,
 						WriteOnly:           true,
 						Sensitive:           true,
-						MarkdownDescription: "Full service account JSON key file contents (the JSON string from the downloaded key file).",
+						MarkdownDescription: "Full service account JSON key file contents (the JSON string from the downloaded key file). The project ID is read from inside the JSON; no separate field is needed.",
 					},
 				},
 			},
@@ -479,7 +471,6 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 		}{
 			{d.WorkspaceURL, "workspace_url"},
 			{d.WarehouseID, "warehouse_id"},
-			{d.AuthType, "auth_type"},
 		} {
 			if err := requireField(chk.v, "databricks", chk.f); err != nil {
 				return "", err
@@ -488,10 +479,11 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 		b := map[string]any{
 			"workspace_url": d.WorkspaceURL.ValueString(),
 			"warehouse_id":  d.WarehouseID.ValueString(),
-			"auth_type":     d.AuthType.ValueString(),
 		}
+		// auth_type is not written to the blob: the Python ConfigModel infers auth
+		// from which credential field is present (token vs client_id+client_secret).
 		if !d.PersonalAccessToken.IsNull() && d.PersonalAccessToken.ValueString() != "" {
-			b["personal_access_token"] = d.PersonalAccessToken.ValueString()
+			b["token"] = d.PersonalAccessToken.ValueString()
 		}
 		if !d.ClientID.IsNull() && d.ClientID.ValueString() != "" {
 			b["client_id"] = d.ClientID.ValueString()
@@ -503,27 +495,23 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 
 	case m.Snowflake != nil:
 		s := m.Snowflake
-		for _, chk := range []struct {
-			v types.String
-			f string
-		}{
-			{s.AccountID, "account_id"},
-			{s.Warehouse, "warehouse"},
-			{s.Database, "database"},
-			{s.AuthType, "auth_type"},
-		} {
-			if err := requireField(chk.v, "snowflake", chk.f); err != nil {
-				return "", err
-			}
+		if err := requireField(s.AccountID, "snowflake", "account_id"); err != nil {
+			return "", err
 		}
 		b := map[string]any{
 			"account_id": s.AccountID.ValueString(),
-			"warehouse":  s.Warehouse.ValueString(),
-			"database":   s.Database.ValueString(),
-			"auth_type":  s.AuthType.ValueString(),
+		}
+		if !s.Username.IsNull() && s.Username.ValueString() != "" {
+			b["username"] = s.Username.ValueString()
+		}
+		if !s.Warehouse.IsNull() && s.Warehouse.ValueString() != "" {
+			b["warehouse"] = s.Warehouse.ValueString()
 		}
 		if !s.Role.IsNull() && s.Role.ValueString() != "" {
 			b["role"] = s.Role.ValueString()
+		}
+		if !s.AuthType.IsNull() && s.AuthType.ValueString() != "" {
+			b["authentication_type"] = s.AuthType.ValueString()
 		}
 		if !s.PasswordWO.IsNull() && s.PasswordWO.ValueString() != "" {
 			b["password"] = s.PasswordWO.ValueString()
@@ -532,25 +520,20 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 			b["private_key"] = s.PrivateKeyWO.ValueString()
 		}
 		if !s.PrivateKeyPassphraseWO.IsNull() && s.PrivateKeyPassphraseWO.ValueString() != "" {
-			b["private_key_passphrase"] = s.PrivateKeyPassphraseWO.ValueString()
+			b["private_key_password"] = s.PrivateKeyPassphraseWO.ValueString()
 		}
 		blob = b
 
 	case m.BigQuery != nil:
-		for _, chk := range []struct {
-			v types.String
-			f string
-		}{
-			{m.BigQuery.ProjectID, "project_id"},
-			{m.BigQuery.PrivateKeyJSON, "private_key_json_wo"},
-		} {
-			if err := requireField(chk.v, "bigquery", chk.f); err != nil {
-				return "", err
-			}
+		if err := requireField(m.BigQuery.PrivateKeyJSON, "bigquery", "private_key_json_wo"); err != nil {
+			return "", err
+		}
+		var credential map[string]any
+		if err := json.Unmarshal([]byte(m.BigQuery.PrivateKeyJSON.ValueString()), &credential); err != nil {
+			return "", fmt.Errorf("bigquery.private_key_json_wo is not valid JSON: %w", err)
 		}
 		blob = map[string]any{
-			"project_id":       m.BigQuery.ProjectID.ValueString(),
-			"private_key_json": m.BigQuery.PrivateKeyJSON.ValueString(),
+			"credential": credential,
 		}
 
 	case m.Redshift != nil:
@@ -582,7 +565,6 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 		}{
 			{uc.WorkspaceURL, "workspace_url"},
 			{uc.WarehouseID, "warehouse_id"},
-			{uc.AuthType, "auth_type"},
 		} {
 			if err := requireField(chk.v, "unity_catalog", chk.f); err != nil {
 				return "", err
@@ -591,10 +573,11 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 		b := map[string]any{
 			"workspace_url": uc.WorkspaceURL.ValueString(),
 			"warehouse_id":  uc.WarehouseID.ValueString(),
-			"auth_type":     uc.AuthType.ValueString(),
 		}
+		// auth_type is not written to the blob: Unity Catalog ConfigModel has
+		// extra="forbid" and does not define authentication_type as a field.
 		if !uc.PersonalAccessToken.IsNull() && uc.PersonalAccessToken.ValueString() != "" {
-			b["personal_access_token"] = uc.PersonalAccessToken.ValueString()
+			b["token"] = uc.PersonalAccessToken.ValueString()
 		}
 		if !uc.ClientID.IsNull() && uc.ClientID.ValueString() != "" {
 			b["client_id"] = uc.ClientID.ValueString()
@@ -688,8 +671,8 @@ func nullBlockForPlatform(platform string, state *connectionResourceModel) {
 	case "snowflake":
 		state.Snowflake = &snowflakeModel{
 			AccountID:              types.StringNull(),
+			Username:               types.StringNull(),
 			Warehouse:              types.StringNull(),
-			Database:               types.StringNull(),
 			Role:                   types.StringNull(),
 			AuthType:               types.StringNull(),
 			PasswordWO:             types.StringNull(),
@@ -698,7 +681,6 @@ func nullBlockForPlatform(platform string, state *connectionResourceModel) {
 		}
 	case "bigquery":
 		state.BigQuery = &bigqueryModel{
-			ProjectID:      types.StringNull(),
 			PrivateKeyJSON: types.StringNull(),
 		}
 	case "redshift":

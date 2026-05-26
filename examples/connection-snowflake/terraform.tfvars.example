@@ -5,8 +5,8 @@ connection_id   = "prod-snowflake"
 connection_name = "Production Snowflake"
 
 snowflake_account_id = "xy12345.us-east-1"
+snowflake_username   = "DATAHUB_USER"
 snowflake_warehouse  = "COMPUTE_WH"
-snowflake_database   = "ANALYTICS"
 snowflake_role       = "DATAHUB_ROLE"
 
 # Prefer passing the password via the environment to keep it out of files:
