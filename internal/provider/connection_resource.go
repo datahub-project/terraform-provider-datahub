@@ -140,8 +140,9 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"Creates and manages a DataHub Connection.\n\n" +
 			"DataHub Connections are named, encrypted credential configurations for data platforms " +
 			"(Databricks, Snowflake, BigQuery, Redshift, Unity Catalog) and are displayed on the " +
-			"DataHub Cloud Integrations page. A connection can be referenced in an ingestion source " +
-			"recipe via the `connection` field (e.g., `connection: urn:li:dataHubConnection:my-conn`).\n\n" +
+			"DataHub Cloud Integrations page. A connection can also be referenced in an ingestion " +
+			"source recipe via the `connection` field (Snowflake only; e.g., " +
+			"`connection: urn:li:dataHubConnection:my-conn`).\n\n" +
 			"## Security model\n\n" +
 			"DataHub encrypts the entire connection config blob server-side (AES-GCM-256) before " +
 			"persisting it. The encrypted blob is never returned by the read API. As a result:\n\n" +

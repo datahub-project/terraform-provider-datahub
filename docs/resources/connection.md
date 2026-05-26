@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   DataHub ✅ | DataHub Cloud ✅
   Creates and manages a DataHub Connection.
-  DataHub Connections are named, encrypted credential configurations for data platforms (Databricks, Snowflake, BigQuery, Redshift, Unity Catalog) and are displayed on the DataHub Cloud Integrations page. A connection can be referenced in an ingestion source recipe via the connection field (e.g., connection: urn:li:dataHubConnection:my-conn).
+  DataHub Connections are named, encrypted credential configurations for data platforms (Databricks, Snowflake, BigQuery, Redshift, Unity Catalog) and are displayed on the DataHub Cloud Integrations page. A connection can also be referenced in an ingestion source recipe via the connection field (Snowflake only; e.g., connection: urn:li:dataHubConnection:my-conn).
   Security model
   DataHub encrypts the entire connection config blob server-side (AES-GCM-256) before persisting it. The encrypted blob is never returned by the read API. As a result:
   All fields inside the platform config blocks are WriteOnly: they are sent to DataHub on create/update but are not stored in Terraform state.Only top-level metadata (name, platform) is drift-detected via the strongly-consistent OpenAPI v3 read path.
@@ -62,7 +62,7 @@ description: |-
 
 Creates and manages a DataHub Connection.
 
-DataHub Connections are named, encrypted credential configurations for data platforms (Databricks, Snowflake, BigQuery, Redshift, Unity Catalog) and are displayed on the DataHub Cloud Integrations page. A connection can be referenced in an ingestion source recipe via the `connection` field (e.g., `connection: urn:li:dataHubConnection:my-conn`).
+DataHub Connections are named, encrypted credential configurations for data platforms (Databricks, Snowflake, BigQuery, Redshift, Unity Catalog) and are displayed on the DataHub Cloud Integrations page. A connection can also be referenced in an ingestion source recipe via the `connection` field (Snowflake only; e.g., `connection: urn:li:dataHubConnection:my-conn`).
 
 ## Security model
 
