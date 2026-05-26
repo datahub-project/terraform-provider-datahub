@@ -663,6 +663,34 @@ resource "datahub_connection" "test" {
 	}
 }
 
+// ConnectionTwoBlocksSteps returns a test step that expects an error when two
+// platform blocks are configured simultaneously.
+func ConnectionTwoBlocksSteps() []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_connection" "test" {
+  connection_id     = "two-blocks-test"
+  name              = "Should Fail"
+  config_wo_version = 1
+  databricks {
+    workspace_url          = "https://dbc-example.cloud.databricks.com"
+    warehouse_id           = "abc123"
+    personal_access_token_wo = "tok"
+  }
+  snowflake {
+    account_id  = "xy12345.us-east-1"
+    username    = "datahub_user"
+    auth_type   = "DEFAULT_AUTHENTICATOR"
+    password_wo = "s3cr3t"
+  }
+}
+`,
+			ExpectError: regexp.MustCompile(`Multiple platform blocks configured`),
+		},
+	}
+}
+
 // ConnectionCheckDestroy verifies every datahub_connection in the post-destroy
 // state has been removed from DataHub.
 func ConnectionCheckDestroy(s *terraform.State) error {

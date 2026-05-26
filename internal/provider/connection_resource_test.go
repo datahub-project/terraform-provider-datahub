@@ -90,3 +90,17 @@ func TestAcc_Connection_NoBlock(t *testing.T) {
 		Steps:                    datahubtesting.ConnectionNoBlockSteps(),
 	})
 }
+
+// TestAcc_Connection_TwoBlocks verifies that configuring more than one platform
+// block at once surfaces the "Multiple platform blocks configured" error.
+func TestAcc_Connection_TwoBlocks(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
+			tfversion.SkipBelow(tfversion.Version1_11_0),
+		},
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.ConnectionTwoBlocksSteps(),
+	})
+}
