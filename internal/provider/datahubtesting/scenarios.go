@@ -714,6 +714,7 @@ func connectionImportIgnoreAttrs() []string {
 		"snowflake.private_key_wo",
 		"snowflake.private_key_passphrase_wo",
 		"bigquery.private_key_json_wo",
+		"dataplex.private_key_json_wo",
 		"redshift.host_port",
 		"redshift.database",
 		"redshift.username",

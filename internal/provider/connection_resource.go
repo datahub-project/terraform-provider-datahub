@@ -47,6 +47,7 @@ type connectionResourceModel struct {
 	Databricks      *databricksModel   `tfsdk:"databricks"`
 	Snowflake       *snowflakeModel    `tfsdk:"snowflake"`
 	BigQuery        *bigqueryModel     `tfsdk:"bigquery"`
+	Dataplex        *dataplexModel     `tfsdk:"dataplex"`
 	Redshift        *redshiftModel     `tfsdk:"redshift"`
 	UnityCatalog    *unityCatalogModel `tfsdk:"unity_catalog"`
 	RawConfig       *rawConfigModel    `tfsdk:"raw_config"`
@@ -73,6 +74,12 @@ type snowflakeModel struct {
 }
 
 type bigqueryModel struct {
+	PrivateKeyJSON types.String `tfsdk:"private_key_json_wo"`
+}
+
+// dataplexModel shares the same GCPCredential blob structure as bigqueryModel:
+// the service account JSON is parsed and stored under the "credential" key.
+type dataplexModel struct {
 	PrivateKeyJSON types.String `tfsdk:"private_key_json_wo"`
 }
 
@@ -150,7 +157,7 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"deleting and recreating the connection with the updated config from your current configuration.\n\n" +
 			"## Platform config blocks\n\n" +
 			"Exactly one platform block must be configured. Use the block matching your data platform " +
-			"(`databricks`, `snowflake`, `bigquery`, `redshift`, `unity_catalog`). For platforms " +
+			"(`databricks`, `snowflake`, `bigquery`, `dataplex`, `redshift`, `unity_catalog`). For platforms " +
 			"without a dedicated block, use `raw_config` and supply the JSON directly.\n\n" +
 			"### Databricks field reference\n\n" +
 			"| Field | Description |\n" +
@@ -176,6 +183,11 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"| Field | Description |\n" +
 			"|---|---|\n" +
 			"| `private_key_json_wo` | Full service account JSON key file contents (the JSON string from the downloaded key file). The project ID is read from inside the JSON. |\n\n" +
+			"### Dataplex field reference\n\n" +
+			"Identical to the `bigquery` block -- Dataplex uses the same GCP service account credential structure.\n\n" +
+			"| Field | Description |\n" +
+			"|---|---|\n" +
+			"| `private_key_json_wo` | Full service account JSON key file contents. |\n\n" +
 			"### Redshift field reference\n\n" +
 			"| Field | Description |\n" +
 			"|---|---|\n" +
@@ -335,6 +347,17 @@ func (r *connectionResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					},
 				},
 			},
+			"dataplex": schema.SingleNestedBlock{
+				MarkdownDescription: "Configuration for a Google Cloud Dataplex connection. Uses the same GCP service account credential structure as the `bigquery` block.",
+				Attributes: map[string]schema.Attribute{
+					"private_key_json_wo": schema.StringAttribute{
+						Optional:            true,
+						WriteOnly:           true,
+						Sensitive:           true,
+						MarkdownDescription: "Full service account JSON key file contents (the JSON string from the downloaded key file). The project ID is read from inside the JSON.",
+					},
+				},
+			},
 			"redshift": schema.SingleNestedBlock{
 				MarkdownDescription: "Configuration for a Redshift connection. See field reference in the resource description.",
 				Attributes: map[string]schema.Attribute{
@@ -437,6 +460,8 @@ func platformFromModel(m *connectionResourceModel) string {
 		return "snowflake"
 	case m.BigQuery != nil:
 		return "bigquery"
+	case m.Dataplex != nil:
+		return "dataplex"
 	case m.Redshift != nil:
 		return "redshift"
 	case m.UnityCatalog != nil:
@@ -536,6 +561,18 @@ func marshalBlob(m *connectionResourceModel) (string, error) {
 			"credential": credential,
 		}
 
+	case m.Dataplex != nil:
+		if err := requireField(m.Dataplex.PrivateKeyJSON, "dataplex", "private_key_json_wo"); err != nil {
+			return "", err
+		}
+		var credential map[string]any
+		if err := json.Unmarshal([]byte(m.Dataplex.PrivateKeyJSON.ValueString()), &credential); err != nil {
+			return "", fmt.Errorf("dataplex.private_key_json_wo is not valid JSON: %w", err)
+		}
+		blob = map[string]any{
+			"credential": credential,
+		}
+
 	case m.Redshift != nil:
 		for _, chk := range []struct {
 			v types.String
@@ -627,6 +664,9 @@ func validateExactlyOneBlock(m *connectionResourceModel, diags interface {
 	if m.BigQuery != nil {
 		count++
 	}
+	if m.Dataplex != nil {
+		count++
+	}
 	if m.Redshift != nil {
 		count++
 	}
@@ -681,6 +721,10 @@ func nullBlockForPlatform(platform string, state *connectionResourceModel) {
 		}
 	case "bigquery":
 		state.BigQuery = &bigqueryModel{
+			PrivateKeyJSON: types.StringNull(),
+		}
+	case "dataplex":
+		state.Dataplex = &dataplexModel{
 			PrivateKeyJSON: types.StringNull(),
 		}
 	case "redshift":
