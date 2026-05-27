@@ -30,9 +30,8 @@ const providerBlock = `
 provider "datahub" {}
 `
 
-// IngestionSourceLifecycleSteps returns test steps covering create and update
-// for datahub_ingestion_source. It does not include ImportState because that
-// resource does not yet implement ResourceWithImportState.
+// IngestionSourceLifecycleSteps returns test steps covering create, update,
+// and import for datahub_ingestion_source.
 //
 // sourceName is used as the source_name attribute and must be unique within
 // the target DataHub instance. Mock callers may pass a fixed string; live
@@ -74,6 +73,62 @@ resource "datahub_ingestion_source" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("source_type"), knownvalue.StringExact("file")),
 			},
 		},
+		{
+			// Import by source_id (bare, not full URN).
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN (urn:li:dataHubIngestionSource:<id>).
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return "urn:li:dataHubIngestionSource:" + rs.Primary.ID, nil
+			},
+		},
+	}
+}
+
+// IngestionSourceImportErrorSteps returns test steps verifying that ImportState
+// surfaces a diagnostic when called with a malformed import ID. Step 1 creates
+// the resource. Steps 2-3 attempt imports with invalid IDs; each expects an
+// error matching "Invalid import ID". A final step re-applies the original
+// config so the test framework can clean up via terraform destroy.
+func IngestionSourceImportErrorSteps(sourceID, sourceName string) []resource.TestStep {
+	const addr = "datahub_ingestion_source.test"
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_ingestion_source" "test" {
+  source_id   = %q
+  source_name = %q
+  recipe      = jsonencode({source = {type = "file", config = {filename = "/tmp/test.json"}}})
+}
+`, sourceID, sourceName)
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			// Whitespace-only ID: TrimSpace reduces it to empty string.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateIdFunc: func(_ *terraform.State) (string, error) { return " ", nil },
+			ExpectError:       regexp.MustCompile(`Invalid import ID`),
+		},
+		{
+			// URN with empty suffix: source_id extracted is empty string.
+			ResourceName: addr,
+			ImportState:  true,
+			ImportStateIdFunc: func(_ *terraform.State) (string, error) {
+				return "urn:li:dataHubIngestionSource:", nil
+			},
+			ExpectError: regexp.MustCompile(`Invalid import ID`),
+		},
+		{Config: cfg}, // Re-apply so cleanup destroy succeeds.
 	}
 }
 

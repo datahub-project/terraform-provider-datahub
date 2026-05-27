@@ -13,6 +13,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapplanmodifier"
@@ -26,8 +27,9 @@ import (
 )
 
 var (
-	_ resource.Resource              = &ingestionSourceResource{}
-	_ resource.ResourceWithConfigure = &ingestionSourceResource{}
+	_ resource.Resource                = &ingestionSourceResource{}
+	_ resource.ResourceWithConfigure   = &ingestionSourceResource{}
+	_ resource.ResourceWithImportState = &ingestionSourceResource{}
 )
 
 type ingestionSourceResource struct {
@@ -576,4 +578,29 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 		DebugMode:        effectiveDebugMode,
 		Platform:         effectivePlatform,
 	}, diags
+}
+
+func (r *ingestionSourceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	raw := strings.TrimSpace(req.ID)
+	if raw == "" {
+		resp.Diagnostics.AddError("Invalid import ID", "Expected a DataHub ingestion source URN (e.g. urn:li:dataHubIngestionSource:my-source) or a bare source_id.")
+		return
+	}
+
+	const urnPrefix = "urn:li:dataHubIngestionSource:"
+	var sourceID string
+	if strings.HasPrefix(raw, urnPrefix) {
+		sourceID = strings.TrimPrefix(raw, urnPrefix)
+	} else {
+		sourceID = raw
+	}
+	if sourceID == "" {
+		resp.Diagnostics.AddError("Invalid import ID", "Could not extract a source_id from the provided import ID.")
+		return
+	}
+
+	// Set the two ID fields the Read method needs to perform its lookup.
+	// The framework calls Read after ImportState to populate all remaining fields.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), sourceID)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("source_id"), sourceID)...)
 }
