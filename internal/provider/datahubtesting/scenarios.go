@@ -787,7 +787,7 @@ func ConnectionCheckDestroy(s *terraform.State) error {
 func connectionImportIgnoreAttrs() []string {
 	return []string{
 		"config_wo_version",
-		"platform",    // OSS does not return platform in entity response
+		"platform",     // OSS does not return platform in entity response
 		"databricks.%", // block count absent in imported state on OSS
 		// Typed block fields (all WriteOnly -- null in both pre- and post-import state,
 		// so they match automatically; listed here for documentation completeness).
