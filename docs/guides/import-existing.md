@@ -23,8 +23,39 @@ Both paths result in the same output: a Terraform configuration that matches you
 ### Prerequisites
 
 - Terraform 1.11 or later (required for WriteOnly attribute support)
-- `datahub-tf-import` binary -- download from the [GitHub releases page](https://github.com/datahub-project/terraform-provider-datahub/releases) or build from source with `make install`
+- `datahub-tf-import` binary (see installation options below)
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` set in your environment
+
+#### Installing datahub-tf-import
+
+**Option 1: mise (recommended)**
+
+If you use [mise](https://mise.jdx.dev), add the following to your `mise.toml` and run `mise install`:
+
+```toml
+[tools]
+"ubi:datahub-project/terraform-provider-datahub" = { version = "0.2.0", exe = "datahub-tf-import", matching = "datahub-tf-import" }
+```
+
+This pins the CLI to a specific version, keeps it in sync with the provider version your project uses, and requires no manual PATH management.
+
+**Option 2: GitHub releases page**
+
+Download the `datahub-tf-import_<version>_<os>_<arch>.zip` archive for your platform from the [GitHub releases page](https://github.com/datahub-project/terraform-provider-datahub/releases), unzip it, and move the binary to a directory on your PATH:
+
+```shell
+unzip datahub-tf-import_0.2.0_darwin_arm64.zip
+mv datahub-tf-import_v0.2.0 /usr/local/bin/datahub-tf-import
+```
+
+**Option 3: build from source**
+
+```shell
+git clone https://github.com/datahub-project/terraform-provider-datahub.git
+cd terraform-provider-datahub
+make install
+# binary written to ./bin/datahub-tf-import
+```
 
 ### Step 1: enumerate and generate
 
