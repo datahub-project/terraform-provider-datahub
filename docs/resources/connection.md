@@ -294,3 +294,5 @@ terraform import datahub_connection.prod_databricks prod-databricks
 # to your configuration with the correct credentials and set config_wo_version
 # before running terraform apply.
 ```
+
+To bulk-import a whole DataHub deployment, see the [Importing existing DataHub resources](../guides/import-existing.md) guide.
