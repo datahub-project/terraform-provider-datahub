@@ -24,27 +24,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  guard:
-    name: Decide whether to run
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.decide.outputs.should_run }}
-    steps:
-      - id: decide
-        run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || \
-             [ "${{ github.event_name }}" = "workflow_dispatch" ] || \
-             [ "${{ github.event_name }}" = "push" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "pull_request" ] && \
-               [ "${{ contains(github.event.pull_request.labels.*.name, 'run-live-ci') }}" = "true" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-          fi
-
   live-acceptance:
     name: Live Acceptance
-    needs: guard
-    if: needs.guard.outputs.should_run == 'true'
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-live-ci'))
     uses: ./.github/workflows/live-acceptance.yml
