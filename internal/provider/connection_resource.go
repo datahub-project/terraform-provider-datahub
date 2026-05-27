@@ -839,7 +839,13 @@ func (r *connectionResource) Read(ctx context.Context, req resource.ReadRequest,
 	state.URN = types.StringValue(conn.URN)
 	state.ID = types.StringValue(conn.URN)
 	state.Name = types.StringValue(conn.Name)
-	state.Platform = types.StringValue(conn.Platform)
+	// OSS DataHub may omit the platform field from the connection entity response
+	// even though it was supplied on create. Only overwrite state when the API
+	// returns a non-empty value; otherwise keep the existing state, which is
+	// authoritative (platform is immutable without a resource replacement).
+	if conn.Platform != "" {
+		state.Platform = types.StringValue(conn.Platform)
+	}
 	// config_wo_version and all block attrs keep their state values unchanged.
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

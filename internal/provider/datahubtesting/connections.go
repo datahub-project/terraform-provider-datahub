@@ -53,54 +53,48 @@ func (s *mockServer) handleCreateOrUpdateConnection(w http.ResponseWriter, varia
 	})
 }
 
-// handleDeleteConnection handles deleteConnection GraphQL mutations.
-func (s *mockServer) handleDeleteConnection(w http.ResponseWriter, variables map[string]any) {
-	urn, _ := variables["urn"].(string)
-	id := strings.TrimPrefix(urn, "urn:li:dataHubConnection:")
-
-	s.mu.Lock()
-	delete(s.connections, id)
-	s.mu.Unlock()
-
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data": map[string]any{"deleteConnection": true},
-	})
-}
-
-// handleConnectionItem serves GET /openapi/v3/entity/datahubconnection/{urn}.
-// The blob is intentionally NOT included in the response to match the real
-// server's behavior (where it is encrypted and unavailable to the caller).
+// handleConnectionItem serves GET and DELETE on
+// /openapi/v3/entity/datahubconnection/{urn}.
+// The blob is intentionally NOT included in GET responses to match the real
+// server's behaviour (where it is encrypted and unavailable to the caller).
 func (s *mockServer) handleConnectionItem(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
-
 	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/datahubconnection/")
 	id := strings.TrimPrefix(urn, "urn:li:dataHubConnection:")
 
-	s.mu.Lock()
-	conn, ok := s.connections[id]
-	s.mu.Unlock()
+	switch r.Method {
+	case http.MethodDelete:
+		s.mu.Lock()
+		delete(s.connections, id)
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
 
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
+	case http.MethodGet:
+		s.mu.Lock()
+		conn, ok := s.connections[id]
+		s.mu.Unlock()
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"urn": conn.URN,
-		"dataHubConnectionKey": map[string]any{
-			"value": map[string]any{"id": conn.ID},
-		},
-		"dataHubConnectionDetails": map[string]any{
-			"value": map[string]any{
-				"name":     conn.Name,
-				"type":     "JSON",
-				"platform": conn.Platform,
-				// blob deliberately omitted: encrypted at rest in real DataHub
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"urn": conn.URN,
+			"dataHubConnectionKey": map[string]any{
+				"value": map[string]any{"id": conn.ID},
 			},
-		},
-	})
+			"dataHubConnectionDetails": map[string]any{
+				"value": map[string]any{
+					"name":     conn.Name,
+					"type":     "JSON",
+					"platform": conn.Platform,
+					// blob deliberately omitted: encrypted at rest in real DataHub
+				},
+			},
+		})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }

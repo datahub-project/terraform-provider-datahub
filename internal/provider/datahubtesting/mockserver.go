@@ -137,8 +137,6 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleSearchAcrossEntities(w, req.Variables)
 	case strings.Contains(q, "upsertConnection"):
 		s.handleCreateOrUpdateConnection(w, req.Variables)
-	case strings.Contains(q, "deleteConnection"):
-		s.handleDeleteConnection(w, req.Variables)
 	case strings.Contains(q, "createRemoteExecutorPool"):
 		s.handleCreateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):

@@ -57,15 +57,6 @@ type upsertConnectionResponse struct {
 	} `json:"errors"`
 }
 
-type deleteConnectionResponse struct {
-	Data struct {
-		DeleteConnection bool `json:"deleteConnection"`
-	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
-}
-
 // connectionEntity is the OpenAPI v3 response shape for
 // GET /openapi/v3/entity/datahubconnection/{urn}.
 type connectionEntity struct {
@@ -231,8 +222,13 @@ func (c *Client) GetConnectionByURN(ctx context.Context, urn string) (*Connectio
 	}, nil
 }
 
-// DeleteConnection deletes a DataHub connection by URN via the GraphQL API.
-// Returns nil if the connection is already gone (idempotent).
+// DeleteConnection deletes a DataHub connection by URN via the OpenAPI v3
+// entity endpoint. Returns nil if the connection is already gone (idempotent).
+//
+// OpenAPI v3 DELETE is used rather than the deleteConnection GraphQL mutation
+// because the GraphQL mutation does not exist in OSS DataHub. Connection
+// deletion does not require the encryption service layer (only upsert does),
+// so bypassing GraphQL here is safe.
 func (c *Client) DeleteConnection(ctx context.Context, urn string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -242,17 +238,8 @@ func (c *Client) DeleteConnection(ctx context.Context, urn string) error {
 		return errors.New("URN is required")
 	}
 
-	const q = `
-mutation deleteConnection($urn: String!) {
-  deleteConnection(urn: $urn)
-}`
-
-	body := map[string]any{
-		"query":     q,
-		"variables": map[string]any{"urn": urn},
-	}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/api/graphql", body)
+	path := fmt.Sprintf("/openapi/v3/entity/datahubconnection/%s", urn)
+	req, err := c.NewRequest(ctx, http.MethodDelete, path, nil)
 	if err != nil {
 		return err
 	}
@@ -263,25 +250,14 @@ mutation deleteConnection($urn: String!) {
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode == http.StatusNotFound {
+		return nil
+	}
 	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_CONNECTIONS privilege", res.StatusCode)
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("unexpected HTTP %d from DataHub connections API", res.StatusCode)
-	}
-
-	var gqlResp deleteConnectionResponse
-	if err := json.NewDecoder(res.Body).Decode(&gqlResp); err != nil {
-		return fmt.Errorf("parsing deleteConnection response: %w", err)
-	}
-
-	if len(gqlResp.Errors) > 0 {
-		msg := gqlResp.Errors[0].Message
-		lower := strings.ToLower(msg)
-		if strings.Contains(lower, "not found") || strings.Contains(lower, "does not exist") {
-			return nil
-		}
-		return fmt.Errorf("DataHub API error: %s", msg)
 	}
 	return nil
 }
