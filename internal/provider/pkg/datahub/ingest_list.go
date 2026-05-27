@@ -67,15 +67,17 @@ query listIngestionSources($input: ListIngestionSourcesInput!) {
 		if err != nil {
 			return nil, err
 		}
-		defer res.Body.Close()
 
 		if res.StatusCode >= http.StatusBadRequest {
+			res.Body.Close()
 			return nil, fmt.Errorf("unexpected HTTP %d from DataHub listIngestionSources", res.StatusCode)
 		}
 
 		var gqlResp listIngestionSourcesResponse
-		if err := json.NewDecoder(res.Body).Decode(&gqlResp); err != nil {
-			return nil, fmt.Errorf("parsing listIngestionSources response: %w", err)
+		decodeErr := json.NewDecoder(res.Body).Decode(&gqlResp)
+		res.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("parsing listIngestionSources response: %w", decodeErr)
 		}
 		if len(gqlResp.Errors) > 0 {
 			return nil, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)

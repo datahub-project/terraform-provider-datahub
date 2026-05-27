@@ -77,15 +77,17 @@ query searchAcrossEntities($input: SearchAcrossEntitiesInput!) {
 		if err != nil {
 			return nil, err
 		}
-		defer res.Body.Close()
 
 		if res.StatusCode >= http.StatusBadRequest {
+			res.Body.Close()
 			return nil, fmt.Errorf("unexpected HTTP %d from DataHub searchAcrossEntities", res.StatusCode)
 		}
 
 		var gqlResp searchAcrossEntitiesResponse
-		if err := json.NewDecoder(res.Body).Decode(&gqlResp); err != nil {
-			return nil, fmt.Errorf("parsing searchAcrossEntities response: %w", err)
+		decodeErr := json.NewDecoder(res.Body).Decode(&gqlResp)
+		res.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("parsing searchAcrossEntities response: %w", decodeErr)
 		}
 		if len(gqlResp.Errors) > 0 {
 			return nil, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)

@@ -66,18 +66,21 @@ query listSecrets($input: ListSecretsInput!) {
 		if err != nil {
 			return nil, err
 		}
-		defer res.Body.Close()
 
 		if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+			res.Body.Close()
 			return nil, fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_SECRETS privilege", res.StatusCode)
 		}
 		if res.StatusCode >= http.StatusBadRequest {
+			res.Body.Close()
 			return nil, fmt.Errorf("unexpected HTTP %d from DataHub listSecrets", res.StatusCode)
 		}
 
 		var gqlResp listSecretsPageResponse
-		if err := json.NewDecoder(res.Body).Decode(&gqlResp); err != nil {
-			return nil, fmt.Errorf("parsing listSecrets response: %w", err)
+		decodeErr := json.NewDecoder(res.Body).Decode(&gqlResp)
+		res.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("parsing listSecrets response: %w", decodeErr)
 		}
 		if len(gqlResp.Errors) > 0 {
 			return nil, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
