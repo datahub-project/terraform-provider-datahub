@@ -812,3 +812,106 @@ func connectionImportIgnoreAttrs() []string {
 		"raw_config.config_json_wo",
 	}
 }
+
+// IngestionSourcesListSteps returns a test step that creates an ingestion source
+// and reads the datahub_ingestion_sources data source, verifying that the
+// resource's URN appears in the returned urns list.
+func IngestionSourcesListSteps(sourceID string) []resource.TestStep {
+	sourceName := "List DS test " + sourceID
+	urn := "urn:li:dataHubIngestionSource:" + sourceID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_ingestion_source" "test" {
+  source_id   = %q
+  source_name = %q
+  recipe      = jsonencode({source = {type = "file", config = {filename = "/tmp/test.json"}}})
+}
+
+data "datahub_ingestion_sources" "all" {
+  depends_on = [datahub_ingestion_source.test]
+}
+`, sourceID, sourceName)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(
+					"data.datahub_ingestion_sources.all",
+					tfjsonpath.New("urns"),
+					knownvalue.ListExact([]knownvalue.Check{
+						knownvalue.StringExact(urn),
+					}),
+				),
+			},
+		},
+	}
+}
+
+// SecretsListSteps returns a test step that creates a secret and reads the
+// datahub_secrets data source, verifying the secret's URN appears in the list.
+func SecretsListSteps(secretName string) []resource.TestStep {
+	urn := "urn:li:dataHubSecret:" + secretName
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_secret" "test" {
+  name        = %q
+  value       = "test-value"
+}
+
+data "datahub_secrets" "all" {
+  depends_on = [datahub_secret.test]
+}
+`, secretName)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(
+					"data.datahub_secrets.all",
+					tfjsonpath.New("urns"),
+					knownvalue.ListExact([]knownvalue.Check{
+						knownvalue.StringExact(urn),
+					}),
+				),
+			},
+		},
+	}
+}
+
+// ConnectionsListSteps returns a test step that creates a connection and reads
+// the datahub_connections data source, verifying the connection's URN appears.
+func ConnectionsListSteps(connectionID string) []resource.TestStep {
+	urn := "urn:li:dataHubConnection:" + connectionID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id     = %q
+  name              = "List DS test"
+  config_wo_version = 1
+  databricks {
+    workspace_url            = "https://dbc-test.cloud.databricks.com"
+    warehouse_id             = "abc123"
+    auth_type                = "PERSONAL_ACCESS_TOKEN"
+    personal_access_token_wo = "test-pat"
+  }
+}
+
+data "datahub_connections" "all" {
+  depends_on = [datahub_connection.test]
+}
+`, connectionID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(
+					"data.datahub_connections.all",
+					tfjsonpath.New("urns"),
+					knownvalue.ListExact([]knownvalue.Check{
+						knownvalue.StringExact(urn),
+					}),
+				),
+			},
+		},
+	}
+}

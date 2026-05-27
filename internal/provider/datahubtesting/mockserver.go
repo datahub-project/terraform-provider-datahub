@@ -131,6 +131,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeleteSecret(w, req.Variables)
 	case strings.Contains(q, "listSecrets"):
 		s.handleListSecrets(w, req.Variables)
+	case strings.Contains(q, "listIngestionSources"):
+		s.handleListIngestionSources(w)
+	case strings.Contains(q, "searchAcrossEntities"):
+		s.handleSearchAcrossEntities(w, req.Variables)
 	case strings.Contains(q, "upsertConnection"):
 		s.handleCreateOrUpdateConnection(w, req.Variables)
 	case strings.Contains(q, "deleteConnection"):
@@ -221,9 +225,9 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 
 	var results []map[string]any
 	for _, secret := range s.secrets {
-		// Mirror DataHub's substring search: include if name contains query.
-		// The client filters for exact match afterward.
-		if strings.Contains(secret.Name, query) {
+		// "*" means match all (DataHub wildcard). Otherwise mirror DataHub's
+		// substring search; the client filters for exact match afterward.
+		if query == "*" || strings.Contains(secret.Name, query) {
 			results = append(results, map[string]any{
 				"urn":         secret.URN,
 				"name":        secret.Name,
@@ -237,7 +241,78 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
-			"listSecrets": map[string]any{"secrets": results},
+			"listSecrets": map[string]any{
+				"total":   len(results),
+				"secrets": results,
+			},
+		},
+	})
+}
+
+func (s *mockServer) handleListIngestionSources(w http.ResponseWriter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var results []map[string]any
+	for id, src := range s.ingestionSources {
+		results = append(results, map[string]any{
+			"urn": "urn:li:dataHubIngestionSource:" + id,
+			// The list client only reads the URN; other fields can be omitted.
+			"source": map[string]any{"type": src.DataHubIngestionSourceInfo.Value.Type},
+		})
+	}
+	if results == nil {
+		results = []map[string]any{}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"listIngestionSources": map[string]any{
+				"total":            len(results),
+				"ingestionSources": results,
+			},
+		},
+	})
+}
+
+func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables map[string]any) {
+	input, _ := variables["input"].(map[string]any)
+	typesRaw, _ := input["types"].([]any)
+
+	var entityTypes []string
+	for _, t := range typesRaw {
+		if ts, ok := t.(string); ok {
+			entityTypes = append(entityTypes, ts)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var results []map[string]any
+
+	for _, et := range entityTypes {
+		switch et {
+		case "DATAHUB_CONNECTION":
+			for connID := range s.connections {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": "urn:li:dataHubConnection:" + connID,
+					},
+				})
+			}
+		}
+	}
+	if results == nil {
+		results = []map[string]any{}
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"searchAcrossEntities": map[string]any{
+				"total":         len(results),
+				"searchResults": results,
+			},
 		},
 	})
 }
