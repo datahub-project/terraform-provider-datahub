@@ -79,6 +79,7 @@ The resource `datahub_ingestion_source` follows this rule: it maps to URN type `
 - Verify: `go build ./...` and `go vet ./...`
 - Generate docs: `cd tools && go generate ./...`
 - Tests: `make test` (unit + mock acceptance); `make testacc` (live acceptance, requires a running DataHub instance)
+- Lint: `make lint` -- **always run before raising a PR**. The linter includes `gofmt`; misaligned comment spacing (e.g., `"foo",   // comment` with wrong tab count) will fail CI even if the code compiles and tests pass.
 
 ## Tool version maintenance
 
