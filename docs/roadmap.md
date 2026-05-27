@@ -325,7 +325,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 
 | # | Terraform component | Type | OSS | Key concern |
 |---|---|---|---|---|
-| 1 | `datahub_connection` | resource | verify | URN convention; OSS vs Cloud |
+| 1 | `datahub_connection` | resource | verify | URN convention; OSS vs Cloud | **DONE - [PR #26](https://github.com/datahub-project/terraform-provider-datahub/pull/26)** |
 | 2 | `datahub_domain` | resource + data source | yes | UUID URN trap; `moveDomain` for reparenting |
 | 3 | `datahub_tag` | resource + data source | yes | Definitions only; `setTagColor` separate mutation |
 | 4 | `datahub_glossary_node` | resource + data source | yes | OpenAPI aspect write after create; URN convention |

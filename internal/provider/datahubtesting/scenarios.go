@@ -14,6 +14,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
@@ -468,5 +469,291 @@ data "datahub_ingestion_source" "test" {
 `, sourceID),
 			ExpectError: regexp.MustCompile(`Ingestion source not found`),
 		},
+	}
+}
+
+// ConnectionDatabricksLifecycleSteps returns test steps covering create, name
+// update (in-place), and import for datahub_connection with a databricks block.
+//
+// connectionID is the connection_id attribute and must be unique within the
+// target DataHub instance. Mock callers may pass a fixed string; live callers
+// should pass a randomized ID from LiveResourceID.
+//
+// All platform config fields are WriteOnly; the import step ignores
+// config_wo_version (not available from the server) and leaves the platform
+// block attrs null in the imported state.
+func ConnectionDatabricksLifecycleSteps(connectionID string) []resource.TestStep {
+	const addr = "datahub_connection.test"
+	urn := "urn:li:dataHubConnection:" + connectionID
+
+	databricksBlock := `
+  databricks {
+    workspace_url            = "https://dbc-test.cloud.databricks.com"
+    warehouse_id             = "abc123"
+    auth_type                = "PERSONAL_ACCESS_TOKEN"
+    personal_access_token_wo = "test-pat"
+  }`
+
+	return []resource.TestStep{
+		{
+			// Create: verify URN, name, and platform are set.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id    = %q
+  name             = "Initial Name"
+  config_wo_version = 1
+%s
+}
+`, connectionID, databricksBlock),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("connection_id"), knownvalue.StringExact(connectionID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Initial Name")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("platform"), knownvalue.StringExact("databricks")),
+			},
+		},
+		{
+			// Update name in-place (no replace because connection_id unchanged).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id    = %q
+  name             = "Updated Name"
+  config_wo_version = 1
+%s
+}
+`, connectionID, databricksBlock),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Updated Name")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("platform"), knownvalue.StringExact("databricks")),
+			},
+		},
+		{
+			// Import by URN.
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: connectionImportIgnoreAttrs(),
+		},
+	}
+}
+
+// ConnectionSnowflakeSteps returns test steps for a snowflake block connection.
+// Covers only create and delete (not import) to keep the test suite lean.
+func ConnectionSnowflakeSteps(connectionID string) []resource.TestStep {
+	const addr = "datahub_connection.test"
+	urn := "urn:li:dataHubConnection:" + connectionID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id    = %q
+  name             = "Snowflake Prod"
+  config_wo_version = 1
+  snowflake {
+    account_id  = "xy12345.us-east-1"
+    username    = "datahub_user"
+    warehouse   = "COMPUTE_WH"
+    auth_type   = "DEFAULT_AUTHENTICATOR"
+    password_wo = "s3cr3t"
+  }
+}
+`, connectionID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("connection_id"), knownvalue.StringExact(connectionID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("platform"), knownvalue.StringExact("snowflake")),
+			},
+		},
+	}
+}
+
+// ConnectionRawConfigSteps returns test steps for a raw_config block connection.
+func ConnectionRawConfigSteps(connectionID string) []resource.TestStep {
+	const addr = "datahub_connection.test"
+	urn := "urn:li:dataHubConnection:" + connectionID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id    = %q
+  name             = "Looker Prod"
+  config_wo_version = 1
+  raw_config {
+    platform_urn_suffix = "looker"
+    config_json_wo      = jsonencode({base_url = "https://looker.example.com", client_id = "abc", client_secret = "xyz"})
+  }
+}
+`, connectionID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("connection_id"), knownvalue.StringExact(connectionID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("platform"), knownvalue.StringExact("looker")),
+			},
+		},
+	}
+}
+
+// ConnectionVersionBumpSteps returns test steps that verify config_wo_version
+// triggers a replacement of the connection (delete + create with new config).
+func ConnectionVersionBumpSteps(connectionID string) []resource.TestStep {
+	const addr = "datahub_connection.test"
+	urn := "urn:li:dataHubConnection:" + connectionID
+
+	block := `
+  databricks {
+    workspace_url            = "https://dbc-test.cloud.databricks.com"
+    warehouse_id             = "abc123"
+    auth_type                = "PERSONAL_ACCESS_TOKEN"
+    personal_access_token_wo = "test-pat"
+  }`
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id    = %q
+  name             = "Version Bump Test"
+  config_wo_version = 1
+%s
+}
+`, connectionID, block),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+			},
+		},
+		{
+			// Bump config_wo_version -- must trigger a replace (delete + create).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_connection" "test" {
+  connection_id    = %q
+  name             = "Version Bump Test"
+  config_wo_version = 2
+%s
+}
+`, connectionID, block),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionDestroyBeforeCreate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("platform"), knownvalue.StringExact("databricks")),
+			},
+		},
+	}
+}
+
+// ConnectionNoBlockSteps returns a test step that expects an error when no
+// platform block is configured.
+func ConnectionNoBlockSteps() []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_connection" "test" {
+  connection_id = "no-block-test"
+  name          = "Should Fail"
+}
+`,
+			ExpectError: regexp.MustCompile(`No platform block configured`),
+		},
+	}
+}
+
+// ConnectionTwoBlocksSteps returns a test step that expects an error when two
+// platform blocks are configured simultaneously.
+func ConnectionTwoBlocksSteps() []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_connection" "test" {
+  connection_id     = "two-blocks-test"
+  name              = "Should Fail"
+  config_wo_version = 1
+  databricks {
+    workspace_url          = "https://dbc-example.cloud.databricks.com"
+    warehouse_id           = "abc123"
+    personal_access_token_wo = "tok"
+  }
+  snowflake {
+    account_id  = "xy12345.us-east-1"
+    username    = "datahub_user"
+    auth_type   = "DEFAULT_AUTHENTICATOR"
+    password_wo = "s3cr3t"
+  }
+}
+`,
+			ExpectError: regexp.MustCompile(`Multiple platform blocks configured`),
+		},
+	}
+}
+
+// ConnectionCheckDestroy verifies every datahub_connection in the post-destroy
+// state has been removed from DataHub.
+func ConnectionCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_connection" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		conn, getErr := client.GetConnectionByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_connection %q: %w", urn, getErr)
+		}
+		if conn != nil {
+			return fmt.Errorf("datahub_connection %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
+// connectionImportIgnoreAttrs returns the list of attribute paths to ignore
+// during ImportStateVerify for datahub_connection. These are attributes that
+// are not available from the server after import (WriteOnly config fields,
+// and config_wo_version which has no server-side representation).
+func connectionImportIgnoreAttrs() []string {
+	return []string{
+		"config_wo_version",
+		// Typed block fields (all WriteOnly -- null in both pre- and post-import state,
+		// so they match automatically; listed here for documentation completeness).
+		"databricks.workspace_url",
+		"databricks.warehouse_id",
+		"databricks.auth_type",
+		"databricks.personal_access_token_wo",
+		"databricks.client_id_wo",
+		"databricks.client_secret_wo",
+		"snowflake.account_id",
+		"snowflake.username",
+		"snowflake.warehouse",
+		"snowflake.role",
+		"snowflake.auth_type",
+		"snowflake.password_wo",
+		"snowflake.private_key_wo",
+		"snowflake.private_key_passphrase_wo",
+		"bigquery.private_key_json_wo",
+		"dataplex.private_key_json_wo",
+		"redshift.host_port",
+		"redshift.database",
+		"redshift.username",
+		"redshift.password_wo",
+		"unity_catalog.workspace_url",
+		"unity_catalog.warehouse_id",
+		"unity_catalog.auth_type",
+		"unity_catalog.personal_access_token_wo",
+		"unity_catalog.client_id_wo",
+		"unity_catalog.client_secret_wo",
+		"raw_config.platform_urn_suffix",
+		"raw_config.config_json_wo",
 	}
 }

@@ -255,6 +255,7 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 // Resources defines the resources implemented in the provider.
 func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewConnectionResource,
 		NewIngestionSourceResource,
 		NewSecretResource,
 		NewRemoteExecutorPoolResource,

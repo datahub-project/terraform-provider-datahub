@@ -1,0 +1,15 @@
+# Copy this file to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored -- never commit real credentials.
+
+connection_id   = "prod-snowflake"
+connection_name = "Production Snowflake"
+
+snowflake_account_id = "xy12345.us-east-1"
+snowflake_username   = "DATAHUB_USER"
+snowflake_warehouse  = "COMPUTE_WH"
+snowflake_role       = "DATAHUB_ROLE"
+
+# Prefer passing the password via the environment to keep it out of files:
+#   read -s TF_VAR_snowflake_password && export TF_VAR_snowflake_password
+# If you do set it here, ensure terraform.tfvars stays out of version control.
+snowflake_password = "change-me"
