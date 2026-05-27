@@ -20,7 +20,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps
+.PHONY: all help build install clean fmt lint generate bump-examples test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps
 
 all: install
 
@@ -33,6 +33,7 @@ help:
 	@echo "  fmt           Format Go sources"
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
+	@echo "  bump-examples Bump the datahub provider version pin across all examples; VERSION=x.y.z required"
 	@echo "  test          Run unit tests"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
 	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
@@ -119,6 +120,16 @@ lint:
 
 generate:
 	cd tools; $(GO) generate ./...
+
+bump-examples:
+ifndef VERSION
+	$(error VERSION is required, e.g. make bump-examples VERSION=0.3.0)
+endif
+	cd tools && $(GO) run github.com/minamijoyo/tfupdate provider \
+	  --version $(VERSION) \
+	  -r \
+	  datahub \
+	  ../examples
 
 test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...

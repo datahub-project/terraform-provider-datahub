@@ -8,6 +8,7 @@ package tools
 
 import (
 	_ "github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs"
+	_ "github.com/minamijoyo/tfupdate"
 )
 
 // Format Terraform code for use in documentation.
