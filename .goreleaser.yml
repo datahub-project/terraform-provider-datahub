@@ -6,7 +6,8 @@ before:
     - go mod tidy
     - bash scripts/check-example-versions.sh {{ .Version }}
 builds:
-- env:
+- id: provider
+  env:
     # goreleaser does not work with CGO, it could also complicate
     # usage by users in CI/CD systems like HCP Terraform where
     # they are unable to install libraries.
@@ -30,6 +31,29 @@ builds:
     - goos: darwin
       goarch: '386'
   binary: '{{ .ProjectName }}_v{{ .Version }}'
+- id: import-tool
+  main: ./cmd/datahub-tf-import
+  env:
+    - CGO_ENABLED=0
+  mod_timestamp: '{{ .CommitTimestamp }}'
+  flags:
+    - -trimpath
+  ldflags:
+    - '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}}'
+  goos:
+    - freebsd
+    - windows
+    - linux
+    - darwin
+  goarch:
+    - amd64
+    - '386'
+    - arm
+    - arm64
+  ignore:
+    - goos: darwin
+      goarch: '386'
+  binary: 'datahub-tf-import_v{{ .Version }}'
 archives:
   - formats: ["zip"]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
