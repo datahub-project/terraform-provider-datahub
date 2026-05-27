@@ -102,7 +102,11 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 			"[DataHub deployment guides](https://docs.datahub.com/docs/category/deployment-guides). " +
 			"It also does not manage the data assets and metadata that DataHub ingests -- datasets, " +
 			"dashboards, tags, glossary terms, ownership, and similar enrichment are populated by " +
-			"your ingestion pipelines, not Terraform.",
+			"your ingestion pipelines, not Terraform.\n\n" +
+			"**Terraform version:** Most resources work with any recent Terraform version. " +
+			"Resources that use WriteOnly attributes (`datahub_secret`, `datahub_connection`) " +
+			"require Terraform >= 1.11; add `required_version = \">= 1.11\"` to your " +
+			"`terraform {}` block when using those resources.",
 		Attributes: map[string]schema.Attribute{
 			"gms_url": schema.StringAttribute{
 				MarkdownDescription: "DataHub GMS URL. For example: `https://datahub.example.com`. " +

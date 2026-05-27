@@ -5,6 +5,7 @@ description: |-
   Terraform provider for managing DataHub platform configuration as code.
   What this provider manages: Platform-level configuration that controls how metadata flows into DataHub -- ingestion source recipes, encrypted secrets referenced in those recipes, and Remote Executor Pool registrations for private-network ingestion.
   What this provider does not do: It does not provision a DataHub instance; for that, see DataHub Cloud https://datahub.com/cloud or the DataHub deployment guides https://docs.datahub.com/docs/category/deployment-guides. It also does not manage the data assets and metadata that DataHub ingests -- datasets, dashboards, tags, glossary terms, ownership, and similar enrichment are populated by your ingestion pipelines, not Terraform.
+  Terraform version: Most resources work with any recent Terraform version. Resources that use WriteOnly attributes (datahub_secret, datahub_connection) require Terraform >= 1.11; add required_version = ">= 1.11" to your terraform {} block when using those resources.
 ---
 
 # DataHub Provider
@@ -14,6 +15,8 @@ Terraform provider for managing DataHub platform configuration as code.
 **What this provider manages:** Platform-level configuration that controls how metadata flows into DataHub -- ingestion source recipes, encrypted secrets referenced in those recipes, and Remote Executor Pool registrations for private-network ingestion.
 
 **What this provider does not do:** It does not provision a DataHub instance; for that, see [DataHub Cloud](https://datahub.com/cloud) or the [DataHub deployment guides](https://docs.datahub.com/docs/category/deployment-guides). It also does not manage the data assets and metadata that DataHub ingests -- datasets, dashboards, tags, glossary terms, ownership, and similar enrichment are populated by your ingestion pipelines, not Terraform.
+
+**Terraform version:** Most resources work with any recent Terraform version. Resources that use WriteOnly attributes (`datahub_secret`, `datahub_connection`) require Terraform >= 1.11; add `required_version = ">= 1.11"` to your `terraform {}` block when using those resources.
 
 ## Example Usage
 
