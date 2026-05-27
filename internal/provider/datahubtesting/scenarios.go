@@ -30,9 +30,8 @@ const providerBlock = `
 provider "datahub" {}
 `
 
-// IngestionSourceLifecycleSteps returns test steps covering create and update
-// for datahub_ingestion_source. It does not include ImportState because that
-// resource does not yet implement ResourceWithImportState.
+// IngestionSourceLifecycleSteps returns test steps covering create, update,
+// and import for datahub_ingestion_source.
 //
 // sourceName is used as the source_name attribute and must be unique within
 // the target DataHub instance. Mock callers may pass a fixed string; live
@@ -73,6 +72,12 @@ resource "datahub_ingestion_source" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("source_name"), knownvalue.StringExact(sourceName)),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("source_type"), knownvalue.StringExact("file")),
 			},
+		},
+		{
+			// Import by source_id (bare, not full URN).
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
 		},
 	}
 }
