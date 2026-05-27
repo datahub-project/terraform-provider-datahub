@@ -28,10 +28,8 @@ all: install
 
 help:
 	@echo "Targets:"
-	@echo "  build         Build $(BIN_DIR)/$(BINARY_NAME) from $(MAIN)"
-	@echo "  install       Alias for build (provider only)"
-	@echo "  install-tool  Build $(BIN_DIR)/$(TOOL_NAME) from $(TOOL_MAIN)"
-	@echo "  install-all   Build both provider and import tool"
+	@echo "  build         Build both $(BIN_DIR)/$(BINARY_NAME) and $(BIN_DIR)/$(TOOL_NAME)"
+	@echo "  install       Alias for build"
 	@echo "  dev-override  Generate dev.tfrc for local provider development"
 	@echo "  clean         Remove built binaries"
 	@echo "  fmt           Format Go sources"
@@ -57,14 +55,9 @@ help:
 build:
 	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN_DIR)/$(BINARY_NAME)" "$(MAIN)"
-
-install: build
-
-install-tool:
-	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o "$(BIN_DIR)/$(TOOL_NAME)" "$(TOOL_MAIN)"
 
-install-all: install install-tool
+install: build
 
 dev-deps:
 	uv venv --allow-existing .venv
