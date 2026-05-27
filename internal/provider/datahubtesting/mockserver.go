@@ -225,9 +225,9 @@ func (s *mockServer) handleListSecrets(w http.ResponseWriter, variables map[stri
 
 	var results []map[string]any
 	for _, secret := range s.secrets {
-		// Mirror DataHub's substring search: include if name contains query.
-		// The client filters for exact match afterward.
-		if strings.Contains(secret.Name, query) {
+		// "*" means match all (DataHub wildcard). Otherwise mirror DataHub's
+		// substring search; the client filters for exact match afterward.
+		if query == "*" || strings.Contains(secret.Name, query) {
 			results = append(results, map[string]any{
 				"urn":         secret.URN,
 				"name":        secret.Name,
