@@ -121,8 +121,8 @@ resource "datahub_ingestion_source" "test" {
 		},
 		{
 			// URN with empty suffix: source_id extracted is empty string.
-			ResourceName:      addr,
-			ImportState:       true,
+			ResourceName: addr,
+			ImportState:  true,
 			ImportStateIdFunc: func(_ *terraform.State) (string, error) {
 				return "urn:li:dataHubIngestionSource:", nil
 			},
