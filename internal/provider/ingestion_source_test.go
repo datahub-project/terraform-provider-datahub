@@ -33,6 +33,20 @@ func TestAcc_IngestionSource_Drift(t *testing.T) {
 	})
 }
 
+func TestAcc_IngestionSource_ImportErrors(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.IsLive() {
+		t.Skip("import-error test relies on import IDs not validated by Terraform core before reaching the provider; behaviour may differ on live targets")
+	}
+	sourceID := tg.Name("tfprovider-imperr")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.IngestionSourceCheckDestroy,
+		Steps:                    datahubtesting.IngestionSourceImportErrorSteps(sourceID, "Import error test "+sourceID),
+	})
+}
+
 func TestAcc_IngestionSource_DeleteError(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	if tg.IsLive() {
