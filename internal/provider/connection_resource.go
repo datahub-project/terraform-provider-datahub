@@ -745,11 +745,10 @@ func nullBlockForPlatform(platform string, state *connectionResourceModel) {
 			ClientSecret:        types.StringNull(),
 		}
 	default:
-		// Unknown platform: use raw_config so the user knows what to fill in.
-		state.RawConfig = &rawConfigModel{
-			PlatformURNSuffix: types.StringNull(),
-			ConfigJSON:        types.StringNull(),
-		}
+		// Unknown platform (e.g. OSS DataHub omitted the field) -- leave all
+		// blocks nil rather than guessing raw_config. A spurious raw_config block
+		// in state causes ImportStateVerify failures when the pre-import state had
+		// a typed block (e.g. databricks). The user is warned via ImportState.
 	}
 }
 

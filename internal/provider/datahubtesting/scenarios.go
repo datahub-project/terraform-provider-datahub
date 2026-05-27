@@ -777,9 +777,18 @@ func ConnectionCheckDestroy(s *terraform.State) error {
 // during ImportStateVerify for datahub_connection. These are attributes that
 // are not available from the server after import (WriteOnly config fields,
 // and config_wo_version which has no server-side representation).
+//
+// OSS DataHub does not return the platform field in the entity response, so
+// "platform" is ignored here. On OSS the typed block is also absent from
+// imported state (nullBlockForPlatform is a no-op for unknown platform), so
+// the block count "databricks.%" differs from pre-import state and must also
+// be ignored. Cloud DataHub returns platform correctly; both are verified there
+// via ConfigStateChecks in the create/update steps rather than ImportStateVerify.
 func connectionImportIgnoreAttrs() []string {
 	return []string{
 		"config_wo_version",
+		"platform",     // OSS does not return platform in entity response
+		"databricks.%", // block count absent in imported state on OSS
 		// Typed block fields (all WriteOnly -- null in both pre- and post-import state,
 		// so they match automatically; listed here for documentation completeness).
 		"databricks.workspace_url",
