@@ -28,7 +28,7 @@ type listIngestionSourcesResponse struct {
 //
 // The underlying listIngestionSources GraphQL query is backed by OpenSearch and
 // is eventually consistent. Entities created within the last few seconds may not
-// appear. This function is intended for enumeration (import tooling, inventory
+// appear. This function is intended for enumeration (extract tooling, inventory
 // data sources), not for authoritative reads -- use GetIngestionSourceByID for
 // those.
 func (c *Client) ListIngestionSourceURNs(ctx context.Context) ([]string, error) {

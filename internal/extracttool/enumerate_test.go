@@ -1,7 +1,7 @@
 // Copyright 2026 The DataHub Project Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package importtool
+package extracttool
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 // recipe is a minimal ingestion source recipe used for seeding test data.
 const recipe = `{"source":{"type":"demo-data","config":{}},"sink":{"type":"datahub-rest","config":{}}}`
 
-// init registers the same import targets as cmd/datahub-tf-import/internal/reg
+// init registers the same import targets as cmd/datahub-tf-extract/internal/reg
 // (which cannot be imported here due to Go's internal package rule). The order
 // mirrors reg.go: secrets last, so that any Required+WriteOnly error from
 // terraform plan -generate-config-out does not abort generation of earlier types.

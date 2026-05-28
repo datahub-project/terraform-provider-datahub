@@ -28,7 +28,7 @@ type listSecretsPageResponse struct {
 //
 // The underlying listSecrets GraphQL query is backed by OpenSearch and is
 // eventually consistent. Entities created within the last few seconds may not
-// appear. This function is intended for enumeration (import tooling, inventory
+// appear. This function is intended for enumeration (extract tooling, inventory
 // data sources), not for authoritative reads -- use GetSecretByURN for those.
 func (c *Client) ListSecretURNs(ctx context.Context) ([]string, error) {
 	const q = `

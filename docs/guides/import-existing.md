@@ -11,7 +11,7 @@ If you have a DataHub deployment that was configured through the UI or the `data
 
 There are two paths:
 
-- **CLI path** -- `datahub-tf-import enumerate` automates the whole process. Recommended for brownfield deployments with more than a handful of resources.
+- **CLI path** -- `datahub-tf-extract enumerate` extracts your DataHub resources as Terraform configuration automatically. Recommended for brownfield deployments with more than a handful of resources. You then run `terraform apply` on the output to complete the import into Terraform state.
 - **Manual path** -- write the import blocks yourself using the enumeration data sources. Useful when you want to import a specific subset, or when you prefer full control over the generated HCL.
 
 Both paths result in the same output: a Terraform configuration that matches your existing DataHub state, with no changes planned on the next `terraform plan`.
@@ -23,10 +23,10 @@ Both paths result in the same output: a Terraform configuration that matches you
 ### Prerequisites
 
 - Terraform 1.11 or later (required for WriteOnly attribute support)
-- `datahub-tf-import` binary (see installation options below)
+- `datahub-tf-extract` binary (see installation options below)
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` set in your environment
 
-#### Installing datahub-tf-import
+#### Installing datahub-tf-extract
 
 **Option 1: mise (recommended)**
 
@@ -34,18 +34,18 @@ If you use [mise](https://mise.jdx.dev), add the following to your `mise.toml` a
 
 ```toml
 [tools]
-"ubi:datahub-project/terraform-provider-datahub" = { version = "0.2.0", exe = "datahub-tf-import", matching = "datahub-tf-import" }
+"ubi:datahub-project/terraform-provider-datahub" = { version = "0.2.0", exe = "datahub-tf-extract", matching = "datahub-tf-extract" }
 ```
 
 This pins the CLI to a specific version, keeps it in sync with the provider version your project uses, and requires no manual PATH management.
 
 **Option 2: GitHub releases page**
 
-Download the `datahub-tf-import_<version>_<os>_<arch>.zip` archive for your platform from the [GitHub releases page](https://github.com/datahub-project/terraform-provider-datahub/releases), unzip it, and move the binary to a directory on your PATH:
+Download the `datahub-tf-extract_<version>_<os>_<arch>.zip` archive for your platform from the [GitHub releases page](https://github.com/datahub-project/terraform-provider-datahub/releases), unzip it, and move the binary to a directory on your PATH:
 
 ```shell
-unzip datahub-tf-import_0.2.0_darwin_arm64.zip
-mv datahub-tf-import_v0.2.0 /usr/local/bin/datahub-tf-import
+unzip datahub-tf-extract_0.2.0_darwin_arm64.zip
+mv datahub-tf-extract_v0.2.0 /usr/local/bin/datahub-tf-extract
 ```
 
 **Option 3: build from source**
@@ -54,13 +54,13 @@ mv datahub-tf-import_v0.2.0 /usr/local/bin/datahub-tf-import
 git clone https://github.com/datahub-project/terraform-provider-datahub.git
 cd terraform-provider-datahub
 make install
-# binary written to ./bin/datahub-tf-import
+# binary written to ./bin/datahub-tf-extract
 ```
 
 ### Step 1: enumerate and generate
 
 ```shell
-datahub-tf-import enumerate --output ./import
+datahub-tf-extract enumerate --output ./import
 ```
 
 This command:
@@ -75,13 +75,13 @@ This command:
 To limit the import to specific resource types:
 
 ```shell
-datahub-tf-import enumerate --output ./import --types datahub_secret,datahub_connection
+datahub-tf-extract enumerate --output ./import --types datahub_secret,datahub_connection
 ```
 
 To write `import.tf` only without running terraform (useful for inspecting URN enumeration):
 
 ```shell
-datahub-tf-import enumerate --output ./import --skip-terraform
+datahub-tf-extract enumerate --output ./import --skip-terraform
 ```
 
 ### Step 2: fill in sensitive values
@@ -230,7 +230,7 @@ The connection configuration blob is encrypted at rest in DataHub. After import:
 - Add the correct platform block for your connection type and fill in the credentials.
 - Set `config_wo_version = 1`.
 
-The `datahub-tf-import` CLI appends a commented stub listing all available platform block types to each generated connection resource.
+The `datahub-tf-extract` CLI appends a commented stub listing all available platform block types to each generated connection resource.
 
 See [datahub_connection resource docs](../resources/connection.md) for the full platform block schema.
 
@@ -242,7 +242,7 @@ See [datahub_ingestion_source resource docs](../resources/ingestion_source.md).
 
 ### datahub_remote_executor_pool
 
-Cloud-only. The `datahub-tf-import` CLI skips remote executor pools when run against OSS DataHub and prints a notice. On DataHub Cloud, pools import cleanly with no write-only attributes.
+Cloud-only. The `datahub-tf-extract` CLI skips remote executor pools when run against OSS DataHub and prints a notice. On DataHub Cloud, pools import cleanly with no write-only attributes.
 
 See [datahub_remote_executor_pool resource docs](../resources/remote_executor_pool.md).
 
