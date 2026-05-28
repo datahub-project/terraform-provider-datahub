@@ -16,8 +16,9 @@ package importtool
 // Prerequisites (test skips with a clear message if absent):
 //   - TF_ACC=1 in the environment.
 //   - ./bin/terraform-provider-datahub built relative to the module root.
-//     Run `make install` first. `make testacc` and `make testacc-quickstart`
-//     build the binary automatically via their install prereq.
+//     Run `make install` first. `make testacc-local` and `make testacc-quickstart`
+//     build the binary automatically; `make testacc` (mock-only) does not.
+//     A missing binary fails the test on live targets and skips it on mock.
 //   - `terraform` CLI on PATH.
 
 import (
@@ -40,13 +41,16 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 		t.Skip("set TF_ACC=1 to run this acceptance test")
 	}
 
-	// Locate the provider binary (built by `make install`).
-	binDir := findProviderBinDir(t)
-
-	// Choose mock or live target based on DATAHUB_GMS_URL. On mock, SetupTarget
-	// spins up an in-process server and sets DATAHUB_GMS_URL/TOKEN via t.Setenv.
-	// On live, DATAHUB_GMS_URL/TOKEN are already present in the environment.
+	// Choose mock or live target first -- we need tg.IsLive() to decide
+	// whether a missing binary is a hard failure or a graceful skip.
 	tg := datahubtesting.SetupTarget(t)
+
+	// Locate the provider binary (built by `make install`).
+	// On live targets the Makefile install prereq guarantees it is present, so
+	// a missing binary is a build failure -- fail fast. On mock targets the
+	// binary is not guaranteed (make testacc deliberately skips the build step),
+	// so a graceful skip is appropriate.
+	binDir := findProviderBinDir(t, tg.IsLive())
 	gmsURL := os.Getenv("DATAHUB_GMS_URL")
 	gmsToken := os.Getenv("DATAHUB_GMS_TOKEN")
 
@@ -172,8 +176,9 @@ func waitForURNsInList(t *testing.T, ctx context.Context, client *datahub.Client
 
 // findProviderBinDir walks up from the current working directory to find the
 // Go module root (the directory containing go.mod), then checks for
-// bin/terraform-provider-datahub. Skips the test if either is not found.
-func findProviderBinDir(t *testing.T) string {
+// bin/terraform-provider-datahub. When requireBinary is true (live targets),
+// a missing binary is a hard failure; otherwise the test is skipped.
+func findProviderBinDir(t *testing.T, requireBinary bool) string {
 	t.Helper()
 
 	// During `go test`, cwd is the package directory.
@@ -197,7 +202,12 @@ func findProviderBinDir(t *testing.T) string {
 
 	binPath := filepath.Join(dir, "bin", "terraform-provider-datahub")
 	if _, err := os.Stat(binPath); err != nil {
-		t.Skipf("provider binary not found at %s -- run 'make install' first (make testacc-local and make testacc-quickstart do this automatically)", binPath)
+		msg := fmt.Sprintf("provider binary not found at %s -- run 'make install' first (make testacc-local and make testacc-quickstart do this automatically)", binPath)
+		if requireBinary {
+			t.Fatal(msg)
+		} else {
+			t.Skip(msg)
+		}
 		return ""
 	}
 
