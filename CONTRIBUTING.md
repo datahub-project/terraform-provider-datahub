@@ -116,6 +116,28 @@ The quick checklist is also reproduced in `CLAUDE.md` for AI-assisted developmen
 
 Releases are cut by the maintainers. A `v*` tag push triggers the GoReleaser workflow, which builds multi-platform binaries, signs them with GPG, and publishes to the Terraform Registry. Contributors do not need to do anything special - just get your PR merged to `main`.
 
+### Pre-release dependency audit
+
+This is the single checklist for "are our tools and dependencies up to date?" Run it before opening the prepare PR.
+
+| What | Automation | Manual action |
+|---|---|---|
+| Go module deps (`go.mod`) | Dependabot opens grouped PRs weekly (Mondays) | Merge any open Dependabot PRs first |
+| Go module deps (`tools/go.mod`) | Dependabot opens grouped PRs weekly (Mondays) | Merge any open Dependabot PRs first |
+| GitHub Actions version pins | Dependabot opens grouped PRs weekly (Mondays) | Merge any open Dependabot PRs first |
+| mise-managed tool versions (Go, Terraform, golangci-lint, ...) | **None** - Dependabot has no mise ecosystem support | Run the commands below |
+
+mise tool pins in `mise.toml` are the only blind spot not covered by any automated process:
+
+```bash
+mise outdated --local   # list stale versions scoped to this project (not global mise tools)
+mise upgrade --bump     # install newer versions and rewrite pins in mise.toml
+```
+
+After `mise upgrade --bump`, run `make test && make testacc` to confirm nothing broke, then include the updated `mise.toml` in the prepare PR.
+
+### Prepare PR
+
 Before tagging a release, open a "Prepare vX.Y.Z" PR that does the following in one commit:
 
 1. **Bump example version pins**: `make bump-examples VERSION=X.Y.Z` -- updates the provider version pin in every runnable example under `examples/`.
