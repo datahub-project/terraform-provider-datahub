@@ -1,12 +1,12 @@
 // Copyright 2026 The DataHub Project Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package exporttool
+package extracttool
 
 // TestAcc_ImportRoundtrip_E2E is a full-pipeline acceptance test. It:
 //   - Seeds one datahub_ingestion_source and one datahub_secret in DataHub
 //     (in-process mock server when DATAHUB_GMS_URL is unset; real DataHub otherwise).
-//   - Runs exporttool.Run with SkipTerraform: false, which drives real
+//   - Runs extracttool.Run with SkipTerraform: false, which drives real
 //     terraform subprocesses (init, plan -generate-config-out).
 //   - Asserts that the generated artefacts have the expected shape:
 //     generated.tf contains both resource blocks; the secret's value is

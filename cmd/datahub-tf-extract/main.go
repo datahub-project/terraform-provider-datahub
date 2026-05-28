@@ -1,15 +1,15 @@
 // Copyright 2026 The DataHub Project Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// datahub-tf-export exports existing DataHub resources to Terraform configuration,
+// datahub-tf-extract exports existing DataHub resources to Terraform configuration,
 // allowing brownfield deployments to be adopted into Terraform state without
 // manual HCL authoring.
 //
 // Usage:
 //
-//	datahub-tf-export enumerate [flags]
-//	datahub-tf-export enumerate --output ./export
-//	datahub-tf-export enumerate --output ./export --types datahub_secret,datahub_connection
+//	datahub-tf-extract enumerate [flags]
+//	datahub-tf-extract enumerate --output ./export
+//	datahub-tf-extract enumerate --output ./export --types datahub_secret,datahub_connection
 //
 // The enumerate command:
 //  1. Enumerates all DataHub resources of each registered type.
@@ -26,8 +26,8 @@ import (
 	"fmt"
 	"os"
 
-	_ "github.com/datahub-project/terraform-provider-datahub/cmd/datahub-tf-export/internal/reg"
-	"github.com/datahub-project/terraform-provider-datahub/internal/exporttool"
+	_ "github.com/datahub-project/terraform-provider-datahub/cmd/datahub-tf-extract/internal/reg"
+	"github.com/datahub-project/terraform-provider-datahub/internal/extracttool"
 )
 
 var version = "dev"
@@ -42,7 +42,7 @@ func main() {
 	case "enumerate":
 		runEnumerate(os.Args[2:])
 	case "version", "--version", "-version":
-		fmt.Printf("datahub-tf-export %s\n", version)
+		fmt.Printf("datahub-tf-extract %s\n", version)
 	case "help", "--help", "-help", "-h":
 		printUsage()
 	default:
@@ -60,7 +60,7 @@ func runEnumerate(args []string) {
 	skipVal := fs.Bool("skip-validation", false, "Skip final terraform plan validation")
 	_ = fs.Parse(args)
 
-	opts := exporttool.Options{
+	opts := extracttool.Options{
 		OutputDir:       *output,
 		Types:           *types,
 		ProviderVersion: version,
@@ -68,14 +68,14 @@ func runEnumerate(args []string) {
 		SkipValidation:  *skipVal,
 	}
 
-	if err := exporttool.Run(context.Background(), opts); err != nil {
+	if err := extracttool.Run(context.Background(), opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `datahub-tf-export -- exports DataHub resources to Terraform configuration
+	fmt.Fprintf(os.Stderr, `datahub-tf-extract -- extracts DataHub resources to Terraform configuration
 
 Reads DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN from the environment.
 
@@ -89,7 +89,7 @@ enumerate flags:
   --skip-validation       Skip final terraform plan validation
 
 Example:
-  datahub-tf-export enumerate --output ./export
-  datahub-tf-export enumerate --output ./export --types datahub_secret,datahub_connection
+  datahub-tf-extract enumerate --output ./export
+  datahub-tf-extract enumerate --output ./export --types datahub_secret,datahub_connection
 `)
 }

@@ -4,9 +4,9 @@
 GO ?= go
 BIN_DIR ?= bin
 BINARY_NAME ?= terraform-provider-datahub
-TOOL_NAME ?= datahub-tf-export
+TOOL_NAME ?= datahub-tf-extract
 MAIN ?= ./main.go
-TOOL_MAIN ?= ./cmd/datahub-tf-export
+TOOL_MAIN ?= ./cmd/datahub-tf-extract
 DEV_TFRC ?= $(PWD)/dev.tfrc
 COVERAGE_FILE ?= coverage.out
 COVERAGE_HTML ?= coverage.html

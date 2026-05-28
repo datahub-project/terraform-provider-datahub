@@ -4,10 +4,10 @@
 // Package reg registers all DataHub import targets with the importtarget
 // registry. Import this package for its side effects:
 //
-//	import _ "github.com/datahub-project/terraform-provider-datahub/cmd/datahub-tf-export/internal/reg"
+//	import _ "github.com/datahub-project/terraform-provider-datahub/cmd/datahub-tf-extract/internal/reg"
 //
 // This package does not import the Terraform plugin framework, keeping the
-// datahub-tf-export binary free of provider-runtime dependencies.
+// datahub-tf-extract binary free of provider-runtime dependencies.
 package reg
 
 import (

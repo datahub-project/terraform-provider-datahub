@@ -31,8 +31,8 @@ builds:
     - goos: darwin
       goarch: '386'
   binary: '{{ .ProjectName }}_v{{ .Version }}'
-- id: export-tool
-  main: ./cmd/datahub-tf-export
+- id: extract-tool
+  main: ./cmd/datahub-tf-extract
   env:
     - CGO_ENABLED=0
   mod_timestamp: '{{ .CommitTimestamp }}'
@@ -53,18 +53,18 @@ builds:
   ignore:
     - goos: darwin
       goarch: '386'
-  binary: 'datahub-tf-export_v{{ .Version }}'
+  binary: 'datahub-tf-extract_v{{ .Version }}'
 archives:
   - id: provider
     ids:
       - provider
     formats: ["zip"]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-  - id: export-tool
+  - id: extract-tool
     ids:
-      - export-tool
+      - extract-tool
     formats: ["zip"]
-    name_template: 'datahub-tf-export_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    name_template: 'datahub-tf-extract_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
