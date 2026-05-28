@@ -30,7 +30,7 @@ type searchAcrossEntitiesResponse struct {
 //
 // Uses searchAcrossEntities with entity type DATAHUB_CONNECTION. The search
 // index is backed by OpenSearch and is eventually consistent. This function
-// is intended for enumeration (import tooling, inventory data sources), not
+// is intended for enumeration (export tooling, inventory data sources), not
 // for authoritative reads -- use GetConnectionByURN for those.
 func (c *Client) ListConnectionURNs(ctx context.Context) ([]string, error) {
 	return listURNsByEntityType(ctx, c, "DATAHUB_CONNECTION")

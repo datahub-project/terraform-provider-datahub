@@ -11,7 +11,7 @@
 // that every resource registered with the provider either has a registry entry
 // or an explicit exemption.
 //
-// The CLI (cmd/datahub-tf-import) iterates All() to drive bulk enumeration.
+// The CLI (cmd/datahub-tf-export) iterates All() to drive bulk enumeration.
 // The per-type enumeration data sources (e.g. data.datahub_ingestion_sources)
 // also call their resource's Enumerate function via this registry.
 package importtarget

@@ -1,11 +1,11 @@
 // Copyright 2026 The DataHub Project Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package importtool implements the datahub-tf-import enumerate command.
+// Package exporttool implements the datahub-tf-export enumerate command.
 // It enumerates DataHub resources, generates an import.tf, drives
 // terraform plan -generate-config-out, post-processes the generated
 // configuration, and writes variables.tf and IMPORT_README.md.
-package importtool
+package exporttool
 
 import (
 	"bytes"
