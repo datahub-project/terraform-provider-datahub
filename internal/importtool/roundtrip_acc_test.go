@@ -102,7 +102,7 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 	// Poll until both seeded URNs appear before running the pipeline, otherwise
 	// Run may generate a config that omits our seeds.
 	if tg.IsLive() {
-		waitForURNsInList(t, ctx, client, []string{ingestionURN, secretURN}, 60*time.Second)
+		waitForURNsInList(ctx, t, client, []string{ingestionURN, secretURN}, 60*time.Second)
 	}
 
 	outDir := t.TempDir()
@@ -150,7 +150,7 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 // of the given URNs appear, or fails the test after timeout. Used on live
 // targets to absorb the eventual-consistency lag between entity creation and
 // OpenSearch indexing.
-func waitForURNsInList(t *testing.T, ctx context.Context, client *datahub.Client, urns []string, timeout time.Duration) {
+func waitForURNsInList(ctx context.Context, t *testing.T, client *datahub.Client, urns []string, timeout time.Duration) {
 	t.Helper()
 	needed := make(map[string]bool, len(urns))
 	for _, u := range urns {
