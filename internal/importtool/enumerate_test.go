@@ -240,4 +240,105 @@ func TestBuildImportTF_VersionConstraint(t *testing.T) {
 	}
 }
 
+func TestWriteVariablesTF(t *testing.T) {
+	t.Run("empty returns nil", func(t *testing.T) {
+		if got := WriteVariablesTF(nil); got != nil {
+			t.Errorf("expected nil for empty vars, got %q", got)
+		}
+	})
+
+	t.Run("single var", func(t *testing.T) {
+		vars := []Variable{{
+			Name:          "datahub_secret_my_secret_value",
+			Attr:          "value",
+			ResourceLabel: "my_secret",
+			ResourceType:  "datahub_secret",
+		}}
+		got := string(WriteVariablesTF(vars))
+		if !strings.Contains(got, `variable "datahub_secret_my_secret_value"`) {
+			t.Errorf("missing variable declaration; got:\n%s", got)
+		}
+		if !strings.Contains(got, "sensitive = true") {
+			t.Errorf("missing sensitive = true; got:\n%s", got)
+		}
+		if !strings.Contains(got, "datahub_secret.my_secret.value") {
+			t.Errorf("missing description; got:\n%s", got)
+		}
+	})
+
+	t.Run("multiple vars have blank line separator", func(t *testing.T) {
+		vars := []Variable{
+			{Name: "var_a", Attr: "a", ResourceLabel: "r", ResourceType: "t"},
+			{Name: "var_b", Attr: "b", ResourceLabel: "r", ResourceType: "t"},
+		}
+		got := string(WriteVariablesTF(vars))
+		if !strings.Contains(got, "}\n\nvariable") {
+			t.Errorf("expected blank line between variable blocks; got:\n%s", got)
+		}
+	})
+}
+
+func TestWriteImportReadme(t *testing.T) {
+	t.Run("no vars -- step numbering starts at 1", func(t *testing.T) {
+		got := string(WriteImportReadme(5, nil))
+		if !strings.Contains(got, "5 existing DataHub resources") {
+			t.Errorf("missing import count; got:\n%s", got)
+		}
+		if strings.Contains(got, "terraform.tfvars") {
+			t.Errorf("should not mention terraform.tfvars when no vars; got:\n%s", got)
+		}
+		if !strings.Contains(got, "## Step 2 -- Verify") {
+			t.Errorf("expected Step 2 to be Verify with no vars; got:\n%s", got)
+		}
+		if !strings.Contains(got, "## Step 3 -- Apply") {
+			t.Errorf("expected Step 3 to be Apply with no vars; got:\n%s", got)
+		}
+	})
+
+	t.Run("with vars -- step numbering shifts", func(t *testing.T) {
+		vars := []Variable{{Name: "datahub_secret_x_value"}}
+		got := string(WriteImportReadme(3, vars))
+		if !strings.Contains(got, "terraform.tfvars") {
+			t.Errorf("expected terraform.tfvars mention when vars present; got:\n%s", got)
+		}
+		if !strings.Contains(got, "datahub_secret_x_value") {
+			t.Errorf("expected variable name in tfvars stub; got:\n%s", got)
+		}
+		if !strings.Contains(got, "## Step 3 -- Verify") {
+			t.Errorf("expected Step 3 to be Verify with vars; got:\n%s", got)
+		}
+		if !strings.Contains(got, "## Step 4 -- Apply") {
+			t.Errorf("expected Step 4 to be Apply with vars; got:\n%s", got)
+		}
+	})
+}
+
+func TestTypeSet(t *testing.T) {
+	t.Run("empty returns nil", func(t *testing.T) {
+		if typeSet("") != nil {
+			t.Error("expected nil for empty string")
+		}
+	})
+
+	t.Run("single type", func(t *testing.T) {
+		m := typeSet("datahub_secret")
+		if !m["datahub_secret"] {
+			t.Errorf("expected datahub_secret in set; got %v", m)
+		}
+		if len(m) != 1 {
+			t.Errorf("expected 1 entry, got %d", len(m))
+		}
+	})
+
+	t.Run("multiple types with spaces", func(t *testing.T) {
+		m := typeSet("datahub_secret, datahub_connection")
+		if !m["datahub_secret"] || !m["datahub_connection"] {
+			t.Errorf("expected both types in set; got %v", m)
+		}
+		if len(m) != 2 {
+			t.Errorf("expected 2 entries, got %d", len(m))
+		}
+	})
+}
+
 func ptr[T any](v T) *T { return &v }

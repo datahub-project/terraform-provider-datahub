@@ -50,11 +50,11 @@ func WriteImportReadme(numImports int, vars []Variable) []byte {
 	fmt.Fprintf(&b, "```\n\n")
 	fmt.Fprintf(&b, "The plan should show no changes (all resources imported, config matches state).\n\n")
 
-	lastStep := 2
+	verifyStep := 2
 	if len(vars) > 0 {
-		lastStep = 3
+		verifyStep = 3
 	}
-	fmt.Fprintf(&b, "## Step %d -- Apply (adopts state)\n\n", lastStep)
+	fmt.Fprintf(&b, "## Step %d -- Apply (adopts state)\n\n", verifyStep+1)
 	fmt.Fprintf(&b, "```\n")
 	fmt.Fprintf(&b, "terraform apply\n")
 	fmt.Fprintf(&b, "```\n\n")
