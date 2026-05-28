@@ -190,4 +190,33 @@ func TestRunImportTF_importBlocksPerType(t *testing.T) {
 	}
 }
 
+// TestBuildImportTF_VersionConstraint guards against the class of failure where
+// import.tf's provider version constraint is so permissive that Terraform
+// downloads an old registry release that pre-dates import support for the
+// resource types the CLI relies on.
+//
+// Concretely: v0.2.0 on the registry was published before datahub_ingestion_source
+// ImportState (PR #27) and datahub_connection (PR #26) were added. With the
+// current ">= 0.1.0" floor, Terraform downloads v0.2.0 and all 75 ingestion
+// source imports fail with "Resource Import Not Implemented", producing a
+// generated.tf that contains only secrets.
+//
+// The fix is to pass the CLI version into buildImportTF and emit
+// version = ">= <cli_version>", ensuring users always get a provider release
+// that was tested with the same feature set as the CLI binary they downloaded.
+func TestBuildImportTF_VersionConstraint(t *testing.T) {
+	content := string(buildImportTF(nil))
+
+	const tooPermissive = ">= 0.1.0"
+	if strings.Contains(content, tooPermissive) {
+		t.Errorf("import.tf contains overly permissive version constraint %q\n"+
+			"v0.2.0 on the Terraform Registry pre-dates datahub_ingestion_source "+
+			"ImportState (PR #27) and datahub_connection (PR #26); Terraform will "+
+			"download it and silently produce a generated.tf with no ingestion "+
+			"source or connection resource blocks\n"+
+			"fix: pass the CLI version into buildImportTF and emit \">= <version>\"",
+			tooPermissive)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
