@@ -19,14 +19,20 @@ import (
 )
 
 func init() {
+	// Register types with no Required+WriteOnly attributes first so that
+	// terraform plan -generate-config-out generates their blocks before
+	// encountering the datahub_secret exit-1 error (Required value=null).
+	// Terraform stops after the first fatal plan error, so types registered
+	// later would be silently omitted from generated.tf if secrets came first.
+
 	importtarget.Register(importtarget.Target{
-		ResourceTypeName:   "datahub_secret",
-		DataSourceTypeName: "datahub_secrets",
+		ResourceTypeName:   "datahub_ingestion_source",
+		DataSourceTypeName: "datahub_ingestion_sources",
 		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
-			return c.ListSecretURNs(ctx)
+			return c.ListIngestionSourceURNs(ctx)
 		},
 		IDFromURN: func(urn string) string {
-			return urn
+			return strings.TrimPrefix(urn, "urn:li:dataHubIngestionSource:")
 		},
 		OSSCompatible: true,
 	})
@@ -44,18 +50,6 @@ func init() {
 	})
 
 	importtarget.Register(importtarget.Target{
-		ResourceTypeName:   "datahub_ingestion_source",
-		DataSourceTypeName: "datahub_ingestion_sources",
-		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
-			return c.ListIngestionSourceURNs(ctx)
-		},
-		IDFromURN: func(urn string) string {
-			return strings.TrimPrefix(urn, "urn:li:dataHubIngestionSource:")
-		},
-		OSSCompatible: true,
-	})
-
-	importtarget.Register(importtarget.Target{
 		ResourceTypeName: "datahub_remote_executor_pool",
 		// No DataSourceTypeName: no list API available on Cloud.
 		// No Enumerate: Cloud-only; users supply pool IDs manually.
@@ -63,5 +57,21 @@ func init() {
 			return strings.TrimPrefix(urn, "urn:li:dataHubRemoteExecutorPool:")
 		},
 		OSSCompatible: false,
+	})
+
+	// datahub_secret last: its Required+WriteOnly value attribute causes
+	// terraform plan -generate-config-out to exit with code 1. Placing
+	// secrets at the end ensures all other resource types are fully
+	// generated before Terraform hits that error.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_secret",
+		DataSourceTypeName: "datahub_secrets",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			return c.ListSecretURNs(ctx)
+		},
+		IDFromURN: func(urn string) string {
+			return urn
+		},
+		OSSCompatible: true,
 	})
 }
