@@ -136,6 +136,33 @@ mise upgrade --bump     # install newer versions and rewrite pins in mise.toml
 
 After `mise upgrade --bump`, run `make test && make testacc` to confirm nothing broke, then include the updated `mise.toml` in the prepare PR.
 
+#### Indirect Go dependency freshness (periodic, not every release)
+
+Dependabot updates **direct** dependencies for all version bumps. For **indirect** (transitive) dependencies it only intervenes on security advisories -- a newer but non-security version of an indirect dep will silently drift unless a direct dep update happens to pull it along.
+
+To see the full picture across every module in the dependency graph:
+
+```bash
+go list -u -m all           # read-only: shows current pin and latest available for every module
+go list -u -m all 2>/dev/null | grep '\[' | head -20   # just the ones with updates
+```
+
+To actually update everything to the latest compatible minor/patch:
+
+```bash
+go get -u ./...             # upgrade all direct and indirect deps
+go mod tidy                 # remove any newly-unused entries, add any missing ones
+make test && make testacc   # confirm nothing broke
+```
+
+Do the same for the `tools/` sub-module if it also shows stale indirect deps:
+
+```bash
+cd tools && go get -u ./... && go mod tidy && cd ..
+```
+
+This is not required before every release -- Go's minimum version selection means stale indirect deps are usually harmless -- but it is worth running every few releases or when the dependency graph looks very stale. Commit the updated `go.mod` and `go.sum` as part of the prepare PR if you do run it.
+
 ### Prepare PR
 
 Before tagging a release, open a "Prepare vX.Y.Z" PR that does the following in one commit:
