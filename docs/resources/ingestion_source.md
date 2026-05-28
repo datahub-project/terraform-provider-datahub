@@ -105,8 +105,6 @@ terraform import datahub_ingestion_source.csv_enricher urn:li:dataHubIngestionSo
 terraform import datahub_ingestion_source.csv_enricher tf-csv-enricher
 ```
 
-To bulk-import a whole DataHub deployment, see the [Importing existing DataHub resources](../guides/import-existing.md) guide.
-
 ## Security Note
 
 **Warning:** The recipe content is stored in DataHub as part of the Ingestion Source configuration. If you embed credentials directly in the recipe JSON, they can be stored in DataHub and may be visible to users/services with access to ingestion source configurations.
@@ -114,3 +112,5 @@ To bulk-import a whole DataHub deployment, see the [Importing existing DataHub r
 **Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.
 
 References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.
+
+To bulk-import a whole DataHub deployment, see the [Importing existing DataHub resources](../guides/import-existing.md) guide.
