@@ -197,8 +197,7 @@ func findProviderBinDir(t *testing.T) string {
 
 	binPath := filepath.Join(dir, "bin", "terraform-provider-datahub")
 	if _, err := os.Stat(binPath); err != nil {
-		t.Skipf("provider binary not found at %s -- run 'make install' first", binPath)
-		return ""
+		t.Fatalf("provider binary not found at %s -- run 'make install' first (make testacc and make testacc-quickstart do this automatically)", binPath)
 	}
 
 	_, err = lookupTerraform()
