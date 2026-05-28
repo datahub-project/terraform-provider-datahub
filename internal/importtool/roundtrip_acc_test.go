@@ -3,9 +3,9 @@
 
 package importtool
 
-// TestAcc_ImportRoundtrip_MockE2E is a full-pipeline acceptance test. It:
-//   - Seeds one datahub_ingestion_source and one datahub_secret in the
-//     in-process mock DataHub server.
+// TestAcc_ImportRoundtrip_E2E is a full-pipeline acceptance test. It:
+//   - Seeds one datahub_ingestion_source and one datahub_secret in DataHub
+//     (in-process mock server when DATAHUB_GMS_URL is unset; real DataHub otherwise).
 //   - Runs importtool.Run with SkipTerraform: false, which drives real
 //     terraform subprocesses (init, plan -generate-config-out).
 //   - Asserts that the generated artefacts have the expected shape:
@@ -16,7 +16,8 @@ package importtool
 // Prerequisites (test skips with a clear message if absent):
 //   - TF_ACC=1 in the environment.
 //   - ./bin/terraform-provider-datahub built relative to the module root.
-//     Run `make install` first.
+//     Run `make install` first. `make testacc` and `make testacc-quickstart`
+//     build the binary automatically via their install prereq.
 //   - `terraform` CLI on PATH.
 
 import (
@@ -28,12 +29,13 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
-func TestAcc_ImportRoundtrip_MockE2E(t *testing.T) {
+func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 	if os.Getenv("TF_ACC") != "1" {
 		t.Skip("set TF_ACC=1 to run this acceptance test")
 	}
@@ -41,10 +43,12 @@ func TestAcc_ImportRoundtrip_MockE2E(t *testing.T) {
 	// Locate the provider binary (built by `make install`).
 	binDir := findProviderBinDir(t)
 
-	// Spin up in-process mock DataHub. t.Setenv restores env on cleanup.
-	srv := datahubtesting.NewServer(t)
-	t.Setenv("DATAHUB_GMS_URL", srv.URL)
-	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+	// Choose mock or live target based on DATAHUB_GMS_URL. On mock, SetupTarget
+	// spins up an in-process server and sets DATAHUB_GMS_URL/TOKEN via t.Setenv.
+	// On live, DATAHUB_GMS_URL/TOKEN are already present in the environment.
+	tg := datahubtesting.SetupTarget(t)
+	gmsURL := os.Getenv("DATAHUB_GMS_URL")
+	gmsToken := os.Getenv("DATAHUB_GMS_TOKEN")
 
 	// Write a dev.tfrc that routes the datahub provider to our local binary,
 	// bypassing the registry. This is the same mechanism as `make dev-override`.
@@ -53,13 +57,19 @@ func TestAcc_ImportRoundtrip_MockE2E(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Seed via the DataHub client. These are the resources the CLI will enumerate.
-	client, err := datahub.NewClient(srv.URL, "test-token")
+	// Use tg.Name so names are unique on live targets -- tg.Name appends a
+	// lowercase random suffix on live (e.g. "rt-source-abc12345") and returns
+	// the base unchanged on mock.
+	sourceID := tg.Name("rt-source")
+	secretName := tg.Name("RT_SECRET")
+
+	client, err := datahub.NewClient(gmsURL, gmsToken)
 	if err != nil {
 		t.Fatalf("creating DataHub client: %v", err)
 	}
+
 	_, err = client.NewDatasourceIngestion(ctx, datahub.DatasourceIngestionInput{
-		SourceID:   "rt-source",
+		SourceID:   sourceID,
 		SourceName: "Roundtrip Test Source",
 		SourceType: "demo-data",
 		RecipeJSON: ptr(recipe),
@@ -67,18 +77,34 @@ func TestAcc_ImportRoundtrip_MockE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seeding ingestion source: %v", err)
 	}
-	_, err = client.CreateSecret(ctx, datahub.CreateSecretInput{
-		Name:  "RT_SECRET",
+	// Ingestion source URN is deterministic from the sourceID.
+	ingestionURN := fmt.Sprintf("urn:li:dataHubIngestionSource:%s", sourceID)
+	t.Cleanup(func() {
+		_ = client.DeleteIngestionSourceByID(context.Background(), sourceID)
+	})
+
+	secretURN, err := client.CreateSecret(ctx, datahub.CreateSecretInput{
+		Name:  secretName,
 		Value: "supersecret",
 	})
 	if err != nil {
 		t.Fatalf("seeding secret: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = client.DeleteSecret(context.Background(), secretURN)
+	})
+
+	// On live targets the list APIs (GraphQL/OpenSearch) lag behind writes.
+	// Poll until both seeded URNs appear before running the pipeline, otherwise
+	// Run may generate a config that omits our seeds.
+	if tg.IsLive() {
+		waitForURNsInList(t, ctx, client, []string{ingestionURN, secretURN}, 60*time.Second)
+	}
 
 	outDir := t.TempDir()
 	err = Run(ctx, Options{
-		GmsURL:    srv.URL,
-		GmsToken:  "test-token",
+		GmsURL:    gmsURL,
+		GmsToken:  gmsToken,
 		OutputDir: outDir,
 		// SkipTerraform: false (default) -- the whole point of this test.
 		// SkipValidation is not needed: a non-empty vars list (the secret)
@@ -91,21 +117,57 @@ func TestAcc_ImportRoundtrip_MockE2E(t *testing.T) {
 	// --- assertions ---
 
 	requireFiles(t, outDir, "import.tf", "generated.tf", "variables.tf", "IMPORT_README.md")
+
+	// Derive the Terraform labels that the post-processor assigns. On live the
+	// URN suffix includes the random component (e.g. "rt-source-abc12345" ->
+	// "rt_source_abc12345"), so we compute rather than hard-code them.
+	sourceLabel := LabelFromURN(ingestionURN)
+	secretLabel := LabelFromURN(secretURN)
+
 	assertGeneratedTFContains(t, outDir,
-		// Ingestion source resource block.
-		`resource "datahub_ingestion_source" "rt_source"`,
-		// Secret resource block.
-		`resource "datahub_secret" "rt_secret"`,
+		fmt.Sprintf(`resource "datahub_ingestion_source" %q`, sourceLabel),
+		fmt.Sprintf(`resource "datahub_secret" %q`, secretLabel),
 	)
 	// Secret value must be replaced by a var reference, not left as null.
-	assertGeneratedTFContains(t, outDir, `var.rt_secret_value`)
+	assertGeneratedTFContains(t, outDir, fmt.Sprintf("var.%s_value", secretLabel))
 	assertGeneratedTFNotContains(t, outDir, `null # sensitive`)
 
 	// variables.tf must declare the secret variable as sensitive.
-	assertVariablesTFContains(t, outDir, `variable "rt_secret_value"`, `sensitive = true`)
+	assertVariablesTFContains(t, outDir,
+		fmt.Sprintf("variable %q", secretLabel+"_value"),
+		`sensitive = true`,
+	)
 
 	// README must have strictly-increasing step numbers (guards the lastStep bug).
 	assertReadmeStepNumbersIncreasing(t, outDir)
+}
+
+// waitForURNsInList polls ListSecretURNs and ListIngestionSourceURNs until all
+// of the given URNs appear, or fails the test after timeout. Used on live
+// targets to absorb the eventual-consistency lag between entity creation and
+// OpenSearch indexing.
+func waitForURNsInList(t *testing.T, ctx context.Context, client *datahub.Client, urns []string, timeout time.Duration) {
+	t.Helper()
+	needed := make(map[string]bool, len(urns))
+	for _, u := range urns {
+		needed[u] = true
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		secretURNs, _ := client.ListSecretURNs(ctx)
+		ingestionURNs, _ := client.ListIngestionSourceURNs(ctx)
+		found := 0
+		for _, u := range append(secretURNs, ingestionURNs...) {
+			if needed[u] {
+				found++
+			}
+		}
+		if found == len(needed) {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("timed out after %s waiting for URNs to appear in list APIs: %v", timeout, urns)
 }
 
 // findProviderBinDir walks up from the current working directory to find the
