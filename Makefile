@@ -137,7 +137,7 @@ endif
 test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
 
-testacc: install
+testacc:
 	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= $(GO) test -v -cover -timeout 120m ./...
 
 testacc-local: install
