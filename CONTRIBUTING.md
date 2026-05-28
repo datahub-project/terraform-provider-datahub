@@ -115,3 +115,11 @@ The quick checklist is also reproduced in `CLAUDE.md` for AI-assisted developmen
 ## Release process
 
 Releases are cut by the maintainers. A `v*` tag push triggers the GoReleaser workflow, which builds multi-platform binaries, signs them with GPG, and publishes to the Terraform Registry. Contributors do not need to do anything special - just get your PR merged to `main`.
+
+Before tagging a release, open a "Prepare vX.Y.Z" PR that does the following in one commit:
+
+1. **Bump example version pins**: `make bump-examples VERSION=X.Y.Z` -- updates the provider version pin in every runnable example under `examples/`.
+2. **Regenerate docs**: `make generate` -- re-renders `docs/index.md` (and all other generated docs) from the updated example template.
+3. **Update CHANGELOG.md**: move the `[Unreleased]` section into a new `## [X.Y.Z] - YYYY-MM-DD` section and add a compare link at the bottom.
+
+The GoReleaser workflow includes a pre-release gate (`scripts/check-example-versions.sh`) that verifies every example pin matches the tag being released. Tagging before running `make bump-examples` will fail the gate and prevent any artifacts from being published.

@@ -1,7 +1,8 @@
 terraform {
   required_providers {
     datahub = {
-      source = "registry.terraform.io/datahub-project/datahub"
+      source  = "datahub-project/datahub"
+      version = "0.2.0"
     }
   }
 }
