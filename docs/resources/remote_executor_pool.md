@@ -121,3 +121,5 @@ terraform import datahub_remote_executor_pool.analytics urn:li:dataHubRemoteExec
 # Import by bare pool ID:
 terraform import datahub_remote_executor_pool.analytics analytics-team
 ```
+
+To bulk-import a whole DataHub deployment, see the [Importing existing DataHub resources](../guides/import-existing.md) guide.

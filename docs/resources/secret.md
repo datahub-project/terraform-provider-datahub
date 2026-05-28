@@ -98,3 +98,5 @@ terraform import datahub_secret.bq_creds urn:li:dataHubSecret:tf-bq-service-acco
 # Or equivalently, by bare name
 terraform import datahub_secret.bq_creds tf-bq-service-account-json
 ```
+
+To bulk-import a whole DataHub deployment, see the [Importing existing DataHub resources](../guides/import-existing.md) guide.

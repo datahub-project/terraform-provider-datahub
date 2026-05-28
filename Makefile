@@ -4,7 +4,9 @@
 GO ?= go
 BIN_DIR ?= bin
 BINARY_NAME ?= terraform-provider-datahub
+TOOL_NAME ?= datahub-tf-import
 MAIN ?= ./main.go
+TOOL_MAIN ?= ./cmd/datahub-tf-import
 DEV_TFRC ?= $(PWD)/dev.tfrc
 COVERAGE_FILE ?= coverage.out
 COVERAGE_HTML ?= coverage.html
@@ -26,10 +28,10 @@ all: install
 
 help:
 	@echo "Targets:"
-	@echo "  build         Build $(BIN_DIR)/$(BINARY_NAME) from $(MAIN)"
-	@echo "  install       Alias for build (installs into $(BIN_DIR))"
+	@echo "  build         Build both $(BIN_DIR)/$(BINARY_NAME) and $(BIN_DIR)/$(TOOL_NAME)"
+	@echo "  install       Alias for build"
 	@echo "  dev-override  Generate dev.tfrc for local provider development"
-	@echo "  clean         Remove built binary"
+	@echo "  clean         Remove built binaries"
 	@echo "  fmt           Format Go sources"
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
@@ -53,6 +55,7 @@ help:
 build:
 	@mkdir -p "$(BIN_DIR)"
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN_DIR)/$(BINARY_NAME)" "$(MAIN)"
+	$(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o "$(BIN_DIR)/$(TOOL_NAME)" "$(TOOL_MAIN)"
 
 install: build
 
@@ -110,7 +113,7 @@ dev-override: dev-deps
 	@echo "Run 'cd .' to activate TF_CLI_CONFIG_FILE in your current shell."
 
 clean:
-	@rm -f "$(BIN_DIR)/$(BINARY_NAME)"
+	@rm -f "$(BIN_DIR)/$(BINARY_NAME)" "$(BIN_DIR)/$(TOOL_NAME)"
 
 fmt:
 	gofmt -s -w -e .

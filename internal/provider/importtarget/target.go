@@ -47,11 +47,6 @@ type Target struct {
 	// "urn:li:<type>:" prefix. May be nil if the import ID is the full URN.
 	IDFromURN func(urn string) string
 
-	// ConflictsWithGroups lists sets of attribute names that are mutually
-	// exclusive in this resource's schema. The post-processor removes duplicates
-	// when -generate-config-out emits both sides of a ConflictsWith pair.
-	ConflictsWithGroups [][]string
-
 	// OSSCompatible is false for Cloud-only resources and data sources.
 	OSSCompatible bool
 }

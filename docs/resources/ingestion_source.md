@@ -112,3 +112,5 @@ terraform import datahub_ingestion_source.csv_enricher tf-csv-enricher
 **Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`) instead of hard-coded credentials.
 
 References: https://docs.datahub.com/docs/ui-ingestion/#configuring-secrets and https://docs.datahub.com/docs/metadata-ingestion/recipe_overview#loading-sensitive-data-as-files-in-recipes.
+
+To bulk-import a whole DataHub deployment, see the [Importing existing DataHub resources](../guides/import-existing.md) guide.

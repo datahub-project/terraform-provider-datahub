@@ -54,6 +54,9 @@ dev.tfrc
 # Quickstart failure logs captured by the live-acceptance CI job
 quickstart-logs/
 
+# Output from running datahub-tf-import locally during development
+import/
+
 # DataHub CLI config (provider.go reads ~/.datahubenv at runtime; this
 # guards against an accidental local copy being committed)
 .datahubenv
