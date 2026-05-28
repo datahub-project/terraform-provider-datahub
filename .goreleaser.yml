@@ -55,11 +55,13 @@ builds:
       goarch: '386'
   binary: 'datahub-tf-import_v{{ .Version }}'
 archives:
-  - ids:
+  - id: provider
+    ids:
       - provider
     formats: ["zip"]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
-  - ids:
+  - id: import-tool
+    ids:
       - import-tool
     formats: ["zip"]
     name_template: 'datahub-tf-import_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
