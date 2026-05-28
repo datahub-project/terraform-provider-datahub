@@ -140,7 +140,7 @@ test:
 testacc:
 	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= $(GO) test -v -cover -timeout 120m ./...
 
-testacc-local:
+testacc-local: install
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
 	TF_ACC=1 DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) DATAHUB_GMS_TOKEN="$$TOKEN" $(GO) test -v -timeout 30m ./...
 
