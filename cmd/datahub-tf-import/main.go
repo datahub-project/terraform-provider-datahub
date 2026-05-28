@@ -60,10 +60,11 @@ func runEnumerate(args []string) {
 	_ = fs.Parse(args)
 
 	opts := importtool.Options{
-		OutputDir:      *output,
-		Types:          *types,
-		SkipTerraform:  *skipTF,
-		SkipValidation: *skipVal,
+		OutputDir:       *output,
+		Types:           *types,
+		ProviderVersion: version,
+		SkipTerraform:   *skipTF,
+		SkipValidation:  *skipVal,
 	}
 
 	if err := importtool.Run(context.Background(), opts); err != nil {

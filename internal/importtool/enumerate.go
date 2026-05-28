@@ -35,6 +35,11 @@ type Options struct {
 	// GmsToken is the DataHub GMS token. Defaults to DATAHUB_GMS_TOKEN env var.
 	GmsToken string
 
+	// ProviderVersion is the CLI version string (from ldflags), used to set the
+	// provider version constraint in import.tf. "dev" or empty falls back to the
+	// minimum version that includes all features the CLI depends on.
+	ProviderVersion string
+
 	// SkipTerraform skips the terraform init/plan steps (useful for tests that
 	// only want to assert the import.tf content).
 	SkipTerraform bool
@@ -127,7 +132,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	// Write import.tf.
 	importTFPath := filepath.Join(opts.OutputDir, "import.tf")
-	importTFContent := buildImportTF(results)
+	importTFContent := buildImportTF(results, opts.ProviderVersion)
 	if err := os.WriteFile(importTFPath, importTFContent, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", importTFPath, err)
 	}
@@ -218,15 +223,27 @@ type enumResult struct {
 	labels []string
 }
 
-// buildImportTF renders the import.tf content.
-func buildImportTF(results []enumResult) []byte {
+// minProviderVersion is the lowest provider release that includes
+// datahub_ingestion_source ImportState (PR #27) and datahub_connection (PR #26).
+// Used as the version floor when the CLI is built without an explicit version
+// (e.g. "go run ." or "make install" without a release tag).
+const minProviderVersion = "0.3.0"
+
+// buildImportTF renders the import.tf content. version is the CLI version string
+// from ldflags; "dev" or empty triggers the minProviderVersion fallback.
+func buildImportTF(results []enumResult, version string) []byte {
+	constraint := version
+	if constraint == "" || constraint == "dev" {
+		constraint = minProviderVersion
+	}
+
 	var b bytes.Buffer
 
 	b.WriteString("terraform {\n")
 	b.WriteString("  required_providers {\n")
 	b.WriteString("    datahub = {\n")
 	b.WriteString("      source  = \"datahub-project/datahub\"\n")
-	b.WriteString("      version = \">= 0.1.0\"\n")
+	fmt.Fprintf(&b, "      version = \">= %s\"\n", constraint)
 	b.WriteString("    }\n")
 	b.WriteString("  }\n")
 	b.WriteString("}\n\n")

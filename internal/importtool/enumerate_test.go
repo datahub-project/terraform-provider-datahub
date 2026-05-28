@@ -205,17 +205,38 @@ func TestRunImportTF_importBlocksPerType(t *testing.T) {
 // version = ">= <cli_version>", ensuring users always get a provider release
 // that was tested with the same feature set as the CLI binary they downloaded.
 func TestBuildImportTF_VersionConstraint(t *testing.T) {
-	content := string(buildImportTF(nil))
+	cases := []struct {
+		name        string
+		version     string
+		wantContain string
+	}{
+		// "dev" builds (make install without a release tag) must fall back to the
+		// minimum provider release that includes datahub_ingestion_source ImportState
+		// (PR #27) and datahub_connection (PR #26), not the old ">= 0.1.0" floor
+		// that lets Terraform download v0.2.0 and silently produce an empty generated.tf.
+		{"dev fallback", "dev", ">= " + minProviderVersion},
+		{"empty fallback", "", ">= " + minProviderVersion},
+		// Release builds must pin to their own version so users always get a
+		// provider release tested alongside the CLI binary they downloaded.
+		{"explicit version", "0.4.0", ">= 0.4.0"},
+	}
 
-	const tooPermissive = ">= 0.1.0"
-	if strings.Contains(content, tooPermissive) {
-		t.Errorf("import.tf contains overly permissive version constraint %q\n"+
-			"v0.2.0 on the Terraform Registry pre-dates datahub_ingestion_source "+
-			"ImportState (PR #27) and datahub_connection (PR #26); Terraform will "+
-			"download it and silently produce a generated.tf with no ingestion "+
-			"source or connection resource blocks\n"+
-			"fix: pass the CLI version into buildImportTF and emit \">= <version>\"",
-			tooPermissive)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			content := string(buildImportTF(nil, c.version))
+
+			const tooPermissive = ">= 0.1.0"
+			if strings.Contains(content, tooPermissive) {
+				t.Errorf("import.tf contains overly permissive version constraint %q; "+
+					"v0.2.0 on the Terraform Registry pre-dates datahub_ingestion_source "+
+					"ImportState (PR #27) and datahub_connection (PR #26), so Terraform "+
+					"downloads it and produces a generated.tf with no ingestion source or "+
+					"connection resource blocks", tooPermissive)
+			}
+			if !strings.Contains(content, c.wantContain) {
+				t.Errorf("import.tf missing expected constraint %q\ngot:\n%s", c.wantContain, content)
+			}
+		})
 	}
 }
 
