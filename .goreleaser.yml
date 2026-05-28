@@ -55,8 +55,14 @@ builds:
       goarch: '386'
   binary: 'datahub-tf-import_v{{ .Version }}'
 archives:
-  - formats: ["zip"]
+  - ids:
+      - provider
+    formats: ["zip"]
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+  - ids:
+      - import-tool
+    formats: ["zip"]
+    name_template: 'datahub-tf-import_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
