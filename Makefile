@@ -133,6 +133,7 @@ endif
 	  -r \
 	  datahub \
 	  ../examples
+	$(MAKE) generate
 
 test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
