@@ -43,6 +43,23 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
+      - name: Check for existing release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" --json id >/dev/null 2>&1; then
+            echo "ERROR: GitHub release ${GITHUB_REF_NAME} already exists." >&2
+            echo "GoReleaser updates assets on an existing release but does not" >&2
+            echo "update the release body, which will cause the final verify step" >&2
+            echo "to fail. Delete the release first, then delete and re-push the tag:" >&2
+            echo "  gh release delete ${GITHUB_REF_NAME} --yes" >&2
+            echo "  git tag -d ${GITHUB_REF_NAME}" >&2
+            echo "  git push origin --delete ${GITHUB_REF_NAME}" >&2
+            echo "  git tag -a ${GITHUB_REF_NAME} -m \"Release ${GITHUB_REF_NAME}\"" >&2
+            echo "  git push origin ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
       - name: Extract release notes
         run: bash scripts/extract-release-notes.sh "${GITHUB_REF_NAME#v}"
       - name: Run GoReleaser
