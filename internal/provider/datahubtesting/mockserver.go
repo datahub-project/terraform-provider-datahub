@@ -104,6 +104,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubrole/", s.handleDataHubRoleItem)
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
@@ -158,6 +159,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleRemoveGroup(w, req.Variables)
 	case strings.Contains(q, "listGroups"):
 		s.handleListGroups(w)
+	case strings.Contains(q, "batchAssignRole"):
+		s.handleBatchAssignRole(w, req.Variables)
+	case strings.Contains(q, "listRoles"):
+		s.handleListRoles(w)
 	case strings.Contains(q, "createRemoteExecutorPool"):
 		s.handleCreateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):

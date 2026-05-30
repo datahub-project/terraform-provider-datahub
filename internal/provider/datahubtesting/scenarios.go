@@ -1116,6 +1116,119 @@ data "datahub_corp_user" "test" {
 	}
 }
 
+// RoleDataSourceSteps reads the built-in "Admin" role via the singular
+// datahub_role data source and asserts its URN.
+func RoleDataSourceSteps() []resource.TestStep {
+	const addr = "data.datahub_role.admin"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+data "datahub_role" "admin" {
+  name = "Admin"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact("urn:li:dataHubRole:Admin")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Admin")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("editable"), knownvalue.Bool(false)),
+			},
+		},
+	}
+}
+
+// RolesListSteps reads the datahub_roles data source and asserts all three
+// built-in role URNs are present.
+func RolesListSteps() []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+data "datahub_roles" "all" {}
+`,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_roles.all", "urn:li:dataHubRole:Admin"),
+				assertURNInList("data.datahub_roles.all", "urn:li:dataHubRole:Editor"),
+				assertURNInList("data.datahub_roles.all", "urn:li:dataHubRole:Reader"),
+			),
+		},
+	}
+}
+
+// RoleAssignmentSteps covers assign, in-place reassign (Editor -> Reader),
+// import, and delete/unassign for datahub_role_assignment, targeting a freshly
+// created group as the actor.
+func RoleAssignmentSteps(groupID string) []resource.TestStep {
+	const addr = "datahub_role_assignment.test"
+	groupURN := "urn:li:corpGroup:" + groupID
+
+	cfg := func(roleName string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "test" {
+  group_id = %q
+  name     = "Role Assignment Group"
+}
+
+data "datahub_role" "r" {
+  name = %q
+}
+
+resource "datahub_role_assignment" "test" {
+  actor_urn = datahub_corp_group.test.urn
+  role_urn  = data.datahub_role.r.urn
+}
+`, groupID, roleName)
+	}
+
+	return []resource.TestStep{
+		{
+			Config: cfg("Editor"),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("actor_urn"), knownvalue.StringExact(groupURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("role_urn"), knownvalue.StringExact("urn:li:dataHubRole:Editor")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("id"), knownvalue.StringExact(groupURN)),
+			},
+		},
+		{
+			// Reassign in place (no replace): Editor -> Reader.
+			Config: cfg("Reader"),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("role_urn"), knownvalue.StringExact("urn:li:dataHubRole:Reader")),
+			},
+		},
+		{
+			// Import by actor URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateId:     groupURN,
+		},
+	}
+}
+
+// RoleAssignmentCheckDestroy verifies every datahub_role_assignment in the
+// post-destroy state has had its role cleared in DataHub.
+func RoleAssignmentCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_role_assignment" {
+			continue
+		}
+		actorURN := rs.Primary.Attributes["actor_urn"]
+		_, found, getErr := client.GetActorRole(ctx, actorURN)
+		if getErr != nil {
+			// The actor (group) may already be destroyed, which clears the role.
+			continue
+		}
+		if found {
+			return fmt.Errorf("role assignment for actor %q still exists after destroy", actorURN)
+		}
+	}
+	return nil
+}
+
 // assertURNInList returns a TestCheckFunc asserting that urn appears in the
 // urns list attribute of the given data source address. Used where the full
 // list contents are not known (live targets with pre-existing entities).
