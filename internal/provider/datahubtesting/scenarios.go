@@ -999,6 +999,85 @@ func CorpGroupCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// CorpGroupMemberSteps returns test steps covering create, import, and drift
+// for datahub_corp_group_member. It creates a group, binds the given existing
+// user to it, imports by composite ID, and verifies out-of-band removal is
+// re-created.
+//
+// userURN must reference a user that already exists in the target (the provider
+// does not create users). Mock seeds "datahub"; live Quickstart has it too.
+func CorpGroupMemberSteps(groupID, userURN string) []resource.TestStep {
+	const addr = "datahub_corp_group_member.test"
+	groupURN := "urn:li:corpGroup:" + groupID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "test" {
+  group_id = %q
+  name     = "Member Test Group"
+}
+
+resource "datahub_corp_group_member" "test" {
+  group_urn = datahub_corp_group.test.urn
+  user_urn  = %q
+}
+`, groupID, userURN)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("group_urn"), knownvalue.StringExact(groupURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(userURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("id"), knownvalue.StringExact(groupURN+"|"+userURN)),
+			},
+		},
+		{
+			// Import by composite ID.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+		{
+			// Out-of-band removal: Read detects the missing membership and the
+			// next apply re-binds.
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("CorpGroupMemberSteps PreConfig: %v", err))
+				}
+				if delErr := client.RemoveGroupMember(context.Background(), groupURN, userURN); delErr != nil {
+					panic(fmt.Sprintf("CorpGroupMemberSteps PreConfig: remove failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+		},
+	}
+}
+
+// CorpGroupMemberCheckDestroy verifies every datahub_corp_group_member in the
+// post-destroy state no longer reflects the membership in DataHub.
+func CorpGroupMemberCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_corp_group_member" {
+			continue
+		}
+		groupURN := rs.Primary.Attributes["group_urn"]
+		userURN := rs.Primary.Attributes["user_urn"]
+		exists, getErr := client.GroupMemberExists(ctx, groupURN, userURN)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking membership %q in %q: %w", userURN, groupURN, getErr)
+		}
+		if exists {
+			return fmt.Errorf("membership of %q in %q still exists after destroy", userURN, groupURN)
+		}
+	}
+	return nil
+}
+
 // CorpUserDataSourceSteps reads the datahub_corp_user data source for the given
 // username and asserts the URN and that fields are populated. The user must
 // already exist in the target (seeded in the mock; the authenticated principal

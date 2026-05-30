@@ -150,6 +150,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateName(w, req.Variables)
 	case strings.Contains(q, "updateCorpGroupProperties"):
 		s.handleUpdateCorpGroupProperties(w, req.Variables)
+	case strings.Contains(q, "addGroupMembers"):
+		s.handleAddGroupMembers(w, req.Variables)
+	case strings.Contains(q, "removeGroupMembers"):
+		s.handleRemoveGroupMembers(w, req.Variables)
 	case strings.Contains(q, "removeGroup"):
 		s.handleRemoveGroup(w, req.Variables)
 	case strings.Contains(q, "listGroups"):
