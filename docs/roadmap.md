@@ -2,7 +2,7 @@
 
 This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — and classifies each area by relevance to the Terraform provider. It is the basis for deciding what to build next.
 
-**Current provider state (v0.2.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source), `datahub_me` (data source).
+**Current provider state (v0.3.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources).
 
 ## Scope principles
 
@@ -43,7 +43,7 @@ This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — an
 
 ## Category 1: Ingest
 
-Current coverage: `datahub_ingestion_source`, `datahub_secret`, `datahub_remote_executor_pool` (+ data sources, except no `datahub_secret` data source).
+Current coverage: `datahub_ingestion_source`, `datahub_secret`, `datahub_remote_executor_pool`, `datahub_connection` (+ data sources including bulk-enumerate `datahub_ingestion_sources`, `datahub_secrets`, `datahub_connections`).
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
@@ -51,15 +51,15 @@ Current coverage: `datahub_ingestion_source`, `datahub_secret`, `datahub_remote_
 | `createSecret` / `updateSecret` / `deleteSecret` + OpenAPI Read | M | covered | no | `datahub_secret`. |
 | `createRemoteExecutorPool` / `updateRemoteExecutorPool` / `getRemoteExecutorPool` + OpenAPI Delete | M/Q | covered | yes | `datahub_remote_executor_pool`; mutations classed `category: internal`. |
 | `updateDefaultRemoteExecutorPool` + `defaultRemoteExecutorPool` | M/Q | **HIGH** | yes | Singleton resource `datahub_default_remote_executor_pool` — or fold into `datahub_remote_executor_pool` via `is_default = true` (check if already present). **Note:** schema mutation is `updateDefaultRemoteExecutorPool`; confirm provider uses this name and not `setDefaultRemoteExecutorPool`. |
-| `upsertConnection` / `connection(urn)` / `deleteConnection` | M/Q | **HIGH** | verify OSS | **New:** `datahub_connection` resource. Reusable credential-bearing config (endpoint + credentials for "prod-snowflake" etc.). Lets teams centralize credentials and scope rotation instead of inlining into recipe blobs. |
-| `getRemoteExecutor` (instance) | Q | LOW | yes | Read-only. Intended backing query for `datahub_ingestion_executor` data source (Vikunja #404841). |
-| `listIngestionSources` / `listSecrets` / `listRemoteExecutorPools` | Q | LOW | varies | Eventually consistent — data-source-only, never Read/Import. |
+| `upsertConnection` / `connection(urn)` / `deleteConnection` | M/Q | covered | yes+OSS | `datahub_connection` resource (v0.3.0). OSS delete falls back to OpenAPI DELETE (GraphQL mutation absent in OSS). |
+| `getRemoteExecutor` (instance) | Q | LOW | yes | Read-only. Intended backing query for `datahub_ingestion_executor` data source. |
+| `listIngestionSources` / `listSecrets` / `searchAcrossEntities (DATAHUB_CONNECTION)` | Q | covered | varies | `datahub_ingestion_sources`, `datahub_secrets`, `datahub_connections` bulk-enumerate data sources (v0.3.0). Eventually consistent - acceptable for enumeration, never used in Read/ImportState. |
 | `getSecretValues` | Q | LOW | no | Decrypted secret readout — doesn't fit, `value` is WriteOnly in state. |
 | `ingestionSourceForEntity` | Q | LOW | no | Reverse lookup — niche data source candidate. |
 | `createIngestionExecutionRequest` / `cancelIngestionExecutionRequest` / `rollbackIngestion` / `createTestConnectionRequest` | M | IRRELEVANT | no | Runtime/operational. |
 | `executionRequest(urn)` / `listExecutionRequests` / `getRateLimitInfo` / executor telemetry family | Q/M | IRRELEVANT | varies | Run telemetry. |
 
-**`datahub_connection`:** the most compelling new ingest resource. Connections are platform-instance configs (credentials + endpoint info) referenced by ingestion sources. Confirmed present on this Cloud GMS; OSS verification still required. `connection(urn)` provides strongly-consistent Read. URN key: user-supplied `id`.
+**`datahub_connection`:** shipped in v0.3.0 (PR #26). Reusable credential-bearing config referenced by ingestion sources. Works on both OSS and DataHub Cloud; OSS delete uses the OpenAPI endpoint since the GraphQL mutation is absent in OSS. URN key: user-supplied `id`.
 
 ---
 
@@ -325,7 +325,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 
 | # | Terraform component | Type | OSS | Key concern |
 |---|---|---|---|---|
-| 1 | `datahub_connection` | resource | verify | URN convention; OSS vs Cloud | **DONE - [PR #26](https://github.com/datahub-project/terraform-provider-datahub/pull/26)** |
+| ~~1~~ | ~~`datahub_connection`~~ | resource | yes+OSS | **Shipped v0.3.0** ([PR #26](https://github.com/datahub-project/terraform-provider-datahub/pull/26)) |
 | 2 | `datahub_domain` | resource + data source | yes | UUID URN trap; `moveDomain` for reparenting |
 | 3 | `datahub_tag` | resource + data source | yes | Definitions only; `setTagColor` separate mutation |
 | 4 | `datahub_glossary_node` | resource + data source | yes | OpenAPI aspect write after create; URN convention |
