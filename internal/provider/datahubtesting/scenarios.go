@@ -1116,6 +1116,169 @@ data "datahub_corp_user" "test" {
 	}
 }
 
+// PolicyLifecycleSteps covers create, in-place privilege update, import (by id
+// and URN), and drift for a PLATFORM datahub_policy.
+func PolicyLifecycleSteps(policyID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+	urn := "urn:li:dataHubPolicy:" + policyID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id   = %q
+  name        = "Platform Admins"
+  type        = "PLATFORM"
+  description = "initial"
+  privileges  = ["MANAGE_POLICIES", "MANAGE_SECRETS"]
+  actors = {
+    users = ["urn:li:corpuser:datahub"]
+  }
+}
+`, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("policy_id"), knownvalue.StringExact(policyID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("type"), knownvalue.StringExact("PLATFORM")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("state"), knownvalue.StringExact("ACTIVE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("privileges"), knownvalue.SetSizeExact(2)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("actors").AtMapKey("all_users"), knownvalue.Bool(false)),
+			},
+		},
+		{
+			// Update: change privileges set and description in place.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id   = %q
+  name        = "Platform Admins"
+  type        = "PLATFORM"
+  description = "updated"
+  privileges  = ["MANAGE_POLICIES"]
+  actors = {
+    users = ["urn:li:corpuser:datahub"]
+  }
+}
+`, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("updated")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("privileges"), knownvalue.SetSizeExact(1)),
+			},
+		},
+		{
+			// Import by bare policy_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     policyID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// PolicyMetadataSteps covers a METADATA policy with a resources scope and
+// all_users actor.
+func PolicyMetadataSteps(policyID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Tag Editors"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS"]
+  actors = {
+    all_users = true
+  }
+  resources = {
+    type      = "dataset"
+    resources = ["urn:li:dataset:(urn:li:dataPlatform:hive,foo,PROD)"]
+  }
+}
+`, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("type"), knownvalue.StringExact("METADATA")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("actors").AtMapKey("all_users"), knownvalue.Bool(true)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("resources").AtMapKey("type"), knownvalue.StringExact("dataset")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("resources").AtMapKey("resources"), knownvalue.SetSizeExact(1)),
+			},
+		},
+	}
+}
+
+// PolicyDriftSteps verifies out-of-band deletion is detected and the policy is
+// re-created on the next apply.
+func PolicyDriftSteps(policyID string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Drift Policy"
+  type       = "PLATFORM"
+  privileges = ["MANAGE_POLICIES"]
+  actors = {
+    all_users = true
+  }
+}
+`, policyID)
+	urn := "urn:li:dataHubPolicy:" + policyID
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("PolicyDriftSteps PreConfig: %v", err))
+				}
+				if delErr := client.DeletePolicy(context.Background(), urn); delErr != nil {
+					panic(fmt.Sprintf("PolicyDriftSteps PreConfig: delete failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+		},
+	}
+}
+
+// PolicyCheckDestroy verifies every datahub_policy in the post-destroy state has
+// been removed from DataHub.
+func PolicyCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_policy" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		policy, getErr := client.GetPolicyByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_policy %q: %w", urn, getErr)
+		}
+		if policy != nil {
+			return fmt.Errorf("datahub_policy %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
 // RoleDataSourceSteps reads the built-in "Admin" role via the singular
 // datahub_role data source and asserts its URN.
 func RoleDataSourceSteps() []resource.TestStep {
