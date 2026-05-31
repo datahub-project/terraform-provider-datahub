@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.11"
   required_providers {
     datahub = {
       source  = "datahub-project/datahub"
@@ -17,8 +17,8 @@ provider "datahub" {
 # A native DataHub group representing a team. group_id is the stable URN suffix
 # (urn:li:corpGroup:<group_id>); name is the display name shown in the UI.
 resource "datahub_corp_group" "data_platform" {
-  group_id    = "data-platform"
-  name        = "Data Platform Team"
+  group_id    = "tf-example-data-platform"
+  name        = "TF Example - Data Platform Team"
   description = "Owns ingestion pipelines and platform configuration"
   email       = "data-platform@example.com"
   slack       = "#data-platform"
