@@ -13,7 +13,34 @@ Later additions to this example: group membership, a role assignment, and an acc
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` set in the shell
 - The token must belong to a principal with the `MANAGE_USERS_AND_GROUPS` privilege
 
-## Apply
+## Testing against an unreleased provider build
+
+This example uses resources not yet in the published release. Build and install the provider locally, then point Terraform at the local binary using a dev override:
+
+```bash
+# From the repo root:
+make install       # builds bin/terraform-provider-datahub
+make dev-override  # writes dev.tfrc + .mise.env (both gitignored)
+```
+
+Then, with mise active (which picks up `TF_CLI_CONFIG_FILE` from `.mise.env`):
+
+```bash
+cd examples/authorization-team-access
+terraform init   # skips registry download; uses local bin
+terraform apply
+```
+
+Without mise, set `TF_CLI_CONFIG_FILE` explicitly:
+
+```bash
+TF_CLI_CONFIG_FILE=../../dev.tfrc terraform init
+TF_CLI_CONFIG_FILE=../../dev.tfrc terraform apply
+```
+
+## Apply (released version)
+
+Once these resources are included in a published release, the standard flow applies:
 
 ```bash
 export DATAHUB_GMS_URL=https://your-instance.acryl.io
