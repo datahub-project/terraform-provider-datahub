@@ -1,0 +1,8 @@
+# Copy this file to terraform.tfvars and uncomment the variables you want to override.
+# terraform.tfvars is gitignored and will not be committed.
+
+# Plaintext value to store as the DataHub secret.
+# WARNING: avoid putting real credentials here; use TF_VAR_secret_value instead:
+#   read -s TF_VAR_secret_value && export TF_VAR_secret_value
+#
+# secret_value = "change-me"
