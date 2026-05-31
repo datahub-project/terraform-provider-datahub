@@ -18,6 +18,11 @@ output "assigned_role_urn" {
   value       = datahub_role_assignment.data_platform_editor.role_urn
 }
 
+output "policy_urn" {
+  description = "URN of the access policy granting the group its privileges."
+  value       = datahub_policy.data_platform_admins.urn
+}
+
 output "next_steps" {
   description = "Post-apply summary."
   value       = <<-EOT

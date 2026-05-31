@@ -74,6 +74,7 @@ type mockServer struct {
 	connections      map[string]mockConnection
 	groups           map[string]mockGroup
 	users            map[string]mockUser
+	policies         map[string]mockPolicy
 	defaultPoolID    string
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
@@ -92,6 +93,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		connections:      make(map[string]mockConnection),
 		groups:           make(map[string]mockGroup),
 		users:            make(map[string]mockUser),
+		policies:         make(map[string]mockPolicy),
 		failDeleteFor:    make(map[string]struct{}),
 	}
 	s.seedUsers()
@@ -105,6 +107,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubrole/", s.handleDataHubRoleItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubpolicy/", s.handleDataHubPolicyItem)
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
@@ -163,6 +166,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleBatchAssignRole(w, req.Variables)
 	case strings.Contains(q, "listRoles"):
 		s.handleListRoles(w)
+	case strings.Contains(q, "updatePolicy"):
+		s.handleUpsertPolicy(w, req.Variables)
+	case strings.Contains(q, "deletePolicy"):
+		s.handleDeletePolicy(w, req.Variables)
+	case strings.Contains(q, "listPolicies"):
+		s.handleListPolicies(w)
 	case strings.Contains(q, "createRemoteExecutorPool"):
 		s.handleCreateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):
