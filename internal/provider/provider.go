@@ -254,6 +254,8 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewIngestionSourcesDataSource,
 		NewMeDataSource,
 		NewRemoteExecutorPoolDataSource,
+		NewRoleDataSource,
+		NewRolesDataSource,
 		NewSecretsDataSource,
 	}
 }
@@ -267,5 +269,6 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewIngestionSourceResource,
 		NewSecretResource,
 		NewRemoteExecutorPoolResource,
+		NewRoleAssignmentResource,
 	}
 }

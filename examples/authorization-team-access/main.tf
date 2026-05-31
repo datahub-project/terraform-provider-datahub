@@ -41,3 +41,15 @@ resource "datahub_corp_group_member" "member" {
   group_urn = datahub_corp_group.data_platform.urn
   user_urn  = data.datahub_corp_user.member.urn
 }
+
+# Resolve the built-in Editor role to its URN.
+data "datahub_role" "editor" {
+  name = "Editor"
+}
+
+# Grant the Editor role to the team group. DataHub allows one role per actor,
+# so define at most one role assignment per actor URN.
+resource "datahub_role_assignment" "data_platform_editor" {
+  actor_urn = datahub_corp_group.data_platform.urn
+  role_urn  = data.datahub_role.editor.urn
+}

@@ -19,6 +19,7 @@ type mockGroup struct {
 	Description string
 	Email       string
 	Slack       string
+	RoleURN     string // single roleMembership entry, set by batchAssignRole
 }
 
 // handleCreateGroup handles the createGroup mutation. Like the real server it is
@@ -158,8 +159,7 @@ func (s *mockServer) handleCorpGroupItem(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	entity := map[string]any{
 		"urn": g.URN,
 		"corpGroupKey": map[string]any{
 			"value": map[string]any{"name": g.ID},
@@ -174,5 +174,13 @@ func (s *mockServer) handleCorpGroupItem(w http.ResponseWriter, r *http.Request)
 				"slack":       g.Slack,
 			},
 		},
-	})
+	}
+	if g.RoleURN != "" {
+		entity["roleMembership"] = map[string]any{
+			"value": map[string]any{"roles": []string{g.RoleURN}},
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entity)
 }
