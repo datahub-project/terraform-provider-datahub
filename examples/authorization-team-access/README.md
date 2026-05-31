@@ -2,10 +2,13 @@
 
 Sets up DataHub authorization for a team. This example grows across the IAM resource series; it currently provisions:
 
-- a native group (`datahub_corp_group`) representing a team, and
-- a lookup of that group via the `datahub_corp_group` data source.
+- a native group (`datahub_corp_group`) representing a team,
+- a lookup of that group via the `datahub_corp_group` data source, and
+- a membership (`datahub_corp_group_member`) adding an existing user to the group.
 
-Later additions to this example: group membership, a role assignment, and an access policy.
+Later additions to this example: a role assignment and an access policy.
+
+The user added to the group is controlled by the `member_username` variable (default `datahub`, the bootstrap admin on an OSS Quickstart). The provider does not create users, so this user must already exist.
 
 ## Prerequisites
 

@@ -8,6 +8,11 @@ output "group_urn_via_lookup" {
   value       = data.datahub_corp_group.data_platform.urn
 }
 
+output "member_user_urn" {
+  description = "URN of the user added to the group."
+  value       = data.datahub_corp_user.member.urn
+}
+
 output "next_steps" {
   description = "Post-apply summary."
   value       = <<-EOT
