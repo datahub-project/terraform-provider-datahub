@@ -7,7 +7,7 @@ Demonstrates how a `datahub_connection` is used as the credential back-end for a
 
 > **Snowflake only.** The `connection:` recipe field is currently resolved at ingestion runtime only for Snowflake sources. For other platforms (Databricks, BigQuery, Dataplex, Redshift) the connection is stored in DataHub and visible in Settings > Integrations, but credentials must still be supplied directly in the recipe config.
 
-See `connection-snowflake/` in this repository for a simpler example that creates the connection alone without an ingestion source.
+See `examples/runnable/connection-snowflake/` for a simpler example that creates the connection alone without an ingestion source.
 
 ## Prerequisites
 

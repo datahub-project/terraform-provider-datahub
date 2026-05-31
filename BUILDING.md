@@ -28,7 +28,7 @@ After that, `terraform` in this directory uses your local binary instead of the 
 
 ```bash
 echo $TF_CLI_CONFIG_FILE   # should print the path to dev.tfrc
-terraform -chdir=examples/provider-install-verification plan
+terraform -chdir=examples/runnable/provider-install-verification plan
 ```
 
 The generated files (`dev.tfrc`, `.mise.env`) are already in `.gitignore`.

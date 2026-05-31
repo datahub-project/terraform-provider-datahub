@@ -48,7 +48,7 @@ while IFS= read -r -d '' tf_file; do
     printf 'MISMATCH: %s: found "%s", want "%s"\n' "$tf_file" "$pinned" "$VERSION" >&2
     FAILED=1
   fi
-done < <(find "$REPO_ROOT/examples" -name "*.tf" -print0)
+done < <(find "$REPO_ROOT/examples/runnable" -name "*.tf" -print0)
 
 if [ "$FAILED" -ne 0 ]; then
   printf '\nFix with: make bump-examples VERSION=%s && make generate\n' "$VERSION" >&2

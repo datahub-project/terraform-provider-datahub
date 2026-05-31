@@ -29,7 +29,7 @@ make dev-override  # writes dev.tfrc + .mise.env (both gitignored)
 Then, with mise active (which picks up `TF_CLI_CONFIG_FILE` from `.mise.env`):
 
 ```bash
-cd examples/authorization-team-access
+cd examples/runnable/authorization-team-access
 terraform init   # skips registry download; uses local bin
 terraform apply
 ```

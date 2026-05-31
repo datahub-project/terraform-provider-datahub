@@ -35,7 +35,7 @@ help:
 	@echo "  fmt           Format Go sources"
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
-	@echo "  bump-examples Bump the datahub provider version pin across all examples; VERSION=x.y.z required"
+	@echo "  bump-examples Bump the datahub provider version pin across examples/runnable; VERSION=x.y.z required"
 	@echo "  test          Run unit tests"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
 	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
@@ -132,7 +132,7 @@ endif
 	  --version $(VERSION) \
 	  -r \
 	  datahub \
-	  ../examples
+	  ../examples/runnable
 	$(MAKE) generate
 
 test:

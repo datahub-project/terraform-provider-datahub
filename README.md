@@ -31,7 +31,7 @@ Common approaches:
 - Set `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` environment variables.
 - Or configure them in the provider block.
 
-See `examples/provider-install-verification/` for a working development setup.
+See `examples/runnable/provider-install-verification/` for a working development setup.
 
 ## Security / Credentials
 
@@ -39,7 +39,7 @@ DataHub ingestion source configurations (including the recipe JSON) are stored i
 
 Recommended approaches:
 
-- Use **`datahub_secret`** to manage secrets as Terraform resources, then reference them by name in recipes as `${SECRET_NAME}`. This keeps secret values out of your recipe config and out of source control. See `examples/secret-basic/` for a working example.
+- Use **`datahub_secret`** to manage secrets as Terraform resources, then reference them by name in recipes as `${SECRET_NAME}`. This keeps secret values out of your recipe config and out of source control. See `examples/runnable/secret-basic/` for a working example.
 - Use **DataHub Secrets via the UI** (Ingestion → Secrets) if you prefer to manage them outside Terraform, then reference them the same way.
 - Use **environment variable substitution** in recipes (DataHub expands `${VAR_NAME}` in config).
 
