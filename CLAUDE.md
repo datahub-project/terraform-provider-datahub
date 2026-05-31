@@ -138,6 +138,14 @@ Runnable examples follow the standard HashiCorp convention for file separation:
 - `variables.tf` — input variables (add when the example needs parameterisation)
 - `README.md` — prerequisites, run instructions, follow-up actions, cleanup
 
+### Terraform version constraint
+
+Every runnable example must set `required_version = ">= 1.11"` in its `terraform {}` block. This is the minimum that supports WriteOnly attributes (`datahub_secret`, `datahub_connection`) and the `import {}` block with `for_each` -- both features users commonly pair with provider examples. Use the same constraint even in examples that don't exercise these features directly, to keep the requirement uniform across the `examples/` directory.
+
+### Identifying Terraform-managed resources
+
+Use a `tf-example-` prefix on machine-readable IDs (e.g. `group_id`, `policy_id`, `source_id`, `connection_id`) and a `TF Example - ` prefix or similar marker on human-readable display name strings (e.g. `name`). This convention -- already established by `TF_EXAMPLE_SECRET`, `"TF Example Source"` etc. in other examples -- lets operators immediately distinguish resources created by the runnable example from those created via the DataHub UI, CLI, or SDK. It also makes cleanup straightforward: any resource with a `tf-example-` id or `TF Example` name in its display was created by an example.
+
 ### Ingestion source types in examples
 
 When an example includes a `datahub_ingestion_source` to illustrate a point (e.g. wiring up an executor pool), choose the source `type` to make the surrounding story self-evident:
