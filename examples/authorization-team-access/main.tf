@@ -53,3 +53,17 @@ resource "datahub_role_assignment" "data_platform_editor" {
   actor_urn = datahub_corp_group.data_platform.urn
   role_urn  = data.datahub_role.editor.urn
 }
+
+# Grant the team specific platform privileges via an access policy. Roles give
+# broad presets; policies grant a precise privilege set to chosen actors.
+resource "datahub_policy" "data_platform_admins" {
+  policy_id   = "tf-example-data-platform-admins"
+  name        = "TF Example - Data Platform Admins"
+  type        = "PLATFORM"
+  description = "Lets the data platform team manage ingestion and secrets"
+  privileges  = ["MANAGE_INGESTION", "MANAGE_SECRETS"]
+
+  actors = {
+    groups = [datahub_corp_group.data_platform.urn]
+  }
+}
