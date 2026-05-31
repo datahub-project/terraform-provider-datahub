@@ -13,6 +13,11 @@ output "member_user_urn" {
   value       = data.datahub_corp_user.member.urn
 }
 
+output "assigned_role_urn" {
+  description = "URN of the role assigned to the group."
+  value       = datahub_role_assignment.data_platform_editor.role_urn
+}
+
 output "next_steps" {
   description = "Post-apply summary."
   value       = <<-EOT
