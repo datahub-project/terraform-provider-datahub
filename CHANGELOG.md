@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `datahub_corp_group` data source: look up an existing group by `group_id` and return its URN and properties, for use as a policy actor or owner reference.
 - `datahub_corp_groups` data source: return the URNs of all groups, for bulk import via `for_each` into `import {}` blocks.
 - `datahub_corp_user` data source: resolve a `username` to its URN and catalog metadata (display name, email, title, active, status). This provider does not create users; this data source reads users provisioned via SSO/JIT or the DataHub invite flow.
+- `examples/authorization-team-access`: runnable example that sets up authorization for a team. Starts with a group and its lookup; grows across the IAM series to add membership, a role assignment, and an access policy.
 
 ## [0.3.0] - 2026-05-29
 
