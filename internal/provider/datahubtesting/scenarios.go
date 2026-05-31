@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -819,6 +820,238 @@ func connectionImportIgnoreAttrs() []string {
 		"unity_catalog.client_secret_wo",
 		"raw_config.platform_urn_suffix",
 		"raw_config.config_json_wo",
+	}
+}
+
+// CorpGroupLifecycleSteps returns test steps covering create, in-place update of
+// name and editable properties, and import for datahub_corp_group.
+//
+// groupID is the group_id attribute and must be unique within the target
+// DataHub instance.
+func CorpGroupLifecycleSteps(groupID string) []resource.TestStep {
+	const addr = "datahub_corp_group.test"
+	urn := "urn:li:corpGroup:" + groupID
+
+	return []resource.TestStep{
+		{
+			// Create with name + description.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "test" {
+  group_id    = %q
+  name        = "Data Platform"
+  description = "initial description"
+}
+`, groupID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("group_id"), knownvalue.StringExact(groupID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Data Platform")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("initial description")),
+			},
+		},
+		{
+			// Update name (updateName) and add email/slack in-place (no replace).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "test" {
+  group_id    = %q
+  name        = "Data Platform Team"
+  description = "updated description"
+  email       = "data-platform@example.com"
+  slack       = "#data-platform"
+}
+`, groupID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Data Platform Team")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("updated description")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("email"), knownvalue.StringExact("data-platform@example.com")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("slack"), knownvalue.StringExact("#data-platform")),
+			},
+		},
+		{
+			// Import by bare group_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     groupID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// CorpGroupDriftSteps verifies that an out-of-band group deletion is detected:
+// Read receives a 404 and removes the resource, and the next apply re-creates it.
+func CorpGroupDriftSteps(groupID string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "test" {
+  group_id = %q
+  name     = "Drift Group"
+}
+`, groupID)
+	urn := "urn:li:corpGroup:" + groupID
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("CorpGroupDriftSteps PreConfig: %v", err))
+				}
+				if delErr := client.DeleteGroup(context.Background(), urn); delErr != nil && !errors.Is(delErr, datahub.ErrNotFound) {
+					panic(fmt.Sprintf("CorpGroupDriftSteps PreConfig: delete failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+		},
+	}
+}
+
+// CorpGroupDataSourceSteps seeds a group via the resource then reads it back via
+// the singular datahub_corp_group data source.
+func CorpGroupDataSourceSteps(groupID string) []resource.TestStep {
+	const addr = "data.datahub_corp_group.test"
+	urn := "urn:li:corpGroup:" + groupID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "seed" {
+  group_id    = %q
+  name        = "Lookup Group"
+  description = "looked up"
+}
+
+data "datahub_corp_group" "test" {
+  group_id = datahub_corp_group.seed.group_id
+}
+`, groupID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("group_id"), knownvalue.StringExact(groupID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Lookup Group")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("looked up")),
+			},
+		},
+	}
+}
+
+// CorpGroupsListSteps creates a group and verifies its URN appears in the
+// datahub_corp_groups enumeration data source.
+func CorpGroupsListSteps(groupID string) []resource.TestStep {
+	urn := "urn:li:corpGroup:" + groupID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_corp_group" "test" {
+  group_id = %q
+  name     = "List Group"
+}
+
+data "datahub_corp_groups" "all" {
+  depends_on = [datahub_corp_group.test]
+}
+`, groupID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_corp_groups.all", urn),
+			),
+		},
+	}
+}
+
+// CorpGroupCheckDestroy verifies every datahub_corp_group in the post-destroy
+// state has been removed from DataHub.
+func CorpGroupCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_corp_group" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		group, getErr := client.GetGroupByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_corp_group %q: %w", urn, getErr)
+		}
+		if group != nil {
+			return fmt.Errorf("datahub_corp_group %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
+// CorpUserDataSourceSteps reads the datahub_corp_user data source for the given
+// username and asserts the URN and that fields are populated. The user must
+// already exist in the target (seeded in the mock; the authenticated principal
+// on live).
+func CorpUserDataSourceSteps(username string) []resource.TestStep {
+	const addr = "data.datahub_corp_user.test"
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+data "datahub_corp_user" "test" {
+  username = %q
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
+			},
+		},
+	}
+}
+
+// CorpUserDataSourceNotFoundSteps verifies the data source surfaces a
+// "User not found" diagnostic for a username that does not exist.
+func CorpUserDataSourceNotFoundSteps(username string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+data "datahub_corp_user" "test" {
+  username = %q
+}
+`, username),
+			ExpectError: regexp.MustCompile(`User not found`),
+		},
+	}
+}
+
+// assertURNInList returns a TestCheckFunc asserting that urn appears in the
+// urns list attribute of the given data source address. Used where the full
+// list contents are not known (live targets with pre-existing entities).
+func assertURNInList(addr, urn string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[addr]
+		if !ok {
+			return fmt.Errorf("data source %s not found in state", addr)
+		}
+		for k, v := range rs.Primary.Attributes {
+			if strings.HasPrefix(k, "urns.") && v == urn {
+				return nil
+			}
+		}
+		return fmt.Errorf("URN %q not found in %s.urns", urn, addr)
 	}
 }
 

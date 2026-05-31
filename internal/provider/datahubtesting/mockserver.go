@@ -72,6 +72,8 @@ type mockServer struct {
 	secrets          map[string]mockSecret
 	pools            map[string]mockExecutorPool
 	connections      map[string]mockConnection
+	groups           map[string]mockGroup
+	users            map[string]mockUser
 	defaultPoolID    string
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
@@ -88,8 +90,11 @@ func NewServer(t *testing.T) *httptest.Server {
 		secrets:          make(map[string]mockSecret),
 		pools:            make(map[string]mockExecutorPool),
 		connections:      make(map[string]mockConnection),
+		groups:           make(map[string]mockGroup),
+		users:            make(map[string]mockUser),
 		failDeleteFor:    make(map[string]struct{}),
 	}
+	s.seedUsers()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
@@ -97,6 +102,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
+	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
+	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
@@ -137,6 +144,16 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleSearchAcrossEntities(w, req.Variables)
 	case strings.Contains(q, "upsertConnection"):
 		s.handleCreateOrUpdateConnection(w, req.Variables)
+	case strings.Contains(q, "createGroup"):
+		s.handleCreateGroup(w, req.Variables)
+	case strings.Contains(q, "updateName"):
+		s.handleUpdateName(w, req.Variables)
+	case strings.Contains(q, "updateCorpGroupProperties"):
+		s.handleUpdateCorpGroupProperties(w, req.Variables)
+	case strings.Contains(q, "removeGroup"):
+		s.handleRemoveGroup(w, req.Variables)
+	case strings.Contains(q, "listGroups"):
+		s.handleListGroups(w)
 	case strings.Contains(q, "createRemoteExecutorPool"):
 		s.handleCreateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):
