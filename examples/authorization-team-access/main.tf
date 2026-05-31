@@ -28,3 +28,16 @@ resource "datahub_corp_group" "data_platform" {
 data "datahub_corp_group" "data_platform" {
   group_id = datahub_corp_group.data_platform.group_id
 }
+
+# Resolve an existing user by username. The provider does not create users, so
+# member_username must already exist in DataHub (provisioned via SSO/JIT or the
+# DataHub invite flow).
+data "datahub_corp_user" "member" {
+  username = var.member_username
+}
+
+# Add the user to the team group. One resource per membership edge.
+resource "datahub_corp_group_member" "member" {
+  group_urn = datahub_corp_group.data_platform.urn
+  user_urn  = data.datahub_corp_user.member.urn
+}
