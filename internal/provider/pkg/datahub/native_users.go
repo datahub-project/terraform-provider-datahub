@@ -25,9 +25,14 @@ type SignUpInput struct {
 	InviteToken string
 }
 
-// GetInviteToken retrieves the current org-wide invite token via the
-// getInviteToken GraphQL query. This does NOT create a new token; use
-// CreateInviteToken to regenerate.
+// inviteTokenGraphQLPaths lists the GraphQL endpoints to try for invite token
+// operations. Cloud uses /api/v2/graphql (frontend-compatible tokens); OSS
+// uses /api/graphql (GMS). We try v2 first because it works on both Cloud
+// (required) and may work on OSS; /api/graphql is the fallback.
+var inviteTokenGraphQLPaths = []string{"/api/v2/graphql", "/api/graphql"}
+
+// GetInviteToken retrieves the current org-wide invite token. This does NOT
+// create a new token; use CreateInviteToken to regenerate.
 func (c *Client) GetInviteToken(ctx context.Context) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
@@ -43,31 +48,46 @@ func (c *Client) GetInviteToken(ctx context.Context) (string, error) {
 		},
 	}
 
-	var gqlResp struct {
-		Data struct {
-			GetInviteToken struct {
-				InviteToken string `json:"inviteToken"`
-			} `json:"getInviteToken"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
+	var lastErr error
+	for _, path := range inviteTokenGraphQLPaths {
+		var gqlResp struct {
+			Data struct {
+				GetInviteToken struct {
+					InviteToken string `json:"inviteToken"`
+				} `json:"getInviteToken"`
+			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if err := c.doGraphQLAt(ctx, path, body, &gqlResp); err != nil {
+			lastErr = err
+			tflog.Debug(ctx, "getInviteToken failed at path, trying next", map[string]any{
+				"path":  path,
+				"error": err.Error(),
+			})
+			continue
+		}
+		if len(gqlResp.Errors) > 0 {
+			lastErr = fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+			tflog.Debug(ctx, "getInviteToken returned GraphQL error, trying next", map[string]any{
+				"path":  path,
+				"error": lastErr.Error(),
+			})
+			continue
+		}
+		token := gqlResp.Data.GetInviteToken.InviteToken
+		if token == "" {
+			lastErr = errors.New("getInviteToken returned an empty token")
+			continue
+		}
+		return token, nil
 	}
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return "", err
-	}
-	if len(gqlResp.Errors) > 0 {
-		return "", fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
-	}
-	token := gqlResp.Data.GetInviteToken.InviteToken
-	if token == "" {
-		return "", errors.New("getInviteToken returned an empty token")
-	}
-	return token, nil
+	return "", fmt.Errorf("getInviteToken failed on all GraphQL paths: %w", lastErr)
 }
 
-// CreateInviteToken regenerates the org-wide invite token via the
-// createInviteToken GraphQL mutation. This invalidates the previous token.
+// CreateInviteToken regenerates the org-wide invite token. This invalidates
+// the previous token.
 func (c *Client) CreateInviteToken(ctx context.Context) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
@@ -83,23 +103,29 @@ func (c *Client) CreateInviteToken(ctx context.Context) (string, error) {
 		},
 	}
 
-	var gqlResp struct {
-		Data struct {
-			CreateInviteToken struct {
-				InviteToken string `json:"inviteToken"`
-			} `json:"createInviteToken"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
+	var lastErr error
+	for _, path := range inviteTokenGraphQLPaths {
+		var gqlResp struct {
+			Data struct {
+				CreateInviteToken struct {
+					InviteToken string `json:"inviteToken"`
+				} `json:"createInviteToken"`
+			} `json:"data"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		if err := c.doGraphQLAt(ctx, path, body, &gqlResp); err != nil {
+			lastErr = err
+			continue
+		}
+		if len(gqlResp.Errors) > 0 {
+			lastErr = fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+			continue
+		}
+		return gqlResp.Data.CreateInviteToken.InviteToken, nil
 	}
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return "", err
-	}
-	if len(gqlResp.Errors) > 0 {
-		return "", fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
-	}
-	return gqlResp.Data.CreateInviteToken.InviteToken, nil
+	return "", fmt.Errorf("createInviteToken failed on all GraphQL paths: %w", lastErr)
 }
 
 // SignUp creates a native login user via the DataHub signUp endpoint.
@@ -198,10 +224,10 @@ func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []
 	req.Header.Set("Content-Type", "application/json")
 
 	tflog.Debug(ctx, "DataHub signUp request", map[string]any{
-		"url":       signUpURL,
-		"payload":   string(payloadBytes),
-		"has_auth":  authHeader != "",
-		"headers":   fmt.Sprintf("%v", req.Header),
+		"url":      signUpURL,
+		"payload":  string(payloadBytes),
+		"has_auth": authHeader != "",
+		"headers":  fmt.Sprintf("%v", req.Header),
 	})
 
 	noRedirectClient := &http.Client{

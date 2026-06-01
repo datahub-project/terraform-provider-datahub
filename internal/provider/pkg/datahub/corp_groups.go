@@ -290,7 +290,11 @@ mutation removeGroup($urn: String!) {
 // maps transport-level auth/status failures to errors. GraphQL-level errors[]
 // are left in out for the caller to inspect.
 func (c *Client) doGraphQL(ctx context.Context, body, out any) error {
-	req, err := c.NewRequest(ctx, http.MethodPost, "/api/graphql", body)
+	return c.doGraphQLAt(ctx, "/api/graphql", body, out)
+}
+
+func (c *Client) doGraphQLAt(ctx context.Context, path string, body, out any) error {
+	req, err := c.NewRequest(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return err
 	}

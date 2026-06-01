@@ -104,6 +104,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	s.seedUsers()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
+	mux.HandleFunc("/api/v2/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
