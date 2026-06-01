@@ -235,9 +235,9 @@ func (r *localUserLoginResource) Create(ctx context.Context, req resource.Create
 		tflog.Warn(ctx, "Failed to regenerate invite token after sign-up; the used token remains valid", map[string]any{"error": err.Error()})
 	}
 
-	// Step 4: wait for the entity to be visible on the GMS side. signUp
-	// writes to the frontend, which internally calls ingestProposal; the
-	// entity may not be immediately readable via the OpenAPI endpoint.
+	// Step 4: wait for the entity to be visible. signUp writes aspects via
+	// ingestProposal internally; the entity may not be immediately readable
+	// via the OpenAPI endpoint.
 	var user *datahub.CorpUser
 	for attempt := 0; attempt < 10; attempt++ {
 		user, err = r.client.GetUserByURN(ctx, userURN)
@@ -256,8 +256,7 @@ func (r *localUserLoginResource) Create(ctx context.Context, req resource.Create
 	}
 	if user == nil {
 		resp.Diagnostics.AddError("User not found after sign-up",
-			fmt.Sprintf("The sign-up for %q appeared to succeed (response: %s) but the user entity was not found at %s on read-back after polling. "+
-				"Verify that the frontend_url is correct and that the frontend can write to the same entity store that gms_url reads from.",
+			fmt.Sprintf("The sign-up for %q appeared to succeed (response: %s) but the user entity was not found at %s on read-back after polling.",
 				username, signUpBody, userURN))
 		return
 	}

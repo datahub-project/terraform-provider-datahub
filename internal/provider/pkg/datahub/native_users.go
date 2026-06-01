@@ -112,12 +112,7 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
 	}
-	frontendURL := c.FrontendURL()
-	if frontendURL == "" {
-		return "", errors.New("frontend URL is not configured and could not be derived from the GMS URL")
-	}
-
-	signUpURL := frontendURL + "/signUp"
+	signUpURL := c.baseURL + "/auth/signUp"
 	payload := map[string]string{
 		"userUrn":     in.UserURN,
 		"fullName":    in.FullName,
