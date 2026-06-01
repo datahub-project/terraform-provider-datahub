@@ -2,7 +2,7 @@
 
 This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — and classifies each area by relevance to the Terraform provider. It is the basis for deciding what to build next.
 
-**Current provider state (v0.3.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources).
+**Current provider state (v0.4.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources), `datahub_corp_group` (resource + data source), `datahub_corp_groups` (data source), `datahub_corp_group_member` (resource), `datahub_corp_user` (resource + data source), `datahub_local_user_login` (resource), `datahub_role` / `datahub_roles` (data sources), `datahub_role_assignment` (resource), `datahub_policy` (resource), `datahub_policies` (data source).
 
 ## Scope principles
 
@@ -29,7 +29,7 @@ This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — an
 | 1 | **Ingest** | `connection` | resource | Credentials normalization for ingestion sources. |
 | 2 | **Governance taxonomy** | `domain`, `data_product`, `glossary_node`, `glossary_term`, `tag` (definitions), `ownership_type` | resource + data source | Largest HIGH bucket; pure config; not touched by ingestion. |
 | 3 | **Schema metadata** | `structured_property`, `form` (definitions only) | resource + data source | Definitions are HIGH; *value assignments* to assets are deny-list. |
-| 4 | **RBAC / Access** | `policy`, `corp_group`, `service_account` (Cloud), `oauth_authorization_server` (Cloud) | resource + data source | High leverage for ops teams; some Cloud-only. |
+| 4 | **RBAC / Access** | `policy`, `corp_group`, `corp_group_member`, `role_assignment`, `corp_user`, `local_user_login` shipped (v0.4.0). Remaining: `service_account` (Cloud), `oauth_authorization_server` (Cloud). | resource + data source | High leverage for ops teams; some Cloud-only. |
 | 5 | **Tests** | `metadata_test` | resource + data source | Declarative metadata quality rules. |
 | 6 | **Observe / Assertions** | `data_contract` (Cloud), `assertion_assignment_rule` (Cloud) | resource | Per-asset assertions are MEDIUM-at-best; rules and contracts are the leverage points. |
 | 7 | **Org settings** | `global_settings` (singleton) | resource | Singleton shape; low ceremony, high value. |
@@ -107,24 +107,23 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
-| `createPolicy` / `updatePolicy` / `deletePolicy` + OpenAPI policy entity | M | **HIGH** | no | **New:** `datahub_policy` resource + data source. Covers platform policies (UI feature gating) and metadata policies (per-resource privileges). Heavy aspect-list ownership: privileges, resources, actors. Biggest design effort in the RBAC space. |
-| `createGroup` / `removeGroup` / `updateCorpGroupProperties` + `corpGroup(urn)` | M/Q | **HIGH** | no | **New:** `datahub_corp_group` resource + data source (native groups only — do not manage IdP-synced groups). |
-| `addGroupMembers` / `removeGroupMembers` | M | **HIGH** | no | **New:** `datahub_corp_group_member` resource. HashiCorp idiom: separate resource per binding, not a list on the group. |
+| `createPolicy` / `updatePolicy` / `deletePolicy` + OpenAPI policy entity | M | covered | no | `datahub_policy` resource + `datahub_policies` data source (v0.4.0). PLATFORM and METADATA policy types; deterministic `policy_id`; full-state ownership of privileges/actors/resources lists. |
+| `createGroup` / `removeGroup` / `updateCorpGroupProperties` + `corpGroup(urn)` | M/Q | covered | no | `datahub_corp_group` resource + `datahub_corp_group` / `datahub_corp_groups` data sources (v0.4.0). |
+| `addGroupMembers` / `removeGroupMembers` | M | covered | no | `datahub_corp_group_member` resource (v0.4.0). |
+| `batchAssignRole` + `dataHubRole(urn)` | M | covered | no | `datahub_role_assignment` resource + `datahub_role` / `datahub_roles` data sources (v0.4.0). |
+| `ingestProposal` (corpUserInfo aspects) + `removeUser` | M | covered | no | `datahub_corp_user` resource + data source (v0.4.0). Upsert semantics via OpenAPI v3. |
+| `POST /auth/signUp` + `createNativeUserResetToken` | REST/M | covered | no | `datahub_local_user_login` resource (v0.4.0). Native-auth login provisioning; exposes single-use 24h reset URL. Works on both OSS and Cloud (see design doc for OSS vs Cloud signUp differences). |
 | `createServiceAccount` / `deleteServiceAccount` + `getServiceAccount` | M/Q | **HIGH** | yes | **New:** `datahub_service_account` resource. Write-once secret pattern — `createServiceAccount` returns credentials; provider captures into state as `sensitive`. One-shot: no re-read of credentials after creation. Mirror `datahub_secret` value handling. |
 | `upsertOAuthAuthorizationServer` / `deleteOAuthAuthorizationServer` + `oauthAuthorizationServer(urn)` | M/Q | **HIGH** | yes | **New:** `datahub_oauth_authorization_server` resource. Config for external OAuth IdPs. Cleanest "config" object in the access space. |
 | `updateServiceAccountDefaultView` | M | MEDIUM | yes | Single attribute on `datahub_service_account`. |
 | `createAccessToken` / `revokeAccessToken` + `getAccessToken` | M/Q | MEDIUM | no | Write-once tokens with TTL; rotation = constant churn. Skip unless customers ask. |
-| `corpUser(urn)` | Q | MEDIUM | no | **New (data source only):** `datahub_corp_user` — useful for resolving usernames to URNs for owner/policy inputs. |
 | `service(urn)` / `listServices` | Q | MEDIUM | yes | Cloud-only registered services — data source candidate. |
-| `acceptRole` / `batchAssignRole` | M | LOW | no | Role-to-user assignment; typically governance-managed. |
-| `createInviteToken` / `createNativeUserResetToken` / `sendUserInvitations` / `revokeUserInvitation` | M/Q | IRRELEVANT | no | One-shot invite/reset workflows. |
+| `createInviteToken` / `sendUserInvitations` / `revokeUserInvitation` | M/Q | LOW | varies | Invite workflows; `datahub_local_user_login` handles the native-auth case. `sendUserInvitations` (Cloud-only per-user email invite) is a future follow-up. |
 | `removeUser` / `updateUserStatus` / user-settings family | M | LOW/IRRELEVANT | no | Per-user state and UI prefs. |
 | `resetLinkedIdentities` / `updateLinkedIdentities` | M | LOW | yes | SCIM/SSO identity linking; niche. |
-| `listPolicies` / `listGroups` / `listUsers` / `listServiceAccounts` | Q | LOW | varies | OpenSearch-backed; data-source-only. |
+| `listPolicies` / `listGroups` / `listUsers` / `listServiceAccounts` | Q | covered (partial) | varies | `datahub_policies`, `datahub_corp_groups` bulk-enumerate (v0.4.0). `listUsers` available via `datahub_corp_user` import enumeration. |
 | SCIM REST endpoints | REST | LOW | no | Provisioning usually owned by IdP. |
 | SCIM-Configuration / auth-service-controller | REST | IRRELEVANT | no | Auth bootstrap surfaces. |
-
-**`datahub_policy` note:** `PolicyUpdateInput` covers platform policies (UI gating) and metadata policies (per-resource access control). Lists for privileges, resources, and actors each need full-state ownership (aspect-list ownership rule). This is the highest-leverage RBAC resource.
 
 **`datahub_service_account` note:** credentials returned once at creation; must be captured into state as `sensitive` and never shown in plan output. Import is impossible post-creation without recreating.
 
