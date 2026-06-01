@@ -1,8 +1,15 @@
 # Copy this file to terraform.tfvars and uncomment the variables you want to override.
 # terraform.tfvars is gitignored and will not be committed.
 
-# Username of the DataHub user to add to the team group.
-# Must already exist in DataHub; the provider does not create users.
+# Username of an existing DataHub user to add to the team group.
 # Defaults to "datahub" (the bootstrap admin on an OSS Quickstart).
+#
+# Username format differs by platform:
+#   OSS:   a free-form identifier, e.g. "alice"
+#   Cloud: non-SSO local users always use their email address as their
+#          username, e.g. "alice@example.com"
+#
+# To create a user programmatically, use datahub_corp_user (catalog
+# record only) or datahub_local_user_login (native-auth credentials).
 #
 # member_username = "alice"
