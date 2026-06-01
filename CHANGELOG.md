@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-01
+
 ### Added
 
 - `datahub_corp_group` resource: create and manage native DataHub groups with a deterministic, user-supplied `group_id` (URN suffix). Manages display name, description, email, and Slack handle. Membership is managed separately via `datahub_corp_group_member` so users and bindings compose independently.
@@ -18,8 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `datahub_policies` data source: return the URNs of all policies (including DataHub's default system policies), for bulk import.
 - `datahub_corp_group` data source: look up an existing group by `group_id` and return its URN and properties, for use as a policy actor or owner reference.
 - `datahub_corp_groups` data source: return the URNs of all groups, for bulk import via `for_each` into `import {}` blocks.
-- `datahub_corp_user` data source: resolve a `username` to its URN and catalog metadata (display name, email, title, active, status). This provider does not create users; this data source reads users provisioned via SSO/JIT or the DataHub invite flow.
-- `examples/runnable/local-iam`: runnable example that sets up local-auth users, group membership, a role assignment, and an access policy for a team.
+- `datahub_corp_user` resource: create and manage a DataHub user's catalog profile (`corpUserInfo` aspects) with upsert semantics. Works for new users and pre-existing ones created by SSO/JIT provisioning, metadata ingestion, or `datahub_local_user_login`. Delete hard-deletes the user entity.
+- `datahub_corp_user` data source: resolve a `username` to its URN and catalog metadata (display name, email, title, active, status).
+- `datahub_local_user_login` resource: provision native-auth login credentials for a DataHub user via the signUp flow. When `initial_password` is omitted, generates a random throwaway password and exposes a single-use 24h reset URL (`password_reset_url`) so the user sets their own password -- Terraform never holds a real credential. Works on both OSS DataHub and DataHub Cloud (on Cloud, `username` must be the user's email address). Delete hard-deletes the entire user entity. Requires Terraform CLI 1.11+.
+- `frontend_url` optional provider config: explicit DataHub frontend URL for native user operations. Derived automatically from `gms_url` when not set.
+- `examples/runnable/local-iam`: runnable example demonstrating the full IAM stack -- a login user, a catalog-only service/pipeline account, group membership, a role assignment, and an access policy for a team.
 
 ## [0.3.0] - 2026-05-29
 
@@ -97,7 +102,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/datahub-project/terraform-provider-datahub/releases/tag/v0.1.0
