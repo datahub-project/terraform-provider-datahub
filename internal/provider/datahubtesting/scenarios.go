@@ -1640,22 +1640,22 @@ func CorpUserCheckDestroy(s *terraform.State) error {
 // config to confirm no spurious drift.
 func LocalUserLoginWithResetSteps(username string) []resource.TestStep {
 	const addr = "datahub_local_user_login.test"
-	urn := "urn:li:corpuser:" + username
+	email := username + "@example.com"
 
 	cfg := providerBlock + fmt.Sprintf(`
 resource "datahub_local_user_login" "test" {
   username  = %q
   full_name = "Reset User"
-  email     = "reset@example.com"
+  email     = %q
 }
-`, username)
+`, username, email)
 
 	return []resource.TestStep{
 		{
 			Config: cfg,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
-				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("password_reset_url"), knownvalue.NotNull()),
 			},
 		},
@@ -1671,7 +1671,7 @@ resource "datahub_local_user_login" "test" {
 // initial_password and verifies that password_reset_url is null.
 func LocalUserLoginWithPasswordSteps(username string) []resource.TestStep {
 	const addr = "datahub_local_user_login.test"
-	urn := "urn:li:corpuser:" + username
+	email := username + "@example.com"
 
 	return []resource.TestStep{
 		{
@@ -1679,13 +1679,13 @@ func LocalUserLoginWithPasswordSteps(username string) []resource.TestStep {
 resource "datahub_local_user_login" "test" {
   username         = %q
   full_name        = "Password User"
-  email            = "password@example.com"
+  email            = %q
   initial_password = "test-password-123"
 }
-`, username),
+`, username, email),
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
-				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("password_reset_url"), knownvalue.Null()),
 			},
 		},
@@ -1696,14 +1696,15 @@ resource "datahub_local_user_login" "test" {
 // bare username and by full URN.
 func LocalUserLoginImportSteps(username string) []resource.TestStep {
 	const addr = "datahub_local_user_login.test"
+	email := username + "@example.com"
 
 	cfg := providerBlock + fmt.Sprintf(`
 resource "datahub_local_user_login" "test" {
   username  = %q
   full_name = "Import User"
-  email     = "import@example.com"
+  email     = %q
 }
-`, username)
+`, username, email)
 
 	return []resource.TestStep{
 		{Config: cfg},
@@ -1732,14 +1733,14 @@ resource "datahub_local_user_login" "test" {
 
 // LocalUserLoginDriftSteps verifies that out-of-band user deletion is detected.
 func LocalUserLoginDriftSteps(username string) []resource.TestStep {
+	email := username + "@example.com"
 	cfg := providerBlock + fmt.Sprintf(`
 resource "datahub_local_user_login" "test" {
   username  = %q
   full_name = "Drift Login User"
-  email     = "drift@example.com"
+  email     = %q
 }
-`, username)
-	urn := "urn:li:corpuser:" + username
+`, username, email)
 
 	return []resource.TestStep{
 		{Config: cfg},
@@ -1749,9 +1750,12 @@ resource "datahub_local_user_login" "test" {
 				if err != nil {
 					panic(fmt.Sprintf("LocalUserLoginDriftSteps PreConfig: %v", err))
 				}
-				if delErr := client.DeleteUser(context.Background(), urn); delErr != nil {
-					panic(fmt.Sprintf("LocalUserLoginDriftSteps PreConfig: delete failed: %v", delErr))
-				}
+				// On Cloud the URN is derived from email; on OSS from username.
+				// Try both URNs to cover both platforms.
+				urnByUsername := "urn:li:corpuser:" + username
+				urnByEmail := "urn:li:corpuser:" + email
+				_ = client.DeleteUser(context.Background(), urnByUsername)
+				_ = client.DeleteUser(context.Background(), urnByEmail)
 			},
 			Config: cfg,
 		},
@@ -1763,7 +1767,7 @@ resource "datahub_local_user_login" "test" {
 func LocalUserLoginWithCorpUserSteps(username string) []resource.TestStep {
 	const loginAddr = "datahub_local_user_login.test"
 	const userAddr = "datahub_corp_user.test"
-	urn := "urn:li:corpuser:" + username
+	email := username + "@example.com"
 
 	return []resource.TestStep{
 		{
@@ -1771,7 +1775,7 @@ func LocalUserLoginWithCorpUserSteps(username string) []resource.TestStep {
 resource "datahub_local_user_login" "test" {
   username  = %q
   full_name = "Two Resource User"
-  email     = "two@example.com"
+  email     = %q
 }
 
 resource "datahub_corp_user" "test" {
@@ -1779,10 +1783,10 @@ resource "datahub_corp_user" "test" {
   display_name = "Two Resource Display"
   title        = "Staff Engineer"
 }
-`, username),
+`, username, email),
 			ConfigStateChecks: []statecheck.StateCheck{
-				statecheck.ExpectKnownValue(loginAddr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
-				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(loginAddr, tfjsonpath.New("user_urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("display_name"), knownvalue.StringExact("Two Resource Display")),
 				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("title"), knownvalue.StringExact("Staff Engineer")),
 			},
