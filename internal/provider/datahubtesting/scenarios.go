@@ -1713,10 +1713,12 @@ resource "datahub_local_user_login" "test" {
 			// urn:li:corpuser:<username>; on Cloud it is
 			// urn:li:corpuser:<email> because Cloud derives the URN from
 			// the email field. Bare-username import does not work on Cloud.
+			// username is ignored in verification because on Cloud the entity
+			// stores the email as the username, which differs from the config.
 			ResourceName:            addr,
 			ImportState:             true,
 			ImportStateVerify:       true,
-			ImportStateVerifyIgnore: []string{"password_reset_url", "title"},
+			ImportStateVerifyIgnore: []string{"password_reset_url", "title", "username"},
 			ImportStateIdFunc: func(s *terraform.State) (string, error) {
 				rs, ok := s.RootModule().Resources[addr]
 				if !ok {
@@ -1730,7 +1732,7 @@ resource "datahub_local_user_login" "test" {
 			ResourceName:            addr,
 			ImportState:             true,
 			ImportStateVerify:       true,
-			ImportStateVerifyIgnore: []string{"password_reset_url", "title"},
+			ImportStateVerifyIgnore: []string{"password_reset_url", "title", "username"},
 			ImportStateIdFunc: func(s *terraform.State) (string, error) {
 				rs, ok := s.RootModule().Resources[addr]
 				if !ok {
