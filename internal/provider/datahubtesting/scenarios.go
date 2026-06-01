@@ -1709,13 +1709,24 @@ resource "datahub_local_user_login" "test" {
 	return []resource.TestStep{
 		{Config: cfg},
 		{
+			// Import by the actual user_urn from state. On OSS this is
+			// urn:li:corpuser:<username>; on Cloud it is
+			// urn:li:corpuser:<email> because Cloud derives the URN from
+			// the email field. Bare-username import does not work on Cloud.
 			ResourceName:            addr,
 			ImportState:             true,
-			ImportStateId:           username,
 			ImportStateVerify:       true,
 			ImportStateVerifyIgnore: []string{"password_reset_url", "title"},
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["user_urn"], nil
+			},
 		},
 		{
+			// Second import pass: same URN, confirms idempotent import.
 			ResourceName:            addr,
 			ImportState:             true,
 			ImportStateVerify:       true,
