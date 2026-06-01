@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -233,29 +234,57 @@ func (r *localUserLoginResource) Create(ctx context.Context, req resource.Create
 		tflog.Warn(ctx, "Failed to regenerate invite token after sign-up; the used token remains valid", map[string]any{"error": err.Error()})
 	}
 
-	// Step 4: if no initial_password was provided, generate a reset token.
-	var resetURL string
-	if !passwordWasProvided {
-		resetToken, err := r.client.CreateNativeUserResetToken(ctx, userURN)
+	// Step 4: wait for the entity to be visible on the GMS side. signUp
+	// writes to the frontend, which internally calls ingestProposal; the
+	// entity may not be immediately readable via the OpenAPI endpoint.
+	var user *datahub.CorpUser
+	for attempt := 0; attempt < 10; attempt++ {
+		user, err = r.client.GetUserByURN(ctx, userURN)
 		if err != nil {
-			resp.Diagnostics.AddError("Failed to create password reset token",
-				"The user was created but the password reset token could not be generated. "+
-					"Generate one manually via the DataHub Admin UI. Error: "+err.Error())
+			resp.Diagnostics.AddError("Read-back failed after sign-up", err.Error())
 			return
 		}
-		resetURL = r.client.FrontendURL() + "/resetCredentials?reset_token=" + resetToken
-	}
-
-	// Step 5: read back to confirm.
-	user, err := r.client.GetUserByURN(ctx, userURN)
-	if err != nil {
-		resp.Diagnostics.AddError("Read-back failed after sign-up", err.Error())
-		return
+		if user != nil {
+			break
+		}
+		tflog.Debug(ctx, "User not yet visible after sign-up, retrying", map[string]any{
+			"attempt": attempt + 1,
+			"urn":     userURN,
+		})
+		time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 	}
 	if user == nil {
 		resp.Diagnostics.AddError("User not found after sign-up",
-			fmt.Sprintf("The sign-up for %q appeared to succeed but the user entity was not found on read-back.", username))
+			fmt.Sprintf("The sign-up for %q appeared to succeed but the user entity was not found on read-back after polling.", username))
 		return
+	}
+
+	// Step 5: if no initial_password was provided, generate a reset token.
+	// Retry because createNativeUserResetToken requires corpUserCredentials
+	// to be committed, which may lag signUp by a moment.
+	var resetURL string
+	if !passwordWasProvided {
+		var resetToken string
+		var resetErr error
+		for attempt := 0; attempt < 10; attempt++ {
+			resetToken, resetErr = r.client.CreateNativeUserResetToken(ctx, userURN)
+			if resetErr == nil {
+				break
+			}
+			tflog.Debug(ctx, "Reset token generation not yet ready, retrying", map[string]any{
+				"attempt": attempt + 1,
+				"urn":     userURN,
+				"error":   resetErr.Error(),
+			})
+			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
+		}
+		if resetErr != nil {
+			resp.Diagnostics.AddError("Failed to create password reset token",
+				"The user was created but the password reset token could not be generated after retrying. "+
+					"Generate one manually via the DataHub Admin UI. Error: "+resetErr.Error())
+			return
+		}
+		resetURL = r.client.FrontendURL() + "/resetCredentials?reset_token=" + resetToken
 	}
 
 	plan.ID = types.StringValue(userURN)
