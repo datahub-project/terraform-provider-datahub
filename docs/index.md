@@ -70,5 +70,6 @@ in the repository. Each subdirectory has a README with prerequisites and instruc
 
 ### Optional
 
+- `frontend_url` (String) DataHub frontend URL for native user operations (sign-up, password reset). For example: `https://datahub.example.com:9002`. If not set, the provider reads `DATAHUB_FRONTEND_URL` from the environment, or derives it from `gms_url` by stripping any `/gms` suffix and replacing port 8080 with 9002. Only needed when using `datahub_local_user_login`.
 - `gms_token` (String, Sensitive) DataHub GMS token for authentication. If not set, the provider will read the token from the `DATAHUB_GMS_TOKEN` environment variable, or fall back to the local DataHub CLI configuration at `~/.datahubenv`.
 - `gms_url` (String) DataHub GMS URL. For example: `https://datahub.example.com`. If not set, the provider will read `DATAHUB_GMS_URL` from the environment, or fall back to `gms.server` in `~/.datahubenv`.

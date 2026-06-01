@@ -24,6 +24,7 @@ import (
 // to every request.
 type Client struct {
 	baseURL        string
+	frontendURL    string
 	authHeader     string
 	httpClient     *http.Client
 	cachedIdentity *MeIdentity
@@ -112,6 +113,40 @@ func (c *Client) BaseURL() string {
 		return ""
 	}
 	return c.baseURL
+}
+
+// SetFrontendURL sets the DataHub frontend URL used for native user operations
+// (sign-up, password reset). If not called, FrontendURL falls back to a
+// heuristic derived from the GMS base URL.
+func (c *Client) SetFrontendURL(u string) {
+	if c != nil {
+		c.frontendURL = strings.TrimRight(strings.TrimSpace(u), "/")
+	}
+}
+
+// FrontendURL returns the DataHub frontend URL. If an explicit value was set
+// via SetFrontendURL, it is returned. Otherwise the URL is derived from the
+// GMS base URL using the same heuristic as the DataHub Python SDK.
+func (c *Client) FrontendURL() string {
+	if c == nil {
+		return ""
+	}
+	if c.frontendURL != "" {
+		return c.frontendURL
+	}
+	return GuessFrontendURL(c.baseURL)
+}
+
+// GuessFrontendURL derives the DataHub frontend URL from a GMS base URL using
+// the same heuristic as the Python SDK's guess_frontend_url_from_gms_url:
+// strip any /gms suffix, then replace port 8080 with 9002.
+func GuessFrontendURL(gmsURL string) string {
+	u := strings.TrimRight(gmsURL, "/")
+	u = strings.TrimSuffix(u, "/gms")
+	if strings.HasSuffix(u, ":8080") {
+		u = u[:len(u)-5] + ":9002"
+	}
+	return u
 }
 
 // HTTPClient exposes the underlying http.Client (primarily for tests).

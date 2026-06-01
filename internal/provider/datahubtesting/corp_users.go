@@ -5,6 +5,7 @@ package datahubtesting
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -16,6 +17,7 @@ import (
 type mockUser struct {
 	URN          string
 	Username     string
+	FullName     string
 	DisplayName  string
 	Email        string
 	Title        string
@@ -72,6 +74,7 @@ func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) 
 		},
 		"corpUserInfo": map[string]any{
 			"value": map[string]any{
+				"fullName":    u.FullName,
 				"displayName": u.DisplayName,
 				"email":       u.Email,
 				"title":       u.Title,
@@ -97,4 +100,110 @@ func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
+}
+
+// handleCorpUserCollection serves POST /openapi/v3/entity/corpuser for upsert.
+func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	var entities []struct {
+		URN     string `json:"urn"`
+		KeyData *struct {
+			Value struct {
+				Username string `json:"username"`
+			} `json:"value"`
+		} `json:"corpUserKey"`
+		Info *struct {
+			Value struct {
+				FullName    string `json:"fullName"`
+				DisplayName string `json:"displayName"`
+				Email       string `json:"email"`
+				Title       string `json:"title"`
+				Active      bool   `json:"active"`
+			} `json:"value"`
+		} `json:"corpUserInfo"`
+	}
+	if err := json.Unmarshal(body, &entities); err != nil {
+		http.Error(w, "bad request body", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, e := range entities {
+		username := ""
+		if e.KeyData != nil {
+			username = e.KeyData.Value.Username
+		}
+		if username == "" {
+			username = strings.TrimPrefix(e.URN, "urn:li:corpuser:")
+		}
+
+		existing, exists := s.users[username]
+		u := mockUser{
+			URN:      e.URN,
+			Username: username,
+			Active:   true,
+		}
+		if exists {
+			u.NativeGroups = existing.NativeGroups
+			u.RoleURN = existing.RoleURN
+			u.Status = existing.Status
+		}
+		if e.Info != nil {
+			u.FullName = e.Info.Value.FullName
+			u.DisplayName = e.Info.Value.DisplayName
+			u.Email = e.Info.Value.Email
+			u.Title = e.Info.Value.Title
+			u.Active = e.Info.Value.Active
+		}
+		s.users[username] = u
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("[]"))
+}
+
+// handleRemoveUser handles the removeUser GraphQL mutation.
+func (s *mockServer) handleRemoveUser(w http.ResponseWriter, vars map[string]any) {
+	urn, _ := vars["urn"].(string)
+	username := strings.TrimPrefix(urn, "urn:li:corpuser:")
+
+	s.mu.Lock()
+	delete(s.users, username)
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"removeUser": true},
+	})
+}
+
+// handleListUsers handles the listUsers GraphQL query.
+func (s *mockServer) handleListUsers(w http.ResponseWriter) {
+	s.mu.Lock()
+	users := make([]map[string]any, 0, len(s.users))
+	for _, u := range s.users {
+		users = append(users, map[string]any{"urn": u.URN})
+	}
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"listUsers": map[string]any{
+				"total": len(users),
+				"users": users,
+			},
+		},
+	})
 }
