@@ -50,9 +50,7 @@ jobs:
           set -euo pipefail
           if gh release view "${GITHUB_REF_NAME}" --json id >/dev/null 2>&1; then
             echo "ERROR: GitHub release ${GITHUB_REF_NAME} already exists." >&2
-            echo "GoReleaser updates assets on an existing release but does not" >&2
-            echo "update the release body, which will cause the final verify step" >&2
-            echo "to fail. Delete the release first, then delete and re-push the tag:" >&2
+            echo "Delete the release and re-push the tag to retry:" >&2
             echo "  gh release delete ${GITHUB_REF_NAME} --yes" >&2
             echo "  git tag -d ${GITHUB_REF_NAME}" >&2
             echo "  git push origin --delete ${GITHUB_REF_NAME}" >&2
@@ -68,14 +66,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
         with:
-          args: release --clean --release-notes=.release-notes.md
-      - name: Verify release body
+          args: release --clean
+      - name: Set release body
+        # GoReleaser's --release-notes flag does not reliably apply the body
+        # through its draft->publish two-step (confirmed v0.4.0). Set the body
+        # explicitly after publishing so the behaviour is independent of
+        # GoReleaser internals.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          gh release edit "${GITHUB_REF_NAME}" --notes-file .release-notes.md
           BODY=$(gh release view "${GITHUB_REF_NAME}" --json body --jq .body)
           if [ -z "$BODY" ]; then
-            echo "ERROR: published release body for ${GITHUB_REF_NAME} is empty" >&2
+            echo "ERROR: release body for ${GITHUB_REF_NAME} is still empty after set" >&2
             exit 1
           fi
