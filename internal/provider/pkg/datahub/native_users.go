@@ -152,54 +152,40 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
 	}
-	// OSS GMS payload: includes userUrn and title (the GMS controller
-	// uses these directly).
-	ossPayload := map[string]any{
+	// Unified payload used for both OSS (/auth/signUp) and Cloud (/signUp).
+	// The Python SDK uses this same shape with Bearer token auth on both
+	// platforms. Cloud derives the URN from the email field; on Cloud, the
+	// username must equal the email address.
+	payload := map[string]any{
 		"fullName":    in.FullName,
 		"email":       in.Email,
 		"password":    in.Password,
 		"inviteToken": in.InviteToken,
 	}
 	if in.UserURN != "" {
-		ossPayload["userUrn"] = in.UserURN
+		payload["userUrn"] = in.UserURN
 	}
 	if in.Title != "" {
-		ossPayload["title"] = in.Title
-	}
-
-	// Cloud frontend payload: only the fields the Play controller expects.
-	// userUrn and title are not recognized and cause deserialization errors.
-	// The URN is derived from email on Cloud.
-	cloudPayload := map[string]any{
-		"fullName":          in.FullName,
-		"email":             in.Email,
-		"password":          in.Password,
-		"inviteToken":       in.InviteToken,
-		"getDataHubUpdates": false,
+		payload["title"] = in.Title
 	}
 
 	type signUpPath struct {
-		url      string
-		sendAuth bool
-		payload  map[string]any
+		url string
 	}
 	paths := []signUpPath{
-		{c.baseURL + "/auth/signUp", true, ossPayload},
-		{c.baseURL + "/signUp", false, cloudPayload},
+		{c.baseURL + "/auth/signUp"},
+		{c.baseURL + "/signUp"},
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshaling signUp payload: %w", err)
 	}
 
 	var bodyStr string
 	var lastErr error
 	for _, p := range paths {
-		payloadBytes, err := json.Marshal(p.payload)
-		if err != nil {
-			return "", fmt.Errorf("marshaling signUp payload: %w", err)
-		}
-		authHeader := ""
-		if p.sendAuth {
-			authHeader = c.authHeader
-		}
-		bodyStr, lastErr = c.doSignUp(ctx, p.url, payloadBytes, authHeader)
+		bodyStr, lastErr = c.doSignUp(ctx, p.url, payloadBytes, c.authHeader)
 		if lastErr == nil {
 			return bodyStr, nil
 		}
