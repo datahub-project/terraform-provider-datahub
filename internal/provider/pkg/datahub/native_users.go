@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // SignUpInput carries the fields for the POST /signUp endpoint.
@@ -136,15 +138,45 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
 	req.Header.Set("Authorization", c.authHeader)
 	req.Header.Set("Content-Type", "application/json")
 
-	res, err := c.httpClient.Do(req)
+	tflog.Debug(ctx, "DataHub signUp request", map[string]any{
+		"url":     signUpURL,
+		"userUrn": in.UserURN,
+	})
+
+	// Use a client that does not follow redirects. The frontend may redirect
+	// unauthenticated/misconfigured requests to the login page, and a
+	// followed redirect returning 200 HTML would silently mask a failure.
+	noRedirectClient := &http.Client{
+		Timeout:   c.httpClient.Timeout,
+		Transport: c.httpClient.Transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	res, err := noRedirectClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("signUp request failed: %w", err)
+		return fmt.Errorf("signUp request to %s failed: %w", signUpURL, err)
 	}
 	defer res.Body.Close()
 
+	respBody, _ := io.ReadAll(res.Body)
+	bodyStr := strings.TrimSpace(string(respBody))
+
+	tflog.Debug(ctx, "DataHub signUp response", map[string]any{
+		"status":       res.StatusCode,
+		"content_type": res.Header.Get("Content-Type"),
+		"body_len":     len(bodyStr),
+	})
+
+	if res.StatusCode >= 300 && res.StatusCode < 400 {
+		return fmt.Errorf("signUp endpoint at %s returned redirect (HTTP %d) to %s; "+
+			"this usually means the frontend_url is wrong or the frontend's auth middleware "+
+			"is rejecting the request. Set the frontend_url provider attribute or "+
+			"DATAHUB_FRONTEND_URL environment variable explicitly",
+			signUpURL, res.StatusCode, res.Header.Get("Location"))
+	}
+
 	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		bodyStr := strings.TrimSpace(string(respBody))
 		if strings.Contains(bodyStr, "already exists") {
 			return fmt.Errorf("signUp rejected: this user entity already exists. " +
 				"On OSS DataHub, native credentials can only be added to a brand-new user. " +
@@ -152,7 +184,16 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
 				"Workaround: create the datahub_local_user_login resource first, then add " +
 				"datahub_corp_user referencing it via the username attribute")
 		}
-		return fmt.Errorf("unexpected HTTP %d from signUp endpoint: %s", res.StatusCode, bodyStr)
+		return fmt.Errorf("unexpected HTTP %d from signUp endpoint at %s: %s", res.StatusCode, signUpURL, bodyStr)
+	}
+
+	ct := res.Header.Get("Content-Type")
+	if strings.Contains(ct, "text/html") {
+		return fmt.Errorf("signUp endpoint at %s returned HTML instead of JSON (HTTP %d); "+
+			"this usually means the frontend_url is wrong (pointing at a static page rather "+
+			"than the DataHub frontend API). Set the frontend_url provider attribute or "+
+			"DATAHUB_FRONTEND_URL environment variable explicitly",
+			signUpURL, res.StatusCode)
 	}
 
 	return nil
