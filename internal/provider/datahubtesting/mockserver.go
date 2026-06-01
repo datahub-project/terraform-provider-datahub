@@ -78,6 +78,7 @@ type mockServer struct {
 	defaultPoolID    string
 	inviteToken      string
 	resetTokens      map[string]string
+	ossSignUpMode    bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -117,6 +118,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
+	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -598,6 +600,28 @@ func (s *mockServer) handleForceDeleteFail(w http.ResponseWriter, r *http.Reques
 	}
 	s.mu.Lock()
 	s.failDeleteFor[sourceID] = struct{}{}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleOSSSignUpMode toggles the mock's signUp guard between OSS behavior
+// (reject any pre-existing entity) and Cloud behavior (reject only if
+// credentials already exist). Default is Cloud. Called from test PreConfig:
+//
+//	POST /test-control/oss-signup-mode   (enables OSS mode)
+//	DELETE /test-control/oss-signup-mode  (reverts to Cloud mode)
+func (s *mockServer) handleOSSSignUpMode(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	switch r.Method {
+	case http.MethodPost:
+		s.ossSignUpMode = true
+	case http.MethodDelete:
+		s.ossSignUpMode = false
+	default:
+		s.mu.Unlock()
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

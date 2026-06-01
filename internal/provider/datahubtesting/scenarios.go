@@ -1635,26 +1635,34 @@ func CorpUserCheckDestroy(s *terraform.State) error {
 // datahub_local_user_login resource scenarios
 // ---------------------------------------------------------------------------
 
-// LocalUserLoginWithResetSteps creates a user without initial_password and
-// verifies that password_reset_url is populated.
+// LocalUserLoginWithResetSteps creates a user without initial_password,
+// verifies that password_reset_url is populated, and re-applies the same
+// config to confirm no spurious drift.
 func LocalUserLoginWithResetSteps(username string) []resource.TestStep {
 	const addr = "datahub_local_user_login.test"
 	urn := "urn:li:corpuser:" + username
 
-	return []resource.TestStep{
-		{
-			Config: providerBlock + fmt.Sprintf(`
+	cfg := providerBlock + fmt.Sprintf(`
 resource "datahub_local_user_login" "test" {
   username  = %q
   full_name = "Reset User"
   email     = "reset@example.com"
 }
-`, username),
+`, username)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("password_reset_url"), knownvalue.NotNull()),
 			},
+		},
+		{
+			Config:             cfg,
+			PlanOnly:           true,
+			ExpectNonEmptyPlan: false,
 		},
 	}
 }
@@ -1684,27 +1692,226 @@ resource "datahub_local_user_login" "test" {
 	}
 }
 
-// LocalUserLoginAlreadyExistsSteps pre-creates a user via the corp_user
-// resource then attempts to create a local_user_login for the same username,
-// expecting the OSS-style "already exists" error from the mock.
-func LocalUserLoginAlreadyExistsSteps(username string) []resource.TestStep {
+// LocalUserLoginImportSteps creates a user via signUp then imports it by
+// bare username and by full URN.
+func LocalUserLoginImportSteps(username string) []resource.TestStep {
+	const addr = "datahub_local_user_login.test"
+
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_local_user_login" "test" {
+  username  = %q
+  full_name = "Import User"
+  email     = "import@example.com"
+}
+`, username)
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateId:           username,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"password_reset_url", "title"},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"password_reset_url", "title"},
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["user_urn"], nil
+			},
+		},
+	}
+}
+
+// LocalUserLoginDriftSteps verifies that out-of-band user deletion is detected.
+func LocalUserLoginDriftSteps(username string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_local_user_login" "test" {
+  username  = %q
+  full_name = "Drift Login User"
+  email     = "drift@example.com"
+}
+`, username)
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("LocalUserLoginDriftSteps PreConfig: %v", err))
+				}
+				if delErr := client.DeleteUser(context.Background(), urn); delErr != nil {
+					panic(fmt.Sprintf("LocalUserLoginDriftSteps PreConfig: delete failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+		},
+	}
+}
+
+// LocalUserLoginWithCorpUserSteps tests the two-resource happy path: login
+// first (creates entity + credentials), then corp_user upserts profile on top.
+func LocalUserLoginWithCorpUserSteps(username string) []resource.TestStep {
+	const loginAddr = "datahub_local_user_login.test"
+	const userAddr = "datahub_corp_user.test"
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_local_user_login" "test" {
+  username  = %q
+  full_name = "Two Resource User"
+  email     = "two@example.com"
+}
+
+resource "datahub_corp_user" "test" {
+  username     = datahub_local_user_login.test.username
+  display_name = "Two Resource Display"
+  title        = "Staff Engineer"
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(loginAddr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("display_name"), knownvalue.StringExact("Two Resource Display")),
+				statecheck.ExpectKnownValue(userAddr, tfjsonpath.New("title"), knownvalue.StringExact("Staff Engineer")),
+			},
+		},
+	}
+}
+
+// LocalUserLoginCloudUpgradeSteps tests the Cloud upgrade path: create a
+// catalog-only user first (no credentials), then add credentials via
+// local_user_login. This succeeds on Cloud (default mock behavior) because the
+// signUp guard only rejects users that already have credentials.
+func LocalUserLoginCloudUpgradeSteps(username string) []resource.TestStep {
+	const addr = "datahub_local_user_login.test"
+	urn := "urn:li:corpuser:" + username
+
 	return []resource.TestStep{
 		{
 			Config: providerBlock + fmt.Sprintf(`
 resource "datahub_corp_user" "seed" {
   username     = %q
-  display_name = "Seed User"
+  display_name = "Cloud Upgrade User"
+  full_name    = "Cloud Upgrade User"
+  email        = "cloud-upgrade@example.com"
+  title        = "Other"
+}
+`, username),
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "seed" {
+  username     = %q
+  display_name = "Cloud Upgrade User"
+  full_name    = "Cloud Upgrade User"
+  email        = "cloud-upgrade@example.com"
+  title        = "Other"
 }
 
 resource "datahub_local_user_login" "test" {
-  username  = datahub_corp_user.seed.username
-  full_name = "Seed User"
-  email     = "seed@example.com"
+  username  = %q
+  full_name = "Cloud Upgrade User"
+  email     = "cloud-upgrade@example.com"
+}
+`, username, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("password_reset_url"), knownvalue.NotNull()),
+			},
+		},
+	}
+}
+
+// LocalUserLoginOSSRejectsExistingSteps enables OSS signUp mode on the mock,
+// creates a catalog-only user, then verifies that signUp is rejected because
+// the entity already exists (regardless of credentials).
+func LocalUserLoginOSSRejectsExistingSteps(username string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			PreConfig: func() {
+				setOSSSignUpMode(true)
+			},
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "seed" {
+  username     = %q
+  display_name = "OSS Reject User"
+}
+`, username),
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "seed" {
+  username     = %q
+  display_name = "OSS Reject User"
+}
+
+resource "datahub_local_user_login" "test" {
+  username  = %q
+  full_name = "OSS Reject User"
+  email     = "oss-reject@example.com"
+}
+`, username, username),
+			ExpectError: regexp.MustCompile(`(?i)already exists`),
+		},
+	}
+}
+
+// LocalUserLoginAlreadyHasCredentialsSteps creates a user via signUp (giving
+// them credentials), then attempts a second signUp for the same username.
+// Fails on both OSS and Cloud because the user already has credentials.
+func LocalUserLoginAlreadyHasCredentialsSteps(username string) []resource.TestStep {
+	cfg1 := providerBlock + fmt.Sprintf(`
+resource "datahub_local_user_login" "first" {
+  username  = %q
+  full_name = "Creds User"
+  email     = "creds@example.com"
+}
+`, username)
+
+	return []resource.TestStep{
+		{Config: cfg1},
+		{
+			Config: cfg1 + fmt.Sprintf(`
+resource "datahub_local_user_login" "second" {
+  username  = %q
+  full_name = "Creds User Again"
+  email     = "creds-again@example.com"
 }
 `, username),
 			ExpectError: regexp.MustCompile(`(?i)already exists`),
 		},
 	}
+}
+
+// setOSSSignUpMode calls the mock's test-control endpoint to toggle OSS signUp
+// behavior.
+func setOSSSignUpMode(enable bool) {
+	gmsURL := os.Getenv("DATAHUB_GMS_URL")
+	method := http.MethodPost
+	if !enable {
+		method = http.MethodDelete
+	}
+	req, err := http.NewRequestWithContext(context.Background(), method, gmsURL+"/test-control/oss-signup-mode", nil)
+	if err != nil {
+		panic(fmt.Sprintf("setOSSSignUpMode: %v", err))
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(fmt.Sprintf("setOSSSignUpMode: %v", err))
+	}
+	resp.Body.Close()
 }
 
 // LocalUserLoginCheckDestroy verifies that all datahub_local_user_login

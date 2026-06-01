@@ -15,16 +15,17 @@ import (
 // RoleURN reflects the single roleMembership entry (maintained by role
 // assignment mutations).
 type mockUser struct {
-	URN          string
-	Username     string
-	FullName     string
-	DisplayName  string
-	Email        string
-	Title        string
-	Active       bool
-	Status       string
-	NativeGroups []string
-	RoleURN      string
+	URN            string
+	Username       string
+	FullName       string
+	DisplayName    string
+	Email          string
+	Title          string
+	Active         bool
+	Status         string
+	HasCredentials bool
+	NativeGroups   []string
+	RoleURN        string
 }
 
 // seedUsers pre-populates a couple of users so corp_user lookups, group
@@ -244,21 +245,30 @@ func (s *mockServer) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, exists := s.users[username]; exists {
-		http.Error(w, "This user already exists! Cannot create a new user.", http.StatusBadRequest)
-		return
+	existing, exists := s.users[username]
+	if exists {
+		if s.ossSignUpMode || existing.HasCredentials {
+			http.Error(w, "This user already exists! Cannot create a new user.", http.StatusBadRequest)
+			return
+		}
 	}
 
-	s.users[username] = mockUser{
-		URN:         payload.UserURN,
-		Username:    username,
-		FullName:    payload.FullName,
-		DisplayName: payload.FullName,
-		Email:       payload.Email,
-		Title:       payload.Title,
-		Active:      true,
-		Status:      "ACTIVE",
+	u := mockUser{
+		URN:            payload.UserURN,
+		Username:       username,
+		FullName:       payload.FullName,
+		DisplayName:    payload.FullName,
+		Email:          payload.Email,
+		Title:          payload.Title,
+		Active:         true,
+		Status:         "ACTIVE",
+		HasCredentials: true,
 	}
+	if exists {
+		u.NativeGroups = existing.NativeGroups
+		u.RoleURN = existing.RoleURN
+	}
+	s.users[username] = u
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
