@@ -4,7 +4,7 @@ Sets up end-to-end DataHub IAM for a team, covering user provisioning, group man
 
 - a native group (`datahub_corp_group`) representing the team,
 - a new **login user** (`datahub_local_user_login`) provisioned with native credentials and added to the group,
-- a **service account** (`datahub_corp_user`) with a catalog record only (no login credentials) and added to the group,
+- a **catalog-only user** (`datahub_corp_user`) representing a pipeline bot or ingestion-discovered owner -- the same kind of entity DataHub creates when a source like dbt or BigQuery finds a dataset owner. Appears in the Users UI as inactive (no credentials, by design), and added to the group,
 - a lookup of an existing user (`datahub_corp_user` data source) also added to the group,
 - a role assignment (`datahub_role_assignment`) granting the group the built-in `Editor` role, and
 - an access policy (`datahub_policy`) granting the group specific platform privileges.

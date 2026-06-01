@@ -52,10 +52,12 @@ resource "datahub_local_user_login" "team_member" {
   email     = var.new_member_email
 }
 
-# Create a service/automation account as a catalog-only entity. Pipeline bots
-# and ingestion users often need to own metadata in DataHub without ever
-# logging in via a browser. datahub_corp_user writes the profile aspects only;
-# no credentials are set.
+# Create a catalog-only user entity representing a pipeline bot or service
+# account. This mirrors what DataHub metadata ingestion produces when a
+# source (e.g. dbt, BigQuery) discovers a user as a dataset owner: a corpUser
+# entity with profile data but no login credentials. The entity appears in the
+# DataHub Users UI as inactive -- expected, since it has no login credentials.
+# datahub_corp_user writes the profile aspects only; no credentials are set.
 resource "datahub_corp_user" "pipeline_bot" {
   username     = "tf-example-pipeline-bot"
   display_name = "TF Example - Pipeline Bot"
