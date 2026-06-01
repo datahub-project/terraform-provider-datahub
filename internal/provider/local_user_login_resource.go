@@ -217,14 +217,15 @@ func (r *localUserLoginResource) Create(ctx context.Context, req resource.Create
 	if title == "" {
 		title = "Other"
 	}
-	if err := r.client.SignUp(ctx, datahub.SignUpInput{
+	signUpBody, err := r.client.SignUp(ctx, datahub.SignUpInput{
 		UserURN:     userURN,
 		FullName:    plan.FullName.ValueString(),
 		Email:       plan.Email.ValueString(),
 		Password:    password,
 		Title:       title,
 		InviteToken: inviteToken,
-	}); err != nil {
+	})
+	if err != nil {
 		resp.Diagnostics.AddError("Sign-up failed", err.Error())
 		return
 	}
@@ -255,7 +256,9 @@ func (r *localUserLoginResource) Create(ctx context.Context, req resource.Create
 	}
 	if user == nil {
 		resp.Diagnostics.AddError("User not found after sign-up",
-			fmt.Sprintf("The sign-up for %q appeared to succeed but the user entity was not found on read-back after polling.", username))
+			fmt.Sprintf("The sign-up for %q appeared to succeed (response: %s) but the user entity was not found at %s on read-back after polling. "+
+				"Verify that the frontend_url is correct and that the frontend can write to the same entity store that gms_url reads from.",
+				username, signUpBody, userURN))
 		return
 	}
 

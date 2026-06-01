@@ -105,15 +105,16 @@ func (c *Client) CreateInviteToken(ctx context.Context) (string, error) {
 // SignUp calls the DataHub frontend /signUp endpoint to create a native login
 // user. The endpoint is on the frontend URL, not the GMS URL.
 //
-// Returns an error containing "already exists" if the user entity exists and
-// already has credentials (Cloud) or if the entity exists at all (OSS).
-func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
+// Returns the HTTP response body (for diagnostics) and an error. The error
+// contains "already exists" if the user entity exists and already has
+// credentials (Cloud) or if the entity exists at all (OSS).
+func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	if c == nil {
-		return errors.New("client is nil")
+		return "", errors.New("client is nil")
 	}
 	frontendURL := c.FrontendURL()
 	if frontendURL == "" {
-		return errors.New("frontend URL is not configured and could not be derived from the GMS URL")
+		return "", errors.New("frontend URL is not configured and could not be derived from the GMS URL")
 	}
 
 	signUpURL := frontendURL + "/signUp"
@@ -128,12 +129,12 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshaling signUp payload: %w", err)
+		return "", fmt.Errorf("marshaling signUp payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, signUpURL, strings.NewReader(string(payloadBytes)))
 	if err != nil {
-		return fmt.Errorf("building signUp request: %w", err)
+		return "", fmt.Errorf("building signUp request: %w", err)
 	}
 	req.Header.Set("Authorization", c.authHeader)
 	req.Header.Set("Content-Type", "application/json")
@@ -155,7 +156,7 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
 	}
 	res, err := noRedirectClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("signUp request to %s failed: %w", signUpURL, err)
+		return "", fmt.Errorf("signUp request to %s failed: %w", signUpURL, err)
 	}
 	defer res.Body.Close()
 
@@ -169,7 +170,7 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
 	})
 
 	if res.StatusCode >= 300 && res.StatusCode < 400 {
-		return fmt.Errorf("signUp endpoint at %s returned redirect (HTTP %d) to %s; "+
+		return bodyStr, fmt.Errorf("signUp endpoint at %s returned redirect (HTTP %d) to %s; "+
 			"this usually means the frontend_url is wrong or the frontend's auth middleware "+
 			"is rejecting the request. Set the frontend_url provider attribute or "+
 			"DATAHUB_FRONTEND_URL environment variable explicitly",
@@ -178,25 +179,25 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) error {
 
 	if res.StatusCode >= http.StatusBadRequest {
 		if strings.Contains(bodyStr, "already exists") {
-			return fmt.Errorf("signUp rejected: this user entity already exists. " +
+			return bodyStr, fmt.Errorf("signUp rejected: this user entity already exists. " +
 				"On OSS DataHub, native credentials can only be added to a brand-new user. " +
 				"On DataHub Cloud, this operation succeeds for users without existing credentials. " +
 				"Workaround: create the datahub_local_user_login resource first, then add " +
 				"datahub_corp_user referencing it via the username attribute")
 		}
-		return fmt.Errorf("unexpected HTTP %d from signUp endpoint at %s: %s", res.StatusCode, signUpURL, bodyStr)
+		return bodyStr, fmt.Errorf("unexpected HTTP %d from signUp endpoint at %s: %s", res.StatusCode, signUpURL, bodyStr)
 	}
 
 	ct := res.Header.Get("Content-Type")
 	if strings.Contains(ct, "text/html") {
-		return fmt.Errorf("signUp endpoint at %s returned HTML instead of JSON (HTTP %d); "+
+		return bodyStr, fmt.Errorf("signUp endpoint at %s returned HTML instead of JSON (HTTP %d); "+
 			"this usually means the frontend_url is wrong (pointing at a static page rather "+
 			"than the DataHub frontend API). Set the frontend_url provider attribute or "+
 			"DATAHUB_FRONTEND_URL environment variable explicitly",
 			signUpURL, res.StatusCode)
 	}
 
-	return nil
+	return bodyStr, nil
 }
 
 // CreateNativeUserResetToken generates a per-user password reset token via
