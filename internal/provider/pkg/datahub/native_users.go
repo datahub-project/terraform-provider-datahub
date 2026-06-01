@@ -31,8 +31,15 @@ func (c *Client) GetInviteToken(ctx context.Context) (string, error) {
 		return "", errors.New("client is nil")
 	}
 
-	const q = `{ getInviteToken { inviteToken } }`
-	body := map[string]any{"query": q}
+	const q = `query getInviteToken($input: GetInviteTokenInput!) {
+  getInviteToken(input: $input) { inviteToken }
+}`
+	body := map[string]any{
+		"query": q,
+		"variables": map[string]any{
+			"input": map[string]any{},
+		},
+	}
 
 	var gqlResp struct {
 		Data struct {
@@ -64,8 +71,15 @@ func (c *Client) CreateInviteToken(ctx context.Context) (string, error) {
 		return "", errors.New("client is nil")
 	}
 
-	const q = `mutation { createInviteToken { inviteToken } }`
-	body := map[string]any{"query": q}
+	const q = `mutation createInviteToken($input: CreateInviteTokenInput!) {
+  createInviteToken(input: $input) { inviteToken }
+}`
+	body := map[string]any{
+		"query": q,
+		"variables": map[string]any{
+			"input": map[string]any{},
+		},
+	}
 
 	var gqlResp struct {
 		Data struct {
