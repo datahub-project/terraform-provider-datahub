@@ -102,8 +102,22 @@ func (c *Client) CreateInviteToken(ctx context.Context) (string, error) {
 	return gqlResp.Data.CreateInviteToken.InviteToken, nil
 }
 
-// SignUp calls the DataHub frontend /signUp endpoint to create a native login
-// user. The endpoint is on the frontend URL, not the GMS URL.
+// SignUp creates a native login user via the DataHub signUp endpoint.
+//
+// The signUp endpoint differs significantly between OSS and Cloud:
+//
+//   - OSS: POST <gms_url>/auth/signUp (Spring MVC on metadata-service).
+//     Accepts Bearer token auth (but doesn't enforce it). Uses userUrn from
+//     the request body to set the corpUser URN.
+//
+//   - Cloud: POST <base_url>/signUp (Play Framework on the frontend proxy;
+//     /auth/signUp returns 404). MUST NOT send an Authorization header (the
+//     Play auth middleware rejects it with 500). The invite token is the sole
+//     auth. Ignores userUrn and derives the URN from the email field; on
+//     Cloud, non-SSO usernames are always the email address.
+//
+// The provider tries /auth/signUp first (OSS), falls back to /signUp on 404
+// (Cloud). The /signUp path omits the Authorization header.
 //
 // Returns the HTTP response body (for diagnostics) and an error. The error
 // contains "already exists" if the user entity exists and already has
@@ -112,13 +126,17 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
 	}
-	payload := map[string]string{
-		"userUrn":     in.UserURN,
+	payload := map[string]any{
 		"fullName":    in.FullName,
 		"email":       in.Email,
 		"password":    in.Password,
-		"title":       in.Title,
 		"inviteToken": in.InviteToken,
+	}
+	if in.UserURN != "" {
+		payload["userUrn"] = in.UserURN
+	}
+	if in.Title != "" {
+		payload["title"] = in.Title
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -126,18 +144,24 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 		return "", fmt.Errorf("marshaling signUp payload: %w", err)
 	}
 
-	// The signUp endpoint lives at /auth/signUp on the GMS (OSS Quickstart)
-	// but at /signUp on the Cloud frontend proxy. Try the GMS path first;
-	// if it 404s, fall back to the frontend path.
-	signUpPaths := []string{
-		c.baseURL + "/auth/signUp",
-		c.baseURL + "/signUp",
+	// Try /auth/signUp (OSS GMS path) first. If 404, fall back to /signUp
+	// (Cloud frontend path, no auth header).
+	signUpPaths := []struct {
+		url      string
+		sendAuth bool
+	}{
+		{c.baseURL + "/auth/signUp", true},
+		{c.baseURL + "/signUp", false},
 	}
 
 	var bodyStr string
 	var lastErr error
-	for _, signUpURL := range signUpPaths {
-		bodyStr, lastErr = c.doSignUp(ctx, signUpURL, payloadBytes)
+	for _, p := range signUpPaths {
+		authHeader := ""
+		if p.sendAuth {
+			authHeader = c.authHeader
+		}
+		bodyStr, lastErr = c.doSignUp(ctx, p.url, payloadBytes, authHeader)
 		if lastErr == nil {
 			return bodyStr, nil
 		}
@@ -145,18 +169,20 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 			return bodyStr, lastErr
 		}
 		tflog.Debug(ctx, "signUp path returned 404, trying next", map[string]any{
-			"url": signUpURL,
+			"url": p.url,
 		})
 	}
 	return bodyStr, lastErr
 }
 
-func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []byte) (string, error) {
+func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []byte, authHeader string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, signUpURL, strings.NewReader(string(payloadBytes)))
 	if err != nil {
 		return "", fmt.Errorf("building signUp request: %w", err)
 	}
-	req.Header.Set("Authorization", c.authHeader)
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	tflog.Debug(ctx, "DataHub signUp request", map[string]any{

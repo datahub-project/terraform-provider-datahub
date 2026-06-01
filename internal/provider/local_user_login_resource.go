@@ -105,7 +105,12 @@ func (r *localUserLoginResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"```\n\n" +
 			"On OSS DataHub, the login resource **must** be created before `datahub_corp_user` " +
 			"(the sign-up endpoint rejects pre-existing entities). On DataHub Cloud, either order " +
-			"works. The reference pattern above is safe on both.",
+			"works. The reference pattern above is safe on both.\n\n" +
+			"## DataHub Cloud: username must be the email address\n\n" +
+			"On DataHub Cloud, the sign-up endpoint ignores the `username` field and derives " +
+			"the user URN from the `email` field. Non-SSO local users on Cloud always have " +
+			"their email address as their username (e.g. `urn:li:corpuser:alice@example.com`). " +
+			"Set `username` to the same value as `email` when targeting Cloud.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
