@@ -126,37 +126,49 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
 	}
-	payload := map[string]any{
+	// OSS GMS payload: includes userUrn and title (the GMS controller
+	// uses these directly).
+	ossPayload := map[string]any{
 		"fullName":    in.FullName,
 		"email":       in.Email,
 		"password":    in.Password,
 		"inviteToken": in.InviteToken,
 	}
 	if in.UserURN != "" {
-		payload["userUrn"] = in.UserURN
+		ossPayload["userUrn"] = in.UserURN
 	}
 	if in.Title != "" {
-		payload["title"] = in.Title
+		ossPayload["title"] = in.Title
 	}
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshaling signUp payload: %w", err)
+	// Cloud frontend payload: only the fields the Play controller expects.
+	// userUrn and title are not recognized and cause deserialization errors.
+	// The URN is derived from email on Cloud.
+	cloudPayload := map[string]any{
+		"fullName":          in.FullName,
+		"email":             in.Email,
+		"password":          in.Password,
+		"inviteToken":       in.InviteToken,
+		"getDataHubUpdates": false,
 	}
 
-	// Try /auth/signUp (OSS GMS path) first. If 404, fall back to /signUp
-	// (Cloud frontend path, no auth header).
-	signUpPaths := []struct {
+	type signUpPath struct {
 		url      string
 		sendAuth bool
-	}{
-		{c.baseURL + "/auth/signUp", true},
-		{c.baseURL + "/signUp", false},
+		payload  map[string]any
+	}
+	paths := []signUpPath{
+		{c.baseURL + "/auth/signUp", true, ossPayload},
+		{c.baseURL + "/signUp", false, cloudPayload},
 	}
 
 	var bodyStr string
 	var lastErr error
-	for _, p := range signUpPaths {
+	for _, p := range paths {
+		payloadBytes, err := json.Marshal(p.payload)
+		if err != nil {
+			return "", fmt.Errorf("marshaling signUp payload: %w", err)
+		}
 		authHeader := ""
 		if p.sendAuth {
 			authHeader = c.authHeader
