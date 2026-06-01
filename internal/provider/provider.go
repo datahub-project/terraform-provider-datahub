@@ -286,6 +286,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewCorpGroupResource,
 		NewCorpGroupMemberResource,
 		NewCorpUserResource,
+		NewLocalUserLoginResource,
 		NewIngestionSourceResource,
 		NewPolicyResource,
 		NewSecretResource,

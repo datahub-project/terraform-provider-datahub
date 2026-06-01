@@ -76,6 +76,9 @@ type mockServer struct {
 	users            map[string]mockUser
 	policies         map[string]mockPolicy
 	defaultPoolID    string
+	inviteToken      string
+	resetTokens      map[string]string
+	ossSignUpMode    bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -94,17 +97,21 @@ func NewServer(t *testing.T) *httptest.Server {
 		groups:           make(map[string]mockGroup),
 		users:            make(map[string]mockUser),
 		policies:         make(map[string]mockPolicy),
+		inviteToken:      "mock-invite-token-001",
+		resetTokens:      make(map[string]string),
 		failDeleteFor:    make(map[string]struct{}),
 	}
 	s.seedUsers()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/graphql", s.handleGraphQL)
+	mux.HandleFunc("/api/v2/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
+	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubrole/", s.handleDataHubRoleItem)
@@ -112,6 +119,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
+	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -159,6 +167,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleAddGroupMembers(w, req.Variables)
 	case strings.Contains(q, "removeGroupMembers"):
 		s.handleRemoveGroupMembers(w, req.Variables)
+	case strings.Contains(q, "createNativeUserResetToken"):
+		s.handleCreateNativeUserResetToken(w, req.Variables)
+	case strings.Contains(q, "createInviteToken"):
+		s.handleCreateInviteToken(w)
+	case strings.Contains(q, "getInviteToken"):
+		s.handleGetInviteToken(w)
 	case strings.Contains(q, "removeUser"):
 		s.handleRemoveUser(w, req.Variables)
 	case strings.Contains(q, "listUsers"):
@@ -587,6 +601,28 @@ func (s *mockServer) handleForceDeleteFail(w http.ResponseWriter, r *http.Reques
 	}
 	s.mu.Lock()
 	s.failDeleteFor[sourceID] = struct{}{}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleOSSSignUpMode toggles the mock's signUp guard between OSS behavior
+// (reject any pre-existing entity) and Cloud behavior (reject only if
+// credentials already exist). Default is Cloud. Called from test PreConfig:
+//
+//	POST /test-control/oss-signup-mode   (enables OSS mode)
+//	DELETE /test-control/oss-signup-mode  (reverts to Cloud mode)
+func (s *mockServer) handleOSSSignUpMode(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	switch r.Method {
+	case http.MethodPost:
+		s.ossSignUpMode = true
+	case http.MethodDelete:
+		s.ossSignUpMode = false
+	default:
+		s.mu.Unlock()
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

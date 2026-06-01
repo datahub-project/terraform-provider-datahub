@@ -98,6 +98,12 @@ Always use `--local`; without it, global mise tools (e.g. `awscli`) appear as no
 
 The project is on `0.x` versioning. The `0.x` prefix is the Terraform Registry's accepted signal for "API is not stable yet"; breaking changes remain permitted until the project chooses to flip to `v1.0`.
 
+## Resources with OSS vs Cloud behavioral differences
+
+Some resources behave differently between OSS DataHub and DataHub Cloud. Before modifying these resources, read the corresponding design doc:
+
+- `datahub_local_user_login` -- `docs/design/local-user-login-oss-cloud-differences.md` covers signUp endpoint path, URN derivation, invite token mechanics, propagation delay, NativeUserService guard, and import behavior. All differences were verified empirically in June 2026.
+
 ## New resource and data source design checklist
 
 Before implementing any new resource or data source, read `docs/design/datahub-model-and-resource-design.md` in full. That document covers the reasoning behind each of these points in detail. The short checklist:
