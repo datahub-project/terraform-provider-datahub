@@ -1,49 +1,43 @@
 # local-iam
 
-Sets up end-to-end DataHub authorization for a team, exercising the full set of authorization resources together:
+Sets up end-to-end DataHub IAM for a team, covering user provisioning, group management, role assignment, and access policies:
 
-- a native group (`datahub_corp_group`) representing a team,
-- a lookup of that group via the `datahub_corp_group` data source,
-- a membership (`datahub_corp_group_member`) adding an existing user to the group,
+- a native group (`datahub_corp_group`) representing the team,
+- a new **login user** (`datahub_local_user_login`) provisioned with native credentials and added to the group,
+- a **catalog-only user** (`datahub_corp_user`) representing a pipeline bot or ingestion-discovered owner -- the same kind of entity DataHub creates when a source like dbt or BigQuery finds a dataset owner. Appears in the Users UI as inactive (no credentials, by design), and added to the group,
+- a lookup of an existing user (`datahub_corp_user` data source) also added to the group,
 - a role assignment (`datahub_role_assignment`) granting the group the built-in `Editor` role, and
 - an access policy (`datahub_policy`) granting the group specific platform privileges.
 
-The user added to the group is controlled by the `member_username` variable (default `datahub`, the bootstrap admin on an OSS Quickstart). The provider does not create users, so this user must already exist.
+## Username format: OSS vs Cloud
+
+Use an **email address** as the username for `datahub_local_user_login`. This works identically on both platforms:
+
+- **OSS DataHub:** any string is valid; email format is accepted as-is.
+- **DataHub Cloud:** the user URN is always derived from the email field, so username and email must match. Email-format usernames satisfy this automatically.
+
+After apply, the created user has no usable password. Send the reset link to the user:
+
+```bash
+terraform output -raw team_member_reset_url
+```
+
+The link is single-use and expires in 24 hours.
 
 ## Prerequisites
 
 - A running DataHub instance (OSS or DataHub Cloud)
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` set in the shell
-- The token must belong to a principal with the `MANAGE_USERS_AND_GROUPS` privilege
+- The token must belong to a principal with the `MANAGE_USERS_AND_GROUPS` and `MANAGE_USER_CREDENTIALS` privileges
 
-## Testing against an unreleased provider build
-
-This example uses resources not yet in the published release. Build and install the provider locally, then point Terraform at the local binary using a dev override:
+## Configure
 
 ```bash
-# From the repo root:
-make install       # builds bin/terraform-provider-datahub
-make dev-override  # writes dev.tfrc + .mise.env (both gitignored)
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars to set new_member_email and optionally member_username
 ```
 
-Then, with mise active (which picks up `TF_CLI_CONFIG_FILE` from `.mise.env`):
-
-```bash
-cd examples/runnable/local-iam
-terraform init   # skips registry download; uses local bin
-terraform apply
-```
-
-Without mise, set `TF_CLI_CONFIG_FILE` explicitly:
-
-```bash
-TF_CLI_CONFIG_FILE=../../dev.tfrc terraform init
-TF_CLI_CONFIG_FILE=../../dev.tfrc terraform apply
-```
-
-## Apply (released version)
-
-Once these resources are included in a published release, the standard flow applies:
+## Apply
 
 ```bash
 export DATAHUB_GMS_URL=https://your-instance.acryl.io
@@ -53,16 +47,28 @@ terraform init
 terraform apply
 ```
 
+## Onboard the new user
+
+```bash
+# Copy the reset link and send it to the new team member (expires in 24h):
+terraform output -raw team_member_reset_url
+```
+
 ## Verify
 
 ```bash
-terraform output group_urn
+terraform output next_steps
 ```
 
-Then open the group in the DataHub UI: `$DATAHUB_GMS_URL/settings/identities/groups`.
+Then open the DataHub UI:
+
+- Groups: `$DATAHUB_GMS_URL/settings/identities/groups`
+- Users: `$DATAHUB_GMS_URL/settings/identities/users`
 
 ## Clean up
 
 ```bash
 terraform destroy
 ```
+
+> **Warning:** `terraform destroy` hard-deletes the created user entities (group, login user, pipeline bot). The existing user looked up via `member_username` is only removed from the group membership — the user entity itself is not deleted.
