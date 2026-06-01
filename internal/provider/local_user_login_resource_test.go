@@ -11,11 +11,17 @@ import (
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
 )
 
+const cloudLoginSkipMsg = "Cloud signUp requires a frontend-issued invite token (via session auth on /api/v2/graphql); " +
+	"PAT-based getInviteToken returns a GMS-level token the Cloud frontend does not recognize"
+
 // TestAcc_LocalUserLogin_WithReset creates a user without an explicit password,
 // verifies that password_reset_url is populated, and confirms a second apply
 // produces an empty plan (no drift).
 func TestAcc_LocalUserLogin_WithReset(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
+	if tg.IsCloud() {
+		t.Skip(cloudLoginSkipMsg)
+	}
 	username := tg.Name("tfprovider-login-reset")
 
 	resource.Test(t, resource.TestCase{
@@ -29,6 +35,9 @@ func TestAcc_LocalUserLogin_WithReset(t *testing.T) {
 // initial_password and verifies that password_reset_url is null.
 func TestAcc_LocalUserLogin_WithPassword(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
+	if tg.IsCloud() {
+		t.Skip(cloudLoginSkipMsg)
+	}
 	username := tg.Name("tfprovider-login-pw")
 
 	resource.Test(t, resource.TestCase{
@@ -41,6 +50,9 @@ func TestAcc_LocalUserLogin_WithPassword(t *testing.T) {
 // TestAcc_LocalUserLogin_Import exercises import by bare username and by URN.
 func TestAcc_LocalUserLogin_Import(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
+	if tg.IsCloud() {
+		t.Skip(cloudLoginSkipMsg)
+	}
 	username := tg.Name("tfprovider-login-import")
 
 	resource.Test(t, resource.TestCase{
@@ -54,6 +66,9 @@ func TestAcc_LocalUserLogin_Import(t *testing.T) {
 // detected and the login is re-created on the next apply.
 func TestAcc_LocalUserLogin_Drift(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
+	if tg.IsCloud() {
+		t.Skip(cloudLoginSkipMsg)
+	}
 	username := tg.Name("tfprovider-login-drift")
 
 	resource.Test(t, resource.TestCase{
@@ -67,6 +82,9 @@ func TestAcc_LocalUserLogin_Drift(t *testing.T) {
 // creates the entity + credentials, then corp_user upserts the profile on top.
 func TestAcc_LocalUserLogin_WithCorpUser(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
+	if tg.IsCloud() {
+		t.Skip(cloudLoginSkipMsg)
+	}
 	username := tg.Name("tfprovider-login-two")
 
 	resource.Test(t, resource.TestCase{
