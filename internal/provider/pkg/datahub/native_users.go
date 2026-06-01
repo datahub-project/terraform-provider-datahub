@@ -198,7 +198,10 @@ func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []
 	req.Header.Set("Content-Type", "application/json")
 
 	tflog.Debug(ctx, "DataHub signUp request", map[string]any{
-		"url": signUpURL,
+		"url":       signUpURL,
+		"payload":   string(payloadBytes),
+		"has_auth":  authHeader != "",
+		"headers":   fmt.Sprintf("%v", req.Header),
 	})
 
 	noRedirectClient := &http.Client{
@@ -236,7 +239,8 @@ func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []
 				"Workaround: create the datahub_local_user_login resource first, then add " +
 				"datahub_corp_user referencing it via the username attribute")
 		}
-		return bodyStr, fmt.Errorf("unexpected HTTP %d from signUp endpoint at %s: %s", res.StatusCode, signUpURL, bodyStr)
+		return bodyStr, fmt.Errorf("unexpected HTTP %d from signUp endpoint at %s (request payload fields: %s, auth: %v): %s",
+			res.StatusCode, signUpURL, payloadFieldNames(payloadBytes), authHeader != "", bodyStr)
 	}
 
 	ct := res.Header.Get("Content-Type")
@@ -292,4 +296,16 @@ mutation createNativeUserResetToken($input: CreateNativeUserResetTokenInput!) {
 		return "", errors.New("createNativeUserResetToken returned an empty token")
 	}
 	return token, nil
+}
+
+func payloadFieldNames(payloadBytes []byte) string {
+	var m map[string]any
+	if err := json.Unmarshal(payloadBytes, &m); err != nil {
+		return "<unmarshal error>"
+	}
+	names := make([]string, 0, len(m))
+	for k := range m {
+		names = append(names, k)
+	}
+	return strings.Join(names, ", ")
 }
