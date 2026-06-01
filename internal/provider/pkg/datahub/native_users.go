@@ -112,7 +112,6 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
 	}
-	signUpURL := c.baseURL + "/auth/signUp"
 	payload := map[string]string{
 		"userUrn":     in.UserURN,
 		"fullName":    in.FullName,
@@ -127,6 +126,32 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 		return "", fmt.Errorf("marshaling signUp payload: %w", err)
 	}
 
+	// The signUp endpoint lives at /auth/signUp on the GMS (OSS Quickstart)
+	// but at /signUp on the Cloud frontend proxy. Try the GMS path first;
+	// if it 404s, fall back to the frontend path.
+	signUpPaths := []string{
+		c.baseURL + "/auth/signUp",
+		c.baseURL + "/signUp",
+	}
+
+	var bodyStr string
+	var lastErr error
+	for _, signUpURL := range signUpPaths {
+		bodyStr, lastErr = c.doSignUp(ctx, signUpURL, payloadBytes)
+		if lastErr == nil {
+			return bodyStr, nil
+		}
+		if !strings.Contains(lastErr.Error(), "HTTP 404") {
+			return bodyStr, lastErr
+		}
+		tflog.Debug(ctx, "signUp path returned 404, trying next", map[string]any{
+			"url": signUpURL,
+		})
+	}
+	return bodyStr, lastErr
+}
+
+func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []byte) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, signUpURL, strings.NewReader(string(payloadBytes)))
 	if err != nil {
 		return "", fmt.Errorf("building signUp request: %w", err)
@@ -135,13 +160,9 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	tflog.Debug(ctx, "DataHub signUp request", map[string]any{
-		"url":     signUpURL,
-		"userUrn": in.UserURN,
+		"url": signUpURL,
 	})
 
-	// Use a client that does not follow redirects. The frontend may redirect
-	// unauthenticated/misconfigured requests to the login page, and a
-	// followed redirect returning 200 HTML would silently mask a failure.
 	noRedirectClient := &http.Client{
 		Timeout:   c.httpClient.Timeout,
 		Transport: c.httpClient.Transport,
@@ -165,10 +186,7 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 	})
 
 	if res.StatusCode >= 300 && res.StatusCode < 400 {
-		return bodyStr, fmt.Errorf("signUp endpoint at %s returned redirect (HTTP %d) to %s; "+
-			"this usually means the frontend_url is wrong or the frontend's auth middleware "+
-			"is rejecting the request. Set the frontend_url provider attribute or "+
-			"DATAHUB_FRONTEND_URL environment variable explicitly",
+		return bodyStr, fmt.Errorf("signUp endpoint at %s returned redirect (HTTP %d) to %s",
 			signUpURL, res.StatusCode, res.Header.Get("Location"))
 	}
 
@@ -185,10 +203,7 @@ func (c *Client) SignUp(ctx context.Context, in SignUpInput) (string, error) {
 
 	ct := res.Header.Get("Content-Type")
 	if strings.Contains(ct, "text/html") {
-		return bodyStr, fmt.Errorf("signUp endpoint at %s returned HTML instead of JSON (HTTP %d); "+
-			"this usually means the frontend_url is wrong (pointing at a static page rather "+
-			"than the DataHub frontend API). Set the frontend_url provider attribute or "+
-			"DATAHUB_FRONTEND_URL environment variable explicitly",
+		return bodyStr, fmt.Errorf("signUp endpoint at %s returned HTML instead of JSON (HTTP %d)",
 			signUpURL, res.StatusCode)
 	}
 
