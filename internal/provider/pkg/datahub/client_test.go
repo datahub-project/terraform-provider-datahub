@@ -197,7 +197,7 @@ func TestGuessFrontendURL(t *testing.T) {
 
 func TestFrontendURL(t *testing.T) {
 	t.Run("explicit_overrides_heuristic", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 		defer server.Close()
 		c := newTestClient(t, server)
 		c.SetFrontendURL("https://custom-frontend.example.com")
