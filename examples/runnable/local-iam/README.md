@@ -1,4 +1,4 @@
-# authorization-team-access
+# local-iam
 
 Sets up end-to-end DataHub authorization for a team, exercising the full set of authorization resources together:
 
@@ -29,7 +29,7 @@ make dev-override  # writes dev.tfrc + .mise.env (both gitignored)
 Then, with mise active (which picks up `TF_CLI_CONFIG_FILE` from `.mise.env`):
 
 ```bash
-cd examples/runnable/authorization-team-access
+cd examples/runnable/local-iam
 terraform init   # skips registry download; uses local bin
 terraform apply
 ```

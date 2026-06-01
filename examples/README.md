@@ -25,4 +25,4 @@ All runnable examples live under `runnable/`:
 - `runnable/connection-snowflake/` -- create a reusable Snowflake connection
 - `runnable/connection-snowflake-ingestion-source/` -- create a Snowflake connection wired to an ingestion source
 - `runnable/executor-pool-basic/` -- provision a remote executor pool and route an ingestion source to it
-- `runnable/authorization-team-access/` -- set up group membership, a role assignment, and an access policy for a team
+- `runnable/local-iam/` -- set up local-auth users, group membership, a role assignment, and an access policy for a team
