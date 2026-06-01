@@ -80,8 +80,9 @@ func New(version string) func() provider.Provider {
 
 // datahubProviderModel describes the provider data model.
 type datahubProviderModel struct {
-	GmsURL   types.String `tfsdk:"gms_url"`
-	GmsToken types.String `tfsdk:"gms_token"`
+	GmsURL      types.String `tfsdk:"gms_url"`
+	GmsToken    types.String `tfsdk:"gms_token"`
+	FrontendURL types.String `tfsdk:"frontend_url"`
 }
 
 // Metadata returns the provider type name.
@@ -120,6 +121,14 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 					"or fall back to the local DataHub CLI configuration at `~/.datahubenv`.",
 				Optional:  true,
 				Sensitive: true,
+			},
+			"frontend_url": schema.StringAttribute{
+				MarkdownDescription: "DataHub frontend URL for native user operations (sign-up, password reset). " +
+					"For example: `https://datahub.example.com:9002`. " +
+					"If not set, the provider reads `DATAHUB_FRONTEND_URL` from the environment, " +
+					"or derives it from `gms_url` by stripping any `/gms` suffix and replacing " +
+					"port 8080 with 9002. Only needed when using `datahub_local_user_login`.",
+				Optional: true,
 			},
 		},
 	}
@@ -226,6 +235,15 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 
+	// Resolve frontend URL: config > env var > heuristic from GMS URL.
+	frontendURL := os.Getenv("DATAHUB_FRONTEND_URL")
+	if !config.FrontendURL.IsNull() {
+		frontendURL = config.FrontendURL.ValueString()
+	}
+	if frontendURL != "" {
+		client.SetFrontendURL(frontendURL)
+	}
+
 	identity, err := client.Me(ctx)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -267,6 +285,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewConnectionResource,
 		NewCorpGroupResource,
 		NewCorpGroupMemberResource,
+		NewCorpUserResource,
 		NewIngestionSourceResource,
 		NewPolicyResource,
 		NewSecretResource,

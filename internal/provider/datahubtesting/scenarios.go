@@ -1512,3 +1512,121 @@ data "datahub_connections" "all" {
 		},
 	}
 }
+
+// ---------------------------------------------------------------------------
+// datahub_corp_user resource scenarios
+// ---------------------------------------------------------------------------
+
+// CorpUserLifecycleSteps returns test steps covering create, update, and import
+// for datahub_corp_user.
+func CorpUserLifecycleSteps(username string) []resource.TestStep {
+	const addr = "datahub_corp_user.test"
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "Alice Smith"
+  email        = "alice@example.com"
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Alice Smith")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("email"), knownvalue.StringExact("alice@example.com")),
+			},
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "Alice J. Smith"
+  full_name    = "Alice Jane Smith"
+  email        = "alice.smith@example.com"
+  title        = "Data Engineer"
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Alice J. Smith")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("full_name"), knownvalue.StringExact("Alice Jane Smith")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("email"), knownvalue.StringExact("alice.smith@example.com")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("title"), knownvalue.StringExact("Data Engineer")),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     username,
+			ImportStateVerify: true,
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// CorpUserDriftSteps verifies that an out-of-band user deletion is detected.
+func CorpUserDriftSteps(username string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "Drift User"
+}
+`, username)
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("CorpUserDriftSteps PreConfig: %v", err))
+				}
+				if delErr := client.DeleteUser(context.Background(), urn); delErr != nil {
+					panic(fmt.Sprintf("CorpUserDriftSteps PreConfig: delete failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+		},
+	}
+}
+
+// CorpUserCheckDestroy verifies that all datahub_corp_user resources have been
+// removed from DataHub after terraform destroy.
+func CorpUserCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_corp_user" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		user, getErr := client.GetUserByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_corp_user %q: %w", urn, getErr)
+		}
+		if user != nil {
+			return fmt.Errorf("datahub_corp_user %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}

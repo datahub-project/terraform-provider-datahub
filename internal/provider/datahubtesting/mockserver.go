@@ -105,6 +105,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
+	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubrole/", s.handleDataHubRoleItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubpolicy/", s.handleDataHubPolicyItem)
@@ -158,6 +159,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleAddGroupMembers(w, req.Variables)
 	case strings.Contains(q, "removeGroupMembers"):
 		s.handleRemoveGroupMembers(w, req.Variables)
+	case strings.Contains(q, "removeUser"):
+		s.handleRemoveUser(w, req.Variables)
+	case strings.Contains(q, "listUsers"):
+		s.handleListUsers(w)
 	case strings.Contains(q, "removeGroup"):
 		s.handleRemoveGroup(w, req.Variables)
 	case strings.Contains(q, "listGroups"):

@@ -6,7 +6,7 @@ description: |-
   DataHub ✅ | DataHub Cloud ✅
   Looks up an existing DataHub user (corpUser) by username.
   Use this to resolve a username to its URN for use as a policy actor, group member, or ownership reference -- for example data.datahub_corp_user.alice.urn.
-  This provider does not create users (there is no clean API to provision a login-capable user with a password). Users are typically created via SSO/JIT provisioning or the DataHub invite flow; this data source reads their catalog record once they exist.
+  To manage a user's profile as code, see the datahub_corp_user resource. For native-auth login credentials, see the datahub_local_user_login resource.
 ---
 
 # datahub_corp_user (Data Source)
@@ -17,7 +17,7 @@ Looks up an existing DataHub user (`corpUser`) by `username`.
 
 Use this to resolve a username to its URN for use as a policy actor, group member, or ownership reference -- for example `data.datahub_corp_user.alice.urn`.
 
-This provider does not create users (there is no clean API to provision a login-capable user with a password). Users are typically created via SSO/JIT provisioning or the DataHub invite flow; this data source reads their catalog record once they exist.
+To manage a user's profile as code, see the `datahub_corp_user` resource. For native-auth login credentials, see the `datahub_local_user_login` resource.
 
 ## Example Usage
 

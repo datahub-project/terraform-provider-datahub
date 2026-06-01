@@ -19,12 +19,23 @@ import (
 type CorpUser struct {
 	URN          string
 	Username     string
+	FullName     string
 	DisplayName  string
 	Email        string
 	Title        string
 	Active       bool
 	Status       string   // from corpUserStatus.status; empty when the aspect is absent
 	NativeGroups []string // group URNs from nativeGroupMembership
+}
+
+// UpsertCorpUserInput carries the fields for creating or updating a corpUser
+// catalog record via the OpenAPI v3 entity endpoint.
+type UpsertCorpUserInput struct {
+	Username    string
+	FullName    string
+	DisplayName string
+	Email       string
+	Title       string
 }
 
 // corpUserEntity is the OpenAPI v3 response shape for
@@ -39,6 +50,7 @@ type corpUserEntity struct {
 	} `json:"corpUserKey,omitempty"`
 	Info *struct {
 		Value struct {
+			FullName    string `json:"fullName"`
 			DisplayName string `json:"displayName"`
 			Email       string `json:"email"`
 			Title       string `json:"title"`
@@ -122,6 +134,7 @@ func (c *Client) GetUserByURN(ctx context.Context, urn string) (*CorpUser, error
 	}
 
 	if entity.Info != nil {
+		user.FullName = entity.Info.Value.FullName
 		user.DisplayName = entity.Info.Value.DisplayName
 		user.Email = entity.Info.Value.Email
 		user.Title = entity.Info.Value.Title
@@ -144,4 +157,100 @@ func (c *Client) GetUserByURN(ctx context.Context, urn string) (*CorpUser, error
 	}
 
 	return user, nil
+}
+
+// UpsertCorpUser creates or updates a corpUser catalog record via the OpenAPI
+// v3 entity endpoint. This is an upsert: it works for new entities and
+// pre-existing ones (e.g. created by signUp or SSO JIT).
+func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+	in.Username = strings.TrimSpace(in.Username)
+	if in.Username == "" {
+		return "", errors.New("username is required")
+	}
+
+	urn := "urn:li:corpuser:" + in.Username
+
+	infoValue := map[string]any{
+		"active": true,
+	}
+	if in.DisplayName != "" {
+		infoValue["displayName"] = in.DisplayName
+	}
+	if in.FullName != "" {
+		infoValue["fullName"] = in.FullName
+	}
+	if in.Email != "" {
+		infoValue["email"] = in.Email
+	}
+	if in.Title != "" {
+		infoValue["title"] = in.Title
+	}
+
+	entity := []map[string]any{
+		{
+			"urn": urn,
+			"corpUserKey": map[string]any{
+				"value": map[string]any{
+					"username": in.Username,
+				},
+			},
+			"corpUserInfo": map[string]any{
+				"value": infoValue,
+			},
+		},
+	}
+
+	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/corpuser?async=false", entity)
+	if err != nil {
+		return "", fmt.Errorf("building corpuser upsert request: %w", err)
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("corpuser upsert request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_USERS_AND_GROUPS privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return "", fmt.Errorf("unexpected HTTP %d from DataHub corpuser upsert API: %s", res.StatusCode, respBody)
+	}
+
+	return urn, nil
+}
+
+// DeleteUser hard-deletes a DataHub user by URN via the removeUser GraphQL
+// mutation. This removes the entity and all its aspects (including credentials
+// and references). Returns nil if the user is already gone.
+func (c *Client) DeleteUser(ctx context.Context, urn string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	if urn == "" {
+		return errors.New("URN is required")
+	}
+
+	const q = `
+mutation removeUser($urn: String!) {
+  removeUser(urn: $urn)
+}`
+	body := map[string]any{
+		"query":     q,
+		"variables": map[string]any{"urn": urn},
+	}
+	var gqlResp genericGraphQLErrors
+	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+		return err
+	}
+	if len(gqlResp.Errors) > 0 {
+		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
 }
