@@ -171,3 +171,48 @@ func TestMe(t *testing.T) {
 		}
 	})
 }
+
+func TestGuessFrontendURL(t *testing.T) {
+	tests := []struct {
+		gmsURL string
+		want   string
+	}{
+		{"http://localhost:8080", "http://localhost:9002"},
+		{"http://localhost:8080/gms", "http://localhost:9002"},
+		{"https://datahub.example.com", "https://datahub.example.com"},
+		{"https://datahub.example.com/gms", "https://datahub.example.com"},
+		{"https://datahub.example.com:8080/gms", "https://datahub.example.com:9002"},
+		{"http://localhost:9002", "http://localhost:9002"},
+		{"http://localhost:8080/", "http://localhost:9002"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.gmsURL, func(t *testing.T) {
+			got := GuessFrontendURL(tt.gmsURL)
+			if got != tt.want {
+				t.Errorf("GuessFrontendURL(%q) = %q, want %q", tt.gmsURL, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFrontendURL(t *testing.T) {
+	t.Run("explicit_overrides_heuristic", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		c.SetFrontendURL("https://custom-frontend.example.com")
+		if got := c.FrontendURL(); got != "https://custom-frontend.example.com" {
+			t.Errorf("FrontendURL() = %q, want https://custom-frontend.example.com", got)
+		}
+	})
+
+	t.Run("falls_back_to_heuristic", func(t *testing.T) {
+		c, err := NewClient("http://localhost:8080", "test-token")
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		if got := c.FrontendURL(); got != "http://localhost:9002" {
+			t.Errorf("FrontendURL() = %q, want http://localhost:9002", got)
+		}
+	})
+}
