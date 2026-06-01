@@ -243,26 +243,43 @@ func (r *localUserLoginResource) Create(ctx context.Context, req resource.Create
 	// Step 4: wait for the entity to be visible. signUp writes aspects via
 	// ingestProposal internally; the entity may not be immediately readable
 	// via the OpenAPI endpoint.
+	//
+	// On Cloud, the user URN is derived from the email field (not userUrn),
+	// so we poll both the username-based URN and the email-based URN to
+	// handle both OSS and Cloud.
+	email := plan.Email.ValueString()
+	emailURN := corpUserURNPrefix + email
+	urnsToCheck := []string{userURN}
+	if emailURN != userURN {
+		urnsToCheck = append(urnsToCheck, emailURN)
+	}
+
 	var user *datahub.CorpUser
 	for attempt := 0; attempt < 10; attempt++ {
-		user, err = r.client.GetUserByURN(ctx, userURN)
-		if err != nil {
-			resp.Diagnostics.AddError("Read-back failed after sign-up", err.Error())
-			return
+		for _, candidateURN := range urnsToCheck {
+			user, err = r.client.GetUserByURN(ctx, candidateURN)
+			if err != nil {
+				resp.Diagnostics.AddError("Read-back failed after sign-up", err.Error())
+				return
+			}
+			if user != nil {
+				userURN = candidateURN // use whichever URN the server chose
+				break
+			}
 		}
 		if user != nil {
 			break
 		}
 		tflog.Debug(ctx, "User not yet visible after sign-up, retrying", map[string]any{
 			"attempt": attempt + 1,
-			"urn":     userURN,
+			"urns":    urnsToCheck,
 		})
 		time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
 	}
 	if user == nil {
 		resp.Diagnostics.AddError("User not found after sign-up",
-			fmt.Sprintf("The sign-up for %q appeared to succeed (response: %s) but the user entity was not found at %s on read-back after polling.",
-				username, signUpBody, userURN))
+			fmt.Sprintf("The sign-up for %q appeared to succeed (response: %s) but the user entity was not found at any of %v on read-back after polling.",
+				username, signUpBody, urnsToCheck))
 		return
 	}
 
