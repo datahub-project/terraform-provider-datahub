@@ -25,6 +25,8 @@ description: |-
   }
   
   On OSS DataHub, the login resource must be created before datahub_corp_user (the sign-up endpoint rejects pre-existing entities). On DataHub Cloud, either order works. The reference pattern above is safe on both.
+  DataHub Cloud: username must be the email address
+  On DataHub Cloud, the sign-up endpoint ignores the username field and derives the user URN from the email field. Non-SSO local users on Cloud always have their email address as their username (e.g. urn:li:corpuser:alice@example.com). Set username to the same value as email when targeting Cloud.
 ---
 
 # datahub_local_user_login (Resource)
@@ -61,6 +63,10 @@ resource "datahub_corp_user" "bob" {
 ```
 
 On OSS DataHub, the login resource **must** be created before `datahub_corp_user` (the sign-up endpoint rejects pre-existing entities). On DataHub Cloud, either order works. The reference pattern above is safe on both.
+
+## DataHub Cloud: username must be the email address
+
+On DataHub Cloud, the sign-up endpoint ignores the `username` field and derives the user URN from the `email` field. Non-SSO local users on Cloud always have their email address as their username (e.g. `urn:li:corpuser:alice@example.com`). Set `username` to the same value as `email` when targeting Cloud.
 
 ## Example Usage
 
