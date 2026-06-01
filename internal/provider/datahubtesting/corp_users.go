@@ -207,3 +207,111 @@ func (s *mockServer) handleListUsers(w http.ResponseWriter) {
 		},
 	})
 }
+
+// handleSignUp handles POST /signUp (native user creation).
+func (s *mockServer) handleSignUp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	var payload struct {
+		UserURN     string `json:"userUrn"`
+		FullName    string `json:"fullName"`
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		Title       string `json:"title"`
+		InviteToken string `json:"inviteToken"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, "bad request body", http.StatusBadRequest)
+		return
+	}
+
+	username := strings.TrimPrefix(payload.UserURN, "urn:li:corpuser:")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if payload.InviteToken != s.inviteToken {
+		http.Error(w, "Invalid invite token", http.StatusBadRequest)
+		return
+	}
+
+	if _, exists := s.users[username]; exists {
+		http.Error(w, "This user already exists! Cannot create a new user.", http.StatusBadRequest)
+		return
+	}
+
+	s.users[username] = mockUser{
+		URN:         payload.UserURN,
+		Username:    username,
+		FullName:    payload.FullName,
+		DisplayName: payload.FullName,
+		Email:       payload.Email,
+		Title:       payload.Title,
+		Active:      true,
+		Status:      "ACTIVE",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"message":"User created"}`))
+}
+
+// handleGetInviteToken handles the getInviteToken GraphQL query.
+func (s *mockServer) handleGetInviteToken(w http.ResponseWriter) {
+	s.mu.Lock()
+	token := s.inviteToken
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"getInviteToken": map[string]any{
+				"inviteToken": token,
+			},
+		},
+	})
+}
+
+// handleCreateInviteToken handles the createInviteToken GraphQL mutation.
+func (s *mockServer) handleCreateInviteToken(w http.ResponseWriter) {
+	s.mu.Lock()
+	s.inviteToken = "mock-invite-token-regenerated"
+	token := s.inviteToken
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"createInviteToken": map[string]any{
+				"inviteToken": token,
+			},
+		},
+	})
+}
+
+// handleCreateNativeUserResetToken handles the createNativeUserResetToken mutation.
+func (s *mockServer) handleCreateNativeUserResetToken(w http.ResponseWriter, vars map[string]any) {
+	input, _ := vars["input"].(map[string]any)
+	userURN, _ := input["userUrn"].(string)
+
+	token := "mock-reset-token-for-" + strings.TrimPrefix(userURN, "urn:li:corpuser:")
+
+	s.mu.Lock()
+	s.resetTokens[userURN] = token
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"createNativeUserResetToken": map[string]any{
+				"resetToken": token,
+			},
+		},
+	})
+}

@@ -76,6 +76,8 @@ type mockServer struct {
 	users            map[string]mockUser
 	policies         map[string]mockPolicy
 	defaultPoolID    string
+	inviteToken      string
+	resetTokens      map[string]string
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -94,6 +96,8 @@ func NewServer(t *testing.T) *httptest.Server {
 		groups:           make(map[string]mockGroup),
 		users:            make(map[string]mockUser),
 		policies:         make(map[string]mockPolicy),
+		inviteToken:      "mock-invite-token-001",
+		resetTokens:      make(map[string]string),
 		failDeleteFor:    make(map[string]struct{}),
 	}
 	s.seedUsers()
@@ -105,6 +109,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
+	mux.HandleFunc("/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubrole/", s.handleDataHubRoleItem)
@@ -159,6 +164,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleAddGroupMembers(w, req.Variables)
 	case strings.Contains(q, "removeGroupMembers"):
 		s.handleRemoveGroupMembers(w, req.Variables)
+	case strings.Contains(q, "createNativeUserResetToken"):
+		s.handleCreateNativeUserResetToken(w, req.Variables)
+	case strings.Contains(q, "createInviteToken"):
+		s.handleCreateInviteToken(w)
+	case strings.Contains(q, "getInviteToken"):
+		s.handleGetInviteToken(w)
 	case strings.Contains(q, "removeUser"):
 		s.handleRemoveUser(w, req.Variables)
 	case strings.Contains(q, "listUsers"):

@@ -1630,3 +1630,106 @@ func CorpUserCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// datahub_local_user_login resource scenarios
+// ---------------------------------------------------------------------------
+
+// LocalUserLoginWithResetSteps creates a user without initial_password and
+// verifies that password_reset_url is populated.
+func LocalUserLoginWithResetSteps(username string) []resource.TestStep {
+	const addr = "datahub_local_user_login.test"
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_local_user_login" "test" {
+  username  = %q
+  full_name = "Reset User"
+  email     = "reset@example.com"
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("password_reset_url"), knownvalue.NotNull()),
+			},
+		},
+	}
+}
+
+// LocalUserLoginWithPasswordSteps creates a user with an explicit
+// initial_password and verifies that password_reset_url is null.
+func LocalUserLoginWithPasswordSteps(username string) []resource.TestStep {
+	const addr = "datahub_local_user_login.test"
+	urn := "urn:li:corpuser:" + username
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_local_user_login" "test" {
+  username         = %q
+  full_name        = "Password User"
+  email            = "password@example.com"
+  initial_password = "test-password-123"
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("username"), knownvalue.StringExact(username)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("user_urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("password_reset_url"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// LocalUserLoginAlreadyExistsSteps pre-creates a user via the corp_user
+// resource then attempts to create a local_user_login for the same username,
+// expecting the OSS-style "already exists" error from the mock.
+func LocalUserLoginAlreadyExistsSteps(username string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "seed" {
+  username     = %q
+  display_name = "Seed User"
+}
+
+resource "datahub_local_user_login" "test" {
+  username  = datahub_corp_user.seed.username
+  full_name = "Seed User"
+  email     = "seed@example.com"
+}
+`, username),
+			ExpectError: regexp.MustCompile(`(?i)already exists`),
+		},
+	}
+}
+
+// LocalUserLoginCheckDestroy verifies that all datahub_local_user_login
+// resources have been removed from DataHub after terraform destroy.
+func LocalUserLoginCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_local_user_login" {
+			continue
+		}
+		urn := rs.Primary.Attributes["user_urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		user, getErr := client.GetUserByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_local_user_login %q: %w", urn, getErr)
+		}
+		if user != nil {
+			return fmt.Errorf("datahub_local_user_login %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
