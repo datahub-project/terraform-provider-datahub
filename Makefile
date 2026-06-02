@@ -12,6 +12,8 @@ COVERAGE_FILE ?= coverage.out
 COVERAGE_HTML ?= coverage.html
 COVER_PKG ?= ./internal/...
 DATAHUB_GMS_URL ?= http://localhost:8080
+
+TFPLUGINDOCS_SERVE_BIN := $(BIN_DIR)/tfplugindocs-serve
 QUICKSTART_GMS_URL := http://localhost:8080
 TOKEN_ACTOR ?= urn:li:corpuser:datahub
 QUICKSTART_VERSION ?= v1.5.0.6
@@ -22,7 +24,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps
+.PHONY: all help build install clean fmt lint generate bump-examples test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -48,6 +50,8 @@ help:
 	@echo "  coverage           Run all tests with merged coverage; prints total"
 	@echo "  coverage-html      Run coverage, then write $(COVERAGE_HTML)"
 	@echo "  dev-deps           Install Python dev dependencies (datahub CLI) into .venv"
+	@echo "  build-serve-docs   Build the tfplugindocs serve binary from tools/go.mod"
+	@echo "  serve-docs         Preview provider docs locally via Terraform Registry rendering"
 	@echo "  quickstart-up      Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first; QUICKSTART_VERSION=vX.Y.Z overrides image"
 	@echo "  quickstart-down    Tear down the Quickstart (datahub docker nuke)"
 	@echo "  quickstart-token   Mint a DataHub PAT against the running Quickstart"
@@ -113,7 +117,7 @@ dev-override: dev-deps
 	@echo "Run 'cd .' to activate TF_CLI_CONFIG_FILE in your current shell."
 
 clean:
-	@rm -f "$(BIN_DIR)/$(BINARY_NAME)" "$(BIN_DIR)/$(TOOL_NAME)"
+	@rm -f "$(BIN_DIR)/$(BINARY_NAME)" "$(BIN_DIR)/$(TOOL_NAME)" "$(TFPLUGINDOCS_SERVE_BIN)"
 
 fmt:
 	gofmt -s -w -e .
@@ -194,3 +198,12 @@ coverage:
 coverage-html: coverage
 	$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_HTML)
 	@echo "Wrote $(COVERAGE_HTML). Open with: open $(COVERAGE_HTML)"
+
+build-serve-docs:
+	@mkdir -p "$(BIN_DIR)"
+	cd tools && mise exec -- $(GO) build -o "$(CURDIR)/$(TFPLUGINDOCS_SERVE_BIN)" github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
+
+serve-docs:
+	@if [ ! -f "$(TFPLUGINDOCS_SERVE_BIN)" ]; then $(MAKE) build-serve-docs; fi
+	@echo "Preview at http://localhost:8080/tools/doc-preview"
+	./$(TFPLUGINDOCS_SERVE_BIN) serve

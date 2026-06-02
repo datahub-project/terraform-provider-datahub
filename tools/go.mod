@@ -7,6 +7,10 @@ require (
 	github.com/minamijoyo/tfupdate v0.9.4
 )
 
+// Use the serve-docs fork until the serve command is merged upstream.
+// The fork keeps the upstream module path so all import paths are unchanged.
+replace github.com/hashicorp/terraform-plugin-docs => github.com/javabrett/terraform-plugin-docs v0.25.0-javabrett.1
+
 require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/BurntSushi/toml v1.2.1 // indirect
@@ -15,6 +19,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
+	github.com/adrg/frontmatter v0.2.0 // indirect
 	github.com/agext/levenshtein v1.2.2 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/armon/go-radix v1.0.0 // indirect
