@@ -201,7 +201,7 @@ coverage-html: coverage
 
 build-serve-docs:
 	@mkdir -p "$(BIN_DIR)"
-	cd tools && mise exec -- $(GO) build -o "$(CURDIR)/$(TFPLUGINDOCS_SERVE_BIN)" github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
+	cd tools/serve && mise exec -- $(GO) build -o "$(CURDIR)/$(TFPLUGINDOCS_SERVE_BIN)" github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
 
 serve-docs:
 	@if [ ! -f "$(TFPLUGINDOCS_SERVE_BIN)" ]; then $(MAKE) build-serve-docs; fi
