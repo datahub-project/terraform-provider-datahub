@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Release packaging: `datahub-tf-extract` zip entries were included in the provider `SHA256SUMS` file, causing the Terraform Registry to serve the extract tool zip instead of the provider zip. `terraform init` failed with "provider binary not found" on all platforms. Fixed by scoping the `SHA256SUMS` to provider archives only. The extract tool zips remain in the GitHub release and are unaffected.
+- Release packaging: the `datahub-tf-extract` zip archives were included in the provider `SHA256SUMS` file and sorted alphabetically before `terraform-provider-datahub`, causing the Terraform Registry to serve the extract tool zip instead of the provider zip. `terraform init` failed with "provider binary not found" on all platforms. Fixed by renaming the extract tool archives to `tools-datahub-tf-extract_*` (which sorts after `terraform-provider-datahub_*`). The binary name inside the zip (`datahub-tf-extract`) is unchanged. Update any `mise.toml` `ubi` entries to use `matching = "tools-datahub-tf-extract"`.
 
 ## [0.4.0] - 2026-06-01
 
