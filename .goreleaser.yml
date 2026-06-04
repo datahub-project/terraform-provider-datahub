@@ -64,7 +64,7 @@ archives:
     ids:
       - extract-tool
     formats: ["zip"]
-    name_template: 'datahub-tf-extract_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    name_template: 'tools-datahub-tf-extract_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
   extra_files:
     - glob: 'terraform-registry-manifest.json'

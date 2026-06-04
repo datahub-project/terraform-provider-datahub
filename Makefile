@@ -137,6 +137,9 @@ endif
 	  -r \
 	  datahub \
 	  ../examples/runnable
+	perl -pi -e \
+	  'if (/ubi:datahub-project/) { s/version = "[^"]+"/version = "$(VERSION)"/ }; s|tools-datahub-tf-extract_[0-9][^_]+_|tools-datahub-tf-extract_$(VERSION)_|; s|datahub-tf-extract_v[0-9][^ ]+|datahub-tf-extract_v$(VERSION)|' \
+	  docs/guides/import-existing.md
 	$(MAKE) generate
 
 test:
