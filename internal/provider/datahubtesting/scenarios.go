@@ -1957,3 +1957,224 @@ func LocalUserLoginCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// DomainLifecycleSteps returns test steps covering create, in-place update of
+// name and description, and import (by id and by URN) for datahub_domain.
+//
+// domainID is the domain_id attribute and must be unique within the target
+// DataHub instance.
+func DomainLifecycleSteps(domainID string) []resource.TestStep {
+	const addr = "datahub_domain.test"
+	urn := "urn:li:domain:" + domainID
+
+	return []resource.TestStep{
+		{
+			// Create a root domain with name and description.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id   = %q
+  name        = "Finance"
+  description = "Finance domain"
+}
+`, domainID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("domain_id"), knownvalue.StringExact(domainID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Finance")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Finance domain")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("parent_domain"), knownvalue.Null()),
+			},
+		},
+		{
+			// Rename and update description in place (no replacement).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id   = %q
+  name        = "Finance & Risk"
+  description = "Finance and risk management domain"
+}
+`, domainID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Finance & Risk")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Finance and risk management domain")),
+			},
+		},
+		{
+			// Import by bare domain_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     domainID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// DomainParentChildSteps returns test steps covering parent-child creation and
+// in-place reparenting via moveDomain for datahub_domain.
+//
+// parentID and childID must be unique within the target DataHub instance.
+func DomainParentChildSteps(parentID, childID string) []resource.TestStep {
+	const parentAddr = "datahub_domain.parent"
+	const childAddr = "datahub_domain.child"
+	parentURN := "urn:li:domain:" + parentID
+	childURN := "urn:li:domain:" + childID
+
+	cfgWithParent := providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "parent" {
+  domain_id   = %q
+  name        = "Operations"
+  description = "Operations area"
+}
+
+resource "datahub_domain" "child" {
+  domain_id     = %q
+  name          = "Clearing"
+  description   = "Clearing and settlement"
+  parent_domain = datahub_domain.parent.urn
+}
+`, parentID, childID)
+
+	// depends_on preserves the destroy ordering (child before parent) even after
+	// parent_domain is removed -- without it Terraform has no edge in the graph
+	// and may destroy parent first, hitting the hard-delete child guard.
+	cfgChildAtRoot := providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "parent" {
+  domain_id   = %q
+  name        = "Operations"
+  description = "Operations area"
+}
+
+resource "datahub_domain" "child" {
+  domain_id   = %q
+  name        = "Clearing"
+  description = "Clearing and settlement"
+  depends_on  = [datahub_domain.parent]
+}
+`, parentID, childID)
+
+	return []resource.TestStep{
+		{
+			// Create parent and child; child references parent via .urn.
+			Config: cfgWithParent,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(parentAddr, tfjsonpath.New("urn"), knownvalue.StringExact(parentURN)),
+				statecheck.ExpectKnownValue(childAddr, tfjsonpath.New("urn"), knownvalue.StringExact(childURN)),
+				statecheck.ExpectKnownValue(childAddr, tfjsonpath.New("parent_domain"), knownvalue.StringExact(parentURN)),
+			},
+		},
+		{
+			// Remove parent_domain from child (reparent to root via moveDomain).
+			// Must not trigger replacement.
+			Config: cfgChildAtRoot,
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(childAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction(parentAddr, plancheck.ResourceActionNoop),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(childAddr, tfjsonpath.New("parent_domain"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// DomainDataSourceSteps seeds a domain via the resource then reads it back via
+// the singular datahub_domain data source.
+func DomainDataSourceSteps(domainID string) []resource.TestStep {
+	const addr = "data.datahub_domain.test"
+	urn := "urn:li:domain:" + domainID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "seed" {
+  domain_id   = %q
+  name        = "Lookup Domain"
+  description = "looked up"
+}
+
+data "datahub_domain" "test" {
+  domain_id  = datahub_domain.seed.domain_id
+}
+`, domainID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("domain_id"), knownvalue.StringExact(domainID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Lookup Domain")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("looked up")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("parent_domain"), knownvalue.StringExact("")),
+			},
+		},
+	}
+}
+
+// DomainListSteps creates a domain and verifies its URN appears in the
+// datahub_domains enumeration data source.
+func DomainListSteps(domainID string) []resource.TestStep {
+	urn := "urn:li:domain:" + domainID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "List Domain"
+}
+
+data "datahub_domains" "all" {
+  depends_on = [datahub_domain.test]
+}
+`, domainID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_domains.all", urn),
+			),
+		},
+	}
+}
+
+// DomainCheckDestroy verifies every datahub_domain in the post-destroy state
+// has been removed from DataHub.
+func DomainCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_domain" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		domain, getErr := client.GetDomainByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_domain %q: %w", urn, getErr)
+		}
+		if domain != nil {
+			return fmt.Errorf("datahub_domain %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}

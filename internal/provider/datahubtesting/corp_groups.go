@@ -50,17 +50,27 @@ func (s *mockServer) handleCreateGroup(w http.ResponseWriter, variables map[stri
 	})
 }
 
-// handleUpdateName updates a group's display name (corpGroupInfo.displayName).
+// handleUpdateName handles the generic updateName mutation for groups and
+// domains. It dispatches by URN prefix to update the correct entity store.
 func (s *mockServer) handleUpdateName(w http.ResponseWriter, variables map[string]any) {
 	input, _ := variables["input"].(map[string]any)
 	urn, _ := input["urn"].(string)
 	name, _ := input["name"].(string)
-	id := strings.TrimPrefix(urn, "urn:li:corpGroup:")
 
 	s.mu.Lock()
-	if g, ok := s.groups[id]; ok {
-		g.Name = name
-		s.groups[id] = g
+	switch {
+	case strings.HasPrefix(urn, "urn:li:domain:"):
+		id := strings.TrimPrefix(urn, "urn:li:domain:")
+		if d, ok := s.domains[id]; ok {
+			d.Name = name
+			s.domains[id] = d
+		}
+	default:
+		id := strings.TrimPrefix(urn, "urn:li:corpGroup:")
+		if g, ok := s.groups[id]; ok {
+			g.Name = name
+			s.groups[id] = g
+		}
 	}
 	s.mu.Unlock()
 

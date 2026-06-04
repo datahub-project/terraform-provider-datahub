@@ -75,6 +75,7 @@ type mockServer struct {
 	groups           map[string]mockGroup
 	users            map[string]mockUser
 	policies         map[string]mockPolicy
+	domains          map[string]mockDomain
 	defaultPoolID    string
 	inviteToken      string
 	resetTokens      map[string]string
@@ -97,6 +98,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		groups:           make(map[string]mockGroup),
 		users:            make(map[string]mockUser),
 		policies:         make(map[string]mockPolicy),
+		domains:          make(map[string]mockDomain),
 		inviteToken:      "mock-invite-token-001",
 		resetTokens:      make(map[string]string),
 		failDeleteFor:    make(map[string]struct{}),
@@ -111,6 +113,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
+	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -157,6 +160,14 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleSearchAcrossEntities(w, req.Variables)
 	case strings.Contains(q, "upsertConnection"):
 		s.handleCreateOrUpdateConnection(w, req.Variables)
+	case strings.Contains(q, "createDomain"):
+		s.handleCreateDomain(w, req.Variables)
+	case strings.Contains(q, "moveDomain"):
+		s.handleMoveDomain(w, req.Variables)
+	case strings.Contains(q, "deleteDomain"):
+		s.handleDeleteDomain(w, req.Variables)
+	case strings.Contains(q, "updateDescription"):
+		s.handleUpdateDescription(w, req.Variables)
 	case strings.Contains(q, "createGroup"):
 		s.handleCreateGroup(w, req.Variables)
 	case strings.Contains(q, "updateName"):
@@ -350,6 +361,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": "urn:li:dataHubConnection:" + connID,
+					},
+				})
+			}
+		case "DOMAIN":
+			for _, d := range s.domains {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": d.URN,
 					},
 				})
 			}
