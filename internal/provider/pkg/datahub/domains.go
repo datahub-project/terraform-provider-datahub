@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Domain is the read-shape returned by GetDomainByURN.
@@ -266,6 +267,13 @@ mutation moveDomain($input: MoveDomainInput!) {
 
 // DeleteDomain hard-deletes a DataHub domain by URN via the deleteDomain
 // GraphQL mutation. The server rejects deletion if the domain has child domains.
+//
+// DataHub's child-domain guard queries OpenSearch, which is eventually
+// consistent. When a child domain is deleted and the parent delete follows
+// immediately (e.g. terraform destroy), the guard can fire spuriously because
+// OpenSearch has not yet indexed the child's removal. This function retries on
+// that specific error with short exponential backoff to let the index catch up.
+// See: https://github.com/datahub-project/datahub/pull/17732
 func (c *Client) DeleteDomain(ctx context.Context, urn string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -283,12 +291,30 @@ mutation deleteDomain($urn: String!) {
 		"query":     q,
 		"variables": map[string]any{"urn": urn},
 	}
-	var gqlResp genericGraphQLErrors
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return err
-	}
-	if len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+
+	const maxRetries = 3
+	const baseDelay = 2 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * baseDelay):
+			}
+		}
+
+		var gqlResp genericGraphQLErrors
+		if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+			return err
+		}
+		if len(gqlResp.Errors) == 0 {
+			return nil
+		}
+		msg := gqlResp.Errors[0].Message
+		if !strings.Contains(msg, "which has child domains") || attempt == maxRetries {
+			return fmt.Errorf("DataHub API error: %s", msg)
+		}
 	}
 	return nil
 }
