@@ -136,6 +136,20 @@ mise upgrade --bump     # install newer versions and rewrite pins in mise.toml
 
 After `mise upgrade --bump`, run `make test && make testacc` to confirm nothing broke, then include the updated `mise.toml` in the prepare PR.
 
+#### Direct Go dependency freshness (before every release)
+
+Dependabot opens PRs for direct dependency version bumps weekly, but it may lag behind a release or have open PRs that haven't been merged yet. Before opening the prepare PR, verify that all direct deps are current:
+
+```bash
+# Main module
+go list -u -m -f '{{if and (not .Indirect) .Update}}{{.Path}} {{.Version}} -> {{.Update.Version}}{{end}}' all
+
+# Tools module
+cd tools && go list -u -m -f '{{if and (not .Indirect) .Update}}{{.Path}} {{.Version}} -> {{.Update.Version}}{{end}}' -tags generate all && cd ..
+```
+
+Empty output means all direct dependencies are at their latest compatible version. If any appear, merge the corresponding Dependabot PR or update manually with `go get <module>@latest && go mod tidy`.
+
 #### Indirect Go dependency freshness (periodic, not every release)
 
 Dependabot updates **direct** dependencies for all version bumps. For **indirect** (transitive) dependencies it only intervenes on security advisories -- a newer but non-security version of an indirect dep will silently drift unless a direct dep update happens to pull it along.
