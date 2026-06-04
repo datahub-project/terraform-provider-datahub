@@ -66,6 +66,8 @@ archives:
     formats: ["zip"]
     name_template: 'datahub-tf-extract_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 checksum:
+  ids:
+    - provider
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
