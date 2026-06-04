@@ -4,7 +4,7 @@ Thank you for your interest in contributing. This document covers how to report 
 
 ## Code of conduct
 
-Be respectful and constructive. We follow the same norms as the broader DataHub community.
+Be respectful and constructive. We follow the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Reporting issues
 
