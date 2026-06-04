@@ -299,7 +299,7 @@ mutation deleteDomain($urn: String!) {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return fmt.Errorf("domain deletion cancelled: %w", ctx.Err())
 			case <-time.After(time.Duration(attempt) * baseDelay):
 			}
 		}
