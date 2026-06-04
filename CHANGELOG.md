@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-05
+
+### Added
+
+- `datahub_domain` resource: create and manage DataHub domains with a deterministic, user-supplied `domain_id` (URN suffix). Domains can be nested to any depth via an optional `parent_domain` attribute. Set `parent_domain` to another `datahub_domain` resource's `.urn` attribute so Terraform's dependency graph creates parents before children and destroys children before parents — DataHub hard-deletes domains and refuses deletion if any child domains exist. Reparenting is performed in place via `moveDomain` without forcing replacement.
+- `datahub_domain` data source: look up an existing domain by `domain_id` and return its URN, name, description, and parent domain. Use this to reference an unmanaged domain (created outside Terraform) as a `parent_domain` input without taking ownership of it.
+- `datahub_domains` data source: return the URNs of all DataHub domains across the full hierarchy, for bulk import via `for_each` into `import {}` blocks.
+
+### Fixed
+
+- Import guide template was not updated when the extract tool archive was renamed to `tools-datahub-tf-extract` in v0.4.1, causing `make generate` to revert the already-corrected `docs/guides/import-existing.md` on every run.
+
 ## [0.4.1] - 2026-06-04
 
 ### Fixed
@@ -108,7 +120,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.2.0...v0.3.0
