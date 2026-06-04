@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-04
+
+### Fixed
+
+- Release packaging: `datahub-tf-extract` zip entries were included in the provider `SHA256SUMS` file, causing the Terraform Registry to serve the extract tool zip instead of the provider zip. `terraform init` failed with "provider binary not found" on all platforms. Fixed by scoping the `SHA256SUMS` to provider archives only. The extract tool zips remain in the GitHub release and are unaffected.
+
 ## [0.4.0] - 2026-06-01
 
 ### Added
@@ -102,7 +108,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.1.0...v0.2.0
