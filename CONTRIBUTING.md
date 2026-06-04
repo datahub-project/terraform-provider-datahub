@@ -158,8 +158,10 @@ make test && make testacc   # confirm nothing broke
 Do the same for the `tools/` sub-module if it also shows stale indirect deps:
 
 ```bash
-cd tools && go get -u ./... && go mod tidy && cd ..
+cd tools && go get -u -tags generate ./... && go mod tidy && cd ..
 ```
+
+The `-tags generate` flag is required because `tools/tools.go` carries a `//go:build generate` constraint — without it `./...` matches no packages and the update is silently skipped.
 
 This is not required before every release -- Go's minimum version selection means stale indirect deps are usually harmless -- but it is worth running every few releases or when the dependency graph looks very stale. Commit the updated `go.mod` and `go.sum` as part of the prepare PR if you do run it.
 
