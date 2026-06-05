@@ -2178,3 +2178,461 @@ func DomainCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Glossary node scenarios
+// ---------------------------------------------------------------------------
+
+// GlossaryNodeLifecycleSteps returns test steps covering create, in-place
+// update of name and description, and import (by id and by URN) for
+// datahub_glossary_node.
+//
+// nodeID is the node_id attribute and must be unique within the target
+// DataHub instance.
+func GlossaryNodeLifecycleSteps(nodeID string) []resource.TestStep {
+	const addr = "datahub_glossary_node.test"
+	urn := "urn:li:glossaryNode:" + nodeID
+
+	return []resource.TestStep{
+		{
+			// Create a root-level term group with name and description.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id     = %q
+  name        = "Finance"
+  description = "Finance term group"
+}
+`, nodeID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("node_id"), knownvalue.StringExact(nodeID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Finance")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Finance term group")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("parent_node"), knownvalue.Null()),
+			},
+		},
+		{
+			// Rename and update description in place (no replacement).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id     = %q
+  name        = "Finance & Risk"
+  description = "Finance and risk management term group"
+}
+`, nodeID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Finance & Risk")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Finance and risk management term group")),
+			},
+		},
+		{
+			// Import by bare node_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     nodeID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// GlossaryNodeParentChildSteps returns test steps covering parent-child
+// creation and in-place reparenting via updateParentNode for
+// datahub_glossary_node.
+func GlossaryNodeParentChildSteps(parentID, childID string) []resource.TestStep {
+	const parentAddr = "datahub_glossary_node.parent"
+	const childAddr = "datahub_glossary_node.child"
+	parentURN := "urn:li:glossaryNode:" + parentID
+	childURN := "urn:li:glossaryNode:" + childID
+
+	cfgWithParent := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "parent" {
+  node_id     = %q
+  name        = "Business"
+  description = "Business terms"
+}
+
+resource "datahub_glossary_node" "child" {
+  node_id     = %q
+  name        = "Finance"
+  description = "Finance terms"
+  parent_node = datahub_glossary_node.parent.urn
+}
+`, parentID, childID)
+
+	cfgChildAtRoot := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "parent" {
+  node_id     = %q
+  name        = "Business"
+  description = "Business terms"
+}
+
+resource "datahub_glossary_node" "child" {
+  node_id    = %q
+  name       = "Finance"
+  description = "Finance terms"
+  depends_on = [datahub_glossary_node.parent]
+}
+`, parentID, childID)
+
+	return []resource.TestStep{
+		{
+			// Create parent and child; child references parent via .urn.
+			Config: cfgWithParent,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(parentAddr, tfjsonpath.New("urn"), knownvalue.StringExact(parentURN)),
+				statecheck.ExpectKnownValue(childAddr, tfjsonpath.New("urn"), knownvalue.StringExact(childURN)),
+				statecheck.ExpectKnownValue(childAddr, tfjsonpath.New("parent_node"), knownvalue.StringExact(parentURN)),
+			},
+		},
+		{
+			// Remove parent_node from child (reparent to root).
+			// Must not trigger replacement.
+			Config: cfgChildAtRoot,
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(childAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction(parentAddr, plancheck.ResourceActionNoop),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(childAddr, tfjsonpath.New("parent_node"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// GlossaryNodeDataSourceSteps seeds a glossary node then reads it back via
+// the singular datahub_glossary_node data source.
+func GlossaryNodeDataSourceSteps(nodeID string) []resource.TestStep {
+	const addr = "data.datahub_glossary_node.test"
+	urn := "urn:li:glossaryNode:" + nodeID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "seed" {
+  node_id     = %q
+  name        = "Lookup Node"
+  description = "looked up"
+}
+
+data "datahub_glossary_node" "test" {
+  node_id = datahub_glossary_node.seed.node_id
+}
+`, nodeID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("node_id"), knownvalue.StringExact(nodeID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Lookup Node")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("looked up")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("parent_node"), knownvalue.StringExact("")),
+			},
+		},
+	}
+}
+
+// GlossaryNodeListSteps creates a glossary node and verifies its URN appears
+// in the datahub_glossary_nodes enumeration data source.
+func GlossaryNodeListSteps(nodeID string) []resource.TestStep {
+	urn := "urn:li:glossaryNode:" + nodeID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id = %q
+  name    = "List Node"
+}
+
+data "datahub_glossary_nodes" "all" {
+  depends_on = [datahub_glossary_node.test]
+}
+`, nodeID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_glossary_nodes.all", urn),
+			),
+		},
+	}
+}
+
+// GlossaryNodeCheckDestroy verifies every datahub_glossary_node in the
+// post-destroy state has been removed from DataHub.
+func GlossaryNodeCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_glossary_node" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		node, getErr := client.GetGlossaryNodeByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_glossary_node %q: %w", urn, getErr)
+		}
+		if node != nil {
+			return fmt.Errorf("datahub_glossary_node %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Glossary term scenarios
+// ---------------------------------------------------------------------------
+
+// GlossaryTermLifecycleSteps returns test steps covering create, in-place
+// update of name and description, and import (by id and by URN) for
+// datahub_glossary_term.
+//
+// nodeID is used to create a parent term group; termID is the term_id
+// attribute. Both must be unique within the target DataHub instance.
+func GlossaryTermLifecycleSteps(nodeID, termID string) []resource.TestStep {
+	const addr = "datahub_glossary_term.test"
+	nodeURN := "urn:li:glossaryNode:" + nodeID
+	termURN := "urn:li:glossaryTerm:" + termID
+
+	return []resource.TestStep{
+		{
+			// Create a term group and a term beneath it.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "parent" {
+  node_id = %q
+  name    = "Finance"
+}
+
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "Revenue"
+  description = "Total revenue"
+  parent_node = datahub_glossary_node.parent.urn
+}
+`, nodeID, termID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("term_id"), knownvalue.StringExact(termID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(termURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Revenue")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Total revenue")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("parent_node"), knownvalue.StringExact(nodeURN)),
+			},
+		},
+		{
+			// Rename and update description in place (no replacement).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "parent" {
+  node_id = %q
+  name    = "Finance"
+}
+
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "Gross Revenue"
+  description = "Total gross revenue before deductions"
+  parent_node = datahub_glossary_node.parent.urn
+}
+`, nodeID, termID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Gross Revenue")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Total gross revenue before deductions")),
+			},
+		},
+		{
+			// Import by bare term_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     termID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// GlossaryTermReparentSteps creates a node and term, then reparents the term
+// to root (removes parent_node) in place via updateParentNode.
+func GlossaryTermReparentSteps(nodeID, termID string) []resource.TestStep {
+	const nodeAddr = "datahub_glossary_node.group"
+	const termAddr = "datahub_glossary_term.term"
+	nodeURN := "urn:li:glossaryNode:" + nodeID
+
+	cfgWithParent := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "group" {
+  node_id = %q
+  name    = "Operations"
+}
+
+resource "datahub_glossary_term" "term" {
+  term_id     = %q
+  name        = "Cost"
+  parent_node = datahub_glossary_node.group.urn
+}
+`, nodeID, termID)
+
+	cfgAtRoot := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "group" {
+  node_id = %q
+  name    = "Operations"
+}
+
+resource "datahub_glossary_term" "term" {
+  term_id    = %q
+  name       = "Cost"
+  depends_on = [datahub_glossary_node.group]
+}
+`, nodeID, termID)
+
+	return []resource.TestStep{
+		{
+			Config: cfgWithParent,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(termAddr, tfjsonpath.New("parent_node"), knownvalue.StringExact(nodeURN)),
+			},
+		},
+		{
+			// Detach from parent node -- must be an Update, not Replace.
+			Config: cfgAtRoot,
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(termAddr, plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction(nodeAddr, plancheck.ResourceActionNoop),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(termAddr, tfjsonpath.New("parent_node"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// GlossaryTermDataSourceSteps seeds a term then reads it back via the singular
+// datahub_glossary_term data source.
+func GlossaryTermDataSourceSteps(nodeID, termID string) []resource.TestStep {
+	const addr = "data.datahub_glossary_term.test"
+	termURN := "urn:li:glossaryTerm:" + termID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "parent" {
+  node_id = %q
+  name    = "Finance"
+}
+
+resource "datahub_glossary_term" "seed" {
+  term_id     = %q
+  name        = "Profit"
+  description = "net profit"
+  parent_node = datahub_glossary_node.parent.urn
+}
+
+data "datahub_glossary_term" "test" {
+  term_id = datahub_glossary_term.seed.term_id
+}
+`, nodeID, termID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("term_id"), knownvalue.StringExact(termID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(termURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Profit")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("net profit")),
+			},
+		},
+	}
+}
+
+// GlossaryTermListSteps creates a term and verifies its URN appears in the
+// datahub_glossary_terms enumeration data source.
+func GlossaryTermListSteps(nodeID, termID string) []resource.TestStep {
+	termURN := "urn:li:glossaryTerm:" + termID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "parent" {
+  node_id = %q
+  name    = "Finance"
+}
+
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "EBITDA"
+  parent_node = datahub_glossary_node.parent.urn
+}
+
+data "datahub_glossary_terms" "all" {
+  depends_on = [datahub_glossary_term.test]
+}
+`, nodeID, termID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_glossary_terms.all", termURN),
+			),
+		},
+	}
+}
+
+// GlossaryTermCheckDestroy verifies every datahub_glossary_term in the
+// post-destroy state has been removed from DataHub.
+func GlossaryTermCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_glossary_term" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		term, getErr := client.GetGlossaryTermByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_glossary_term %q: %w", urn, getErr)
+		}
+		if term != nil {
+			return fmt.Errorf("datahub_glossary_term %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
