@@ -15,6 +15,6 @@ variable "create_root_node" {
     "Financial Industry Business Ontology (FIBO)" and nest all domain nodes
     under it. When false, FIBO domain nodes are created as root-level domains.
   EOT
-  type    = bool
-  default = true
+  type        = bool
+  default     = true
 }
