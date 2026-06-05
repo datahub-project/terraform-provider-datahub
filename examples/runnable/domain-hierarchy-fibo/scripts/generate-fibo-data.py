@@ -130,6 +130,32 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
+def camel_to_words(stem: str) -> str:
+    """'ACTUSTermApplicabilityMapping' -> 'ACTUS Term Applicability Mapping'"""
+    # Insert space before uppercase runs that follow lowercase, or before a
+    # capital that starts a new word in an all-caps prefix (e.g. ACTUSContract).
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z]{2})(?=[A-Z][a-z])", " ", stem)
+    return spaced.strip()
+
+
+def deduplicate_names(leaves: list) -> list:
+    """
+    Detect name collisions within a leaf list (DataHub enforces unique names
+    per parent domain) and fall back to the camelCase-split file stem for any
+    conflicting entries. The stem is stored during leaf collection as 'stem'.
+    """
+    from collections import Counter
+    counts = Counter(l["name"] for l in leaves)
+    result = []
+    for leaf in leaves:
+        if counts[leaf["name"]] > 1:
+            # Two or more leaves share this name -- use the filename as fallback
+            stem_name = strip_ontology_suffix(camel_to_words(leaf.get("stem", leaf["id"])))
+            leaf = {**leaf, "name": stem_name}
+        result.append(leaf)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Filesystem walk
 # ---------------------------------------------------------------------------
@@ -235,10 +261,11 @@ def collect_leaves(directory: Path) -> list:
         description = meta.get("abstract", "")
         leaves.append({
             "id": slugify(f.stem),
+            "stem": f.stem,  # kept for collision resolution
             "name": name,
             "description": description,
         })
-    return leaves
+    return deduplicate_names(leaves)
 
 
 # ---------------------------------------------------------------------------
