@@ -3,24 +3,38 @@
 Creates the [FIBO (Financial Industry Business Ontology)](https://spec.edmcouncil.org/fibo/) taxonomy as a three-level DataHub domain hierarchy:
 
 ```
-Domain (e.g. SEC - Securities)
-  Module (e.g. Debt)
-    Leaf ontology (e.g. Bonds, MortgageBackedSecurities)
+Financial Industry Business Ontology (FIBO)   ← optional root node
+  Domain (e.g. Securities (SEC))
+    Module (e.g. Debt)
+      Leaf ontology (e.g. Bonds, Mortgage Backed Securities)
 ```
 
 ## How it works
 
-The hierarchy is fetched live from the FIBO GitHub repository's file tree — no data file is committed. The `hashicorp/http` provider calls the GitHub tree API at plan/apply time and Terraform's `jsondecode` + `for` expressions derive the 3-level structure directly from the `Domain/Module/Leaf.rdf` path pattern.
+A Python script shallow-clones the FIBO GitHub repository and reads the RDF metadata files (`Metadata*.rdf`, individual ontology files) to extract names and descriptions. The output is a structured JSON file cached locally in `.fibo-cache/` (gitignored). Terraform reads this file at plan time — no network calls during `terraform plan` or `terraform apply`.
 
 **License:** FIBO is published by the [EDM Council](https://edmcouncil.org) under the [MIT License](https://github.com/edmcouncil/fibo/blob/master/LICENSE).
 
 ## Prerequisites
 
+- **git** — used by `make fibo-data` to shallow-clone the FIBO repository (~40 MB download, done once)
+- **Python 3.8+** — standard library only, no extra packages required
+- **make** — drives the data preparation step
 - DataHub OSS or DataHub Cloud instance
 - Personal access token with **Manage Domains** privilege
 - Terraform >= 1.11
 
 ## Usage
+
+### Step 1 — prepare the FIBO data (one-time)
+
+```bash
+make fibo-data
+```
+
+This clones the FIBO repository and generates `.fibo-cache/fibo.json`. Subsequent runs reuse the cache (refreshed automatically after 7 days, or immediately with `make fibo-update`).
+
+### Step 2 — apply
 
 ```bash
 export DATAHUB_GMS_URL="https://your-instance.acryl.io/gms"
@@ -37,19 +51,27 @@ terraform apply -var 'domains_filter=["SEC"]'
 terraform apply -var 'domains_filter=["SEC","DER","LOAN"]'
 ```
 
-Available domain codes (after excluding ontology scaffolding): `BE`, `CAE`, `DER`, `FBC`, `IND`, `LOAN`, `MD`, `SEC`.
+Available domain codes: `ACTUS`, `BE`, `CAE`, `DER`, `FBC`, `IND`, `LOAN`, `MD`, `SEC`. (`FND` and `BP` are always excluded as ontology scaffolding.)
 
-## GitHub API rate limits
+To omit the top-level FIBO root node:
 
-The example makes one unauthenticated request to the GitHub API per `terraform plan`. The unauthenticated rate limit is 60 requests/hour, which is sufficient for interactive use. For CI or repeated runs, add a token header:
+```bash
+terraform apply -var 'create_root_node=false'
+```
 
-```hcl
-# In main.tf, update the data "http" "fibo_tree" block:
-request_headers = {
-  Accept        = "application/vnd.github.v3+json"
-  User-Agent    = "terraform-datahub-fibo-example"
-  Authorization = "Bearer ${var.github_token}"
-}
+### Refreshing FIBO data
+
+To pick up a new FIBO release without re-cloning:
+
+```bash
+make fibo-update   # regenerates JSON from existing clone
+```
+
+To start completely fresh (re-clones the repository):
+
+```bash
+make clean-fibo
+make fibo-data
 ```
 
 ## Verify
