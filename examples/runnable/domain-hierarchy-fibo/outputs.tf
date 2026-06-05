@@ -1,3 +1,8 @@
+output "root_urn" {
+  description = "URN of the top-level FIBO root domain (empty when create_root_node is false)."
+  value       = var.create_root_node ? datahub_domain.fibo_root[0].urn : ""
+}
+
 output "domain_count" {
   description = "Number of top-level FIBO domain nodes created."
   value       = length(datahub_domain.fibo_domain)
@@ -14,8 +19,8 @@ output "leaf_count" {
 }
 
 output "total_domains" {
-  description = "Total DataHub domains created across all three FIBO hierarchy levels."
-  value       = length(datahub_domain.fibo_domain) + length(datahub_domain.fibo_module) + length(datahub_domain.fibo_leaf)
+  description = "Total DataHub domains created (root + domains + modules + leaves)."
+  value       = (var.create_root_node ? 1 : 0) + length(datahub_domain.fibo_domain) + length(datahub_domain.fibo_module) + length(datahub_domain.fibo_leaf)
 }
 
 output "domain_urns" {
