@@ -27,3 +27,18 @@ output "domain_urns" {
   description = "Map of FIBO domain code to DataHub domain URN for each top-level domain created."
   value       = { for k, d in datahub_domain.fibo_domain : k => d.urn }
 }
+
+output "glossary_node_count" {
+  description = "Total glossary nodes created (root + domain + module + leaf levels)."
+  value       = (
+    (var.create_glossary && var.create_root_node ? 1 : 0)
+    + length(datahub_glossary_node.fibo_glossary_domain)
+    + length(datahub_glossary_node.fibo_glossary_module)
+    + length(datahub_glossary_node.fibo_glossary_leaf)
+  )
+}
+
+output "glossary_term_count" {
+  description = "Total glossary terms created (owl:Class definitions extracted from leaf ontologies)."
+  value       = length(datahub_glossary_term.fibo_term)
+}

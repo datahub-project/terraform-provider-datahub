@@ -20,6 +20,7 @@ type GlossaryNode struct {
 	Name       string
 	Definition string // mapped to "description" in the Terraform schema
 	ParentNode string // full glossaryNode URN, or ""
+	Domain     string // full domain URN, or ""
 }
 
 // GlossaryTerm is the read-shape returned by GetGlossaryTermByURN.
@@ -29,6 +30,7 @@ type GlossaryTerm struct {
 	Name       string
 	Definition string // mapped to "description" in the Terraform schema
 	ParentNode string // full glossaryNode URN, or ""
+	Domain     string // full domain URN, or ""
 }
 
 // CreateGlossaryEntityInput groups the inputs for creating a DataHub glossary
@@ -42,6 +44,22 @@ type CreateGlossaryEntityInput struct {
 	Name       string
 	Definition string // optional; sent as "description" in the GraphQL input
 	ParentNode string // optional full glossaryNode URN; omitted when empty
+}
+
+// domainsAspect is the shared OpenAPI v3 shape for the "domains" aspect,
+// present on any entity that has been associated with a DataHub domain.
+type domainsAspect struct {
+	Value struct {
+		Domains []string `json:"domains"`
+	} `json:"value"`
+}
+
+// firstDomain returns the first domain URN from the aspect, or "" if absent.
+func (d *domainsAspect) firstDomain() string {
+	if d == nil || len(d.Value.Domains) == 0 {
+		return ""
+	}
+	return d.Value.Domains[0]
 }
 
 // glossaryNodeEntity is the OpenAPI v3 response shape for
@@ -61,6 +79,7 @@ type glossaryNodeEntity struct {
 			ParentNode string `json:"parentNode"`
 		} `json:"value"`
 	} `json:"glossaryNodeInfo,omitempty"`
+	Domains *domainsAspect `json:"domains,omitempty"`
 }
 
 // glossaryTermEntity is the OpenAPI v3 response shape for
@@ -80,6 +99,7 @@ type glossaryTermEntity struct {
 			ParentNode string `json:"parentNode"`
 		} `json:"value"`
 	} `json:"glossaryTermInfo,omitempty"`
+	Domains *domainsAspect `json:"domains,omitempty"`
 }
 
 type createGlossaryEntityResponse struct {
@@ -207,7 +227,7 @@ func (c *Client) GetGlossaryNodeByURN(ctx context.Context, urn string) (*Glossar
 		id = strings.TrimPrefix(entity.URN, "urn:li:glossaryNode:")
 	}
 
-	node := &GlossaryNode{URN: entity.URN, ID: id}
+	node := &GlossaryNode{URN: entity.URN, ID: id, Domain: entity.Domains.firstDomain()}
 	if entity.Info != nil {
 		node.Name = entity.Info.Value.Name
 		node.Definition = entity.Info.Value.Definition
@@ -268,7 +288,7 @@ func (c *Client) GetGlossaryTermByURN(ctx context.Context, urn string) (*Glossar
 		id = strings.TrimPrefix(entity.URN, "urn:li:glossaryTerm:")
 	}
 
-	term := &GlossaryTerm{URN: entity.URN, ID: id}
+	term := &GlossaryTerm{URN: entity.URN, ID: id, Domain: entity.Domains.firstDomain()}
 	if entity.Info != nil {
 		term.Name = entity.Info.Value.Name
 		term.Definition = entity.Info.Value.Definition

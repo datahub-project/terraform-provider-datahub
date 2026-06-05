@@ -16,6 +16,7 @@ type mockGlossaryNode struct {
 	Name       string
 	Definition string // maps to "description" in the Terraform schema
 	ParentNode string // full glossaryNode URN or ""
+	Domain     string // full domain URN or ""
 }
 
 // mockGlossaryTerm mirrors the glossary term shape the provider sends and reads.
@@ -25,6 +26,7 @@ type mockGlossaryTerm struct {
 	Name       string
 	Definition string // maps to "description" in the Terraform schema
 	ParentNode string // full glossaryNode URN or ""
+	Domain     string // full domain URN or ""
 }
 
 // handleCreateGlossaryNode handles the createGlossaryNode mutation.
@@ -93,6 +95,61 @@ func (s *mockServer) handleUpdateParentNode(w http.ResponseWriter, variables map
 	})
 }
 
+// handleSetDomain handles the setDomain mutation for glossary nodes and terms.
+// The real mutation is generic and supports any entity type; this mock
+// dispatches by URN prefix to update the correct entity store.
+func (s *mockServer) handleSetDomain(w http.ResponseWriter, variables map[string]any) {
+	entityURN, _ := variables["entityUrn"].(string)
+	domainURN, _ := variables["domainUrn"].(string)
+
+	s.mu.Lock()
+	switch {
+	case strings.HasPrefix(entityURN, "urn:li:glossaryNode:"):
+		id := strings.TrimPrefix(entityURN, "urn:li:glossaryNode:")
+		if n, ok := s.glossaryNodes[id]; ok {
+			n.Domain = domainURN
+			s.glossaryNodes[id] = n
+		}
+	case strings.HasPrefix(entityURN, "urn:li:glossaryTerm:"):
+		id := strings.TrimPrefix(entityURN, "urn:li:glossaryTerm:")
+		if t, ok := s.glossaryTerms[id]; ok {
+			t.Domain = domainURN
+			s.glossaryTerms[id] = t
+		}
+	}
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"setDomain": true},
+	})
+}
+
+// handleUnsetDomain handles the unsetDomain mutation for glossary nodes and terms.
+func (s *mockServer) handleUnsetDomain(w http.ResponseWriter, variables map[string]any) {
+	entityURN, _ := variables["entityUrn"].(string)
+
+	s.mu.Lock()
+	switch {
+	case strings.HasPrefix(entityURN, "urn:li:glossaryNode:"):
+		id := strings.TrimPrefix(entityURN, "urn:li:glossaryNode:")
+		if n, ok := s.glossaryNodes[id]; ok {
+			n.Domain = ""
+			s.glossaryNodes[id] = n
+		}
+	case strings.HasPrefix(entityURN, "urn:li:glossaryTerm:"):
+		id := strings.TrimPrefix(entityURN, "urn:li:glossaryTerm:")
+		if t, ok := s.glossaryTerms[id]; ok {
+			t.Domain = ""
+			s.glossaryTerms[id] = t
+		}
+	}
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"unsetDomain": true},
+	})
+}
+
 // handleDeleteGlossaryEntity handles the deleteGlossaryEntity mutation for
 // both nodes and terms. Unlike deleteDomain, there is no child guard -- the
 // mock deletes unconditionally, matching the real server's behavior.
@@ -147,6 +204,11 @@ func (s *mockServer) handleGlossaryNodeItem(w http.ResponseWriter, r *http.Reque
 			},
 		},
 	}
+	if n.Domain != "" {
+		entity["domains"] = map[string]any{
+			"value": map[string]any{"domains": []string{n.Domain}},
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
@@ -183,6 +245,11 @@ func (s *mockServer) handleGlossaryTermItem(w http.ResponseWriter, r *http.Reque
 				"parentNode": t.ParentNode,
 			},
 		},
+	}
+	if t.Domain != "" {
+		entity["domains"] = map[string]any{
+			"value": map[string]any{"domains": []string{t.Domain}},
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
