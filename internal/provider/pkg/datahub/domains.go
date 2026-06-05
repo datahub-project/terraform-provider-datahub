@@ -172,65 +172,6 @@ func (c *Client) GetDomainByURN(ctx context.Context, urn string) (*Domain, error
 	return domain, nil
 }
 
-// UpdateDomainName updates a domain's display name via the generic updateName
-// mutation, which writes domainProperties.name.
-func (c *Client) UpdateDomainName(ctx context.Context, urn, name string) error {
-	if c == nil {
-		return errors.New("client is nil")
-	}
-	const q = `
-mutation updateName($input: UpdateNameInput!) {
-  updateName(input: $input)
-}`
-	body := map[string]any{
-		"query": q,
-		"variables": map[string]any{
-			"input": map[string]any{
-				"urn":  urn,
-				"name": strings.TrimSpace(name),
-			},
-		},
-	}
-	var gqlResp genericGraphQLErrors
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return err
-	}
-	if len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
-	}
-	return nil
-}
-
-// UpdateDomainDescription updates a domain's description via the generic
-// updateDescription mutation. Pass "" to clear the description.
-// The mutation input uses resourceUrn (not urn) for the target entity.
-func (c *Client) UpdateDomainDescription(ctx context.Context, urn, description string) error {
-	if c == nil {
-		return errors.New("client is nil")
-	}
-	const q = `
-mutation updateDescription($input: DescriptionUpdateInput!) {
-  updateDescription(input: $input)
-}`
-	body := map[string]any{
-		"query": q,
-		"variables": map[string]any{
-			"input": map[string]any{
-				"resourceUrn": urn,
-				"description": description,
-			},
-		},
-	}
-	var gqlResp genericGraphQLErrors
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return err
-	}
-	if len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
-	}
-	return nil
-}
-
 // MoveDomain reparents a domain via the moveDomain mutation. Pass "" for
 // newParent to promote the domain to root (removes any existing parent).
 func (c *Client) MoveDomain(ctx context.Context, urn, newParent string) error {

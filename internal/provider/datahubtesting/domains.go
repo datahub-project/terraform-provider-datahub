@@ -89,19 +89,34 @@ func (s *mockServer) handleDeleteDomain(w http.ResponseWriter, variables map[str
 	})
 }
 
-// handleUpdateDescription handles the updateDescription mutation for domains.
-// The real mutation is generic (supports multiple entity types); the mock
-// dispatches here when the resourceUrn is a domain URN.
+// handleUpdateDescription handles the generic updateDescription mutation. The
+// real mutation supports multiple entity types; this mock dispatches by URN
+// prefix to update the correct entity store.
 func (s *mockServer) handleUpdateDescription(w http.ResponseWriter, variables map[string]any) {
 	input, _ := variables["input"].(map[string]any)
 	urn, _ := input["resourceUrn"].(string)
 	desc, _ := input["description"].(string)
-	id := strings.TrimPrefix(urn, "urn:li:domain:")
 
 	s.mu.Lock()
-	if d, ok := s.domains[id]; ok {
-		d.Description = desc
-		s.domains[id] = d
+	switch {
+	case strings.HasPrefix(urn, "urn:li:domain:"):
+		id := strings.TrimPrefix(urn, "urn:li:domain:")
+		if d, ok := s.domains[id]; ok {
+			d.Description = desc
+			s.domains[id] = d
+		}
+	case strings.HasPrefix(urn, "urn:li:glossaryNode:"):
+		id := strings.TrimPrefix(urn, "urn:li:glossaryNode:")
+		if n, ok := s.glossaryNodes[id]; ok {
+			n.Definition = desc
+			s.glossaryNodes[id] = n
+		}
+	case strings.HasPrefix(urn, "urn:li:glossaryTerm:"):
+		id := strings.TrimPrefix(urn, "urn:li:glossaryTerm:")
+		if t, ok := s.glossaryTerms[id]; ok {
+			t.Definition = desc
+			s.glossaryTerms[id] = t
+		}
 	}
 	s.mu.Unlock()
 

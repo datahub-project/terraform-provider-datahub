@@ -65,6 +65,18 @@ func (s *mockServer) handleUpdateName(w http.ResponseWriter, variables map[strin
 			d.Name = name
 			s.domains[id] = d
 		}
+	case strings.HasPrefix(urn, "urn:li:glossaryNode:"):
+		id := strings.TrimPrefix(urn, "urn:li:glossaryNode:")
+		if n, ok := s.glossaryNodes[id]; ok {
+			n.Name = name
+			s.glossaryNodes[id] = n
+		}
+	case strings.HasPrefix(urn, "urn:li:glossaryTerm:"):
+		id := strings.TrimPrefix(urn, "urn:li:glossaryTerm:")
+		if t, ok := s.glossaryTerms[id]; ok {
+			t.Name = name
+			s.glossaryTerms[id] = t
+		}
 	default:
 		id := strings.TrimPrefix(urn, "urn:li:corpGroup:")
 		if g, ok := s.groups[id]; ok {

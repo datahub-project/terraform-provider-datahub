@@ -193,14 +193,14 @@ func (r *domainResource) Update(ctx context.Context, req resource.UpdateRequest,
 	urn := state.URN.ValueString()
 
 	if plan.Name.ValueString() != state.Name.ValueString() {
-		if err := r.client.UpdateDomainName(ctx, urn, plan.Name.ValueString()); err != nil {
+		if err := r.client.UpdateEntityName(ctx, urn, plan.Name.ValueString()); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
 		}
 	}
 
 	if strVal(plan.Description) != strVal(state.Description) {
-		if err := r.client.UpdateDomainDescription(ctx, urn, strVal(plan.Description)); err != nil {
+		if err := r.client.UpdateEntityDescription(ctx, urn, strVal(plan.Description)); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
 		}

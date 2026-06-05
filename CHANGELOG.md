@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_glossary_node` resource: create and manage DataHub glossary nodes (the "Term Groups" shown in the DataHub UI) with a deterministic, user-supplied `node_id` (URN suffix). Nodes can be nested to any depth via an optional `parent_node` attribute. Set `parent_node` to another `datahub_glossary_node` resource's `.urn` attribute so Terraform's dependency graph creates parents before children and destroys children before parents. Unlike domains, DataHub does not refuse to delete a node that still has children, so correct ordering via `.urn` references is the only ordering guarantee. Reparenting is performed in place via `updateParentNode` without forcing replacement.
+- `datahub_glossary_node` data source: look up an existing term group by `node_id` and return its URN, name, description, and parent node. Use this to reference an unmanaged node as a `parent_node` input without taking ownership of it.
+- `datahub_glossary_nodes` data source: return the URNs of all DataHub glossary nodes for bulk import via `for_each` into `import {}` blocks.
+- `datahub_glossary_term` resource: create and manage DataHub glossary terms (the "Terms" shown in the DataHub UI) with a deterministic, user-supplied `term_id` (URN suffix, max 56 characters). Terms live under a `datahub_glossary_node` via the `parent_node` attribute; terms cannot be parents of other terms. Reparenting (including detaching to root) is performed in place via `updateParentNode` without forcing replacement.
+- `datahub_glossary_term` data source: look up an existing term by `term_id` and return its URN, name, description, and parent node.
+- `datahub_glossary_terms` data source: return the URNs of all DataHub glossary terms for bulk import via `for_each` into `import {}` blocks.
+
+### Changed
+
+- Extracted the `updateName` and `updateDescription` GraphQL mutation wrappers into shared client helpers (`UpdateEntityName`, `UpdateEntityDescription`) reused by domains, glossary nodes, and glossary terms.
+
 ## [0.5.0] - 2026-06-05
 
 ### Added

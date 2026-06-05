@@ -76,6 +76,8 @@ type mockServer struct {
 	users            map[string]mockUser
 	policies         map[string]mockPolicy
 	domains          map[string]mockDomain
+	glossaryNodes    map[string]mockGlossaryNode
+	glossaryTerms    map[string]mockGlossaryTerm
 	defaultPoolID    string
 	inviteToken      string
 	resetTokens      map[string]string
@@ -99,6 +101,8 @@ func NewServer(t *testing.T) *httptest.Server {
 		users:            make(map[string]mockUser),
 		policies:         make(map[string]mockPolicy),
 		domains:          make(map[string]mockDomain),
+		glossaryNodes:    make(map[string]mockGlossaryNode),
+		glossaryTerms:    make(map[string]mockGlossaryTerm),
 		inviteToken:      "mock-invite-token-001",
 		resetTokens:      make(map[string]string),
 		failDeleteFor:    make(map[string]struct{}),
@@ -114,6 +118,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
 	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)
+	mux.HandleFunc("/openapi/v3/entity/glossarynode/", s.handleGlossaryNodeItem)
+	mux.HandleFunc("/openapi/v3/entity/glossaryterm/", s.handleGlossaryTermItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -166,6 +172,14 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleMoveDomain(w, req.Variables)
 	case strings.Contains(q, "deleteDomain"):
 		s.handleDeleteDomain(w, req.Variables)
+	case strings.Contains(q, "createGlossaryNode"):
+		s.handleCreateGlossaryNode(w, req.Variables)
+	case strings.Contains(q, "createGlossaryTerm"):
+		s.handleCreateGlossaryTerm(w, req.Variables)
+	case strings.Contains(q, "updateParentNode"):
+		s.handleUpdateParentNode(w, req.Variables)
+	case strings.Contains(q, "deleteGlossaryEntity"):
+		s.handleDeleteGlossaryEntity(w, req.Variables)
 	case strings.Contains(q, "updateDescription"):
 		s.handleUpdateDescription(w, req.Variables)
 	case strings.Contains(q, "createGroup"):
@@ -369,6 +383,22 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": d.URN,
+					},
+				})
+			}
+		case "GLOSSARY_NODE":
+			for _, n := range s.glossaryNodes {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": n.URN,
+					},
+				})
+			}
+		case "GLOSSARY_TERM":
+			for _, t := range s.glossaryTerms {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": t.URN,
 					},
 				})
 			}
