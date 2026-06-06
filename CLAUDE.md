@@ -80,6 +80,7 @@ The resource `datahub_ingestion_source` follows this rule: it maps to URN type `
 - Generate docs: `cd tools && go generate ./...`
 - Tests: `make test` (unit + mock acceptance); `make testacc` (live acceptance, requires a running DataHub instance)
 - Lint: `make lint` -- **always run before raising a PR**. The linter includes `gofmt`; misaligned comment spacing (e.g., `"foo",   // comment` with wrong tab count) will fail CI even if the code compiles and tests pass.
+- New worktree: after creating a git worktree for a new branch, run `make dev-override` inside the worktree directory before running any Terraform commands. This generates the gitignored `dev.tfrc` with the absolute path to that worktree's binary, and sets `TF_CLI_CONFIG_FILE` via `.mise.env`. Without it, Terraform picks up the wrong (or no) provider binary.
 
 ## Tool version maintenance
 
