@@ -2817,3 +2817,225 @@ func TagCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// StructuredPropertyLifecycleSteps exercises the full resource lifecycle:
+//   - Create with value_type, entity_types, allowed_values, and settings.
+//   - Additive update: add an entity_type + add an allowed_value + widen
+//     cardinality + update display_name/description/settings. These must NOT
+//     trigger replacement (ResourceActionUpdate).
+//   - Shrink update: remove an allowed_value. Must trigger replacement
+//     (ResourceActionDestroyBeforeCreate).
+//   - Import by bare property_id.
+//   - Import by full URN.
+func StructuredPropertyLifecycleSteps(propertyID string) []resource.TestStep {
+	const addr = "datahub_structured_property.test"
+	urn := "urn:li:structuredProperty:" + propertyID
+
+	return []resource.TestStep{
+		{
+			// Create: string-typed, single-valued, applies to datasets, with two
+			// allowed values and search-filter enabled.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "string"
+  cardinality  = "SINGLE"
+  entity_types = ["dataset"]
+
+  display_name = "Data Classification"
+  description  = "Classifies data sensitivity"
+
+  allowed_values = [
+    { string_value = "Public",   description = "Publicly accessible data" },
+    { string_value = "Internal", description = "Internal use only" },
+  ]
+
+  settings = {
+    show_in_search_filters = true
+  }
+}
+`, propertyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("property_id"), knownvalue.StringExact(propertyID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value_type"), knownvalue.StringExact("string")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cardinality"), knownvalue.StringExact("SINGLE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Data Classification")),
+			},
+		},
+		{
+			// Additive update: add dashboard to entity_types, add a third allowed
+			// value, widen cardinality to MULTIPLE, update display_name and settings.
+			// Must NOT trigger replacement.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "string"
+  cardinality  = "MULTIPLE"
+  entity_types = ["dataset", "dashboard"]
+
+  display_name = "Data Classification (updated)"
+  description  = "Classifies data sensitivity and audience"
+
+  allowed_values = [
+    { string_value = "Public",      description = "Publicly accessible data" },
+    { string_value = "Internal",    description = "Internal use only" },
+    { string_value = "Confidential", description = "Restricted access required" },
+  ]
+
+  settings = {
+    show_in_search_filters = true
+    show_in_asset_summary  = true
+  }
+}
+`, propertyID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cardinality"), knownvalue.StringExact("MULTIPLE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Data Classification (updated)")),
+			},
+		},
+		{
+			// Shrink: remove one allowed_value. The DataHub API cannot remove
+			// allowed values, so Terraform must replace the resource.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "string"
+  cardinality  = "MULTIPLE"
+  entity_types = ["dataset", "dashboard"]
+
+  display_name = "Data Classification (updated)"
+  description  = "Classifies data sensitivity and audience"
+
+  allowed_values = [
+    { string_value = "Public",   description = "Publicly accessible data" },
+    { string_value = "Internal", description = "Internal use only" },
+  ]
+
+  settings = {
+    show_in_search_filters = true
+    show_in_asset_summary  = true
+  }
+}
+`, propertyID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionDestroyBeforeCreate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+			},
+		},
+		{
+			// Import by bare property_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     propertyID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// StructuredPropertyDataSourceSteps seeds a structured property via the resource
+// then reads it back via the singular datahub_structured_property data source.
+func StructuredPropertyDataSourceSteps(propertyID string) []resource.TestStep {
+	const addr = "data.datahub_structured_property.test"
+	urn := "urn:li:structuredProperty:" + propertyID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "seed" {
+  property_id  = %q
+  value_type   = "number"
+  entity_types = ["dataset"]
+  display_name = "Retention Days"
+  description  = "Data retention period in days"
+}
+
+data "datahub_structured_property" "test" {
+  property_id = datahub_structured_property.seed.property_id
+}
+`, propertyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("property_id"), knownvalue.StringExact(propertyID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value_type"), knownvalue.StringExact("number")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Retention Days")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Data retention period in days")),
+			},
+		},
+	}
+}
+
+// StructuredPropertyListSteps creates a structured property and verifies its
+// URN appears in the datahub_structured_properties enumeration data source.
+func StructuredPropertyListSteps(propertyID string) []resource.TestStep {
+	urn := "urn:li:structuredProperty:" + propertyID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["dataset"]
+}
+
+data "datahub_structured_properties" "all" {
+  depends_on = [datahub_structured_property.test]
+}
+`, propertyID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_structured_properties.all", urn),
+			),
+		},
+	}
+}
+
+// StructuredPropertyCheckDestroy verifies every datahub_structured_property in
+// the post-destroy state has been removed from DataHub.
+func StructuredPropertyCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_structured_property" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		sp, getErr := client.GetStructuredPropertyByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_structured_property %q: %w", urn, getErr)
+		}
+		if sp != nil {
+			return fmt.Errorf("datahub_structured_property %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
