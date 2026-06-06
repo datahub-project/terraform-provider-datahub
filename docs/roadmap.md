@@ -2,7 +2,7 @@
 
 This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — and classifies each area by relevance to the Terraform provider. It is the basis for deciding what to build next.
 
-**Current provider state (v0.5.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources), `datahub_corp_group` (resource + data source), `datahub_corp_groups` (data source), `datahub_corp_group_member` (resource), `datahub_corp_user` (resource + data source), `datahub_local_user_login` (resource), `datahub_role` / `datahub_roles` (data sources), `datahub_role_assignment` (resource), `datahub_policy` (resource), `datahub_policies` (data source), `datahub_domain` (resource + data source), `datahub_domains` (data source).
+**Current provider state (v0.6.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources), `datahub_corp_group` (resource + data source), `datahub_corp_groups` (data source), `datahub_corp_group_member` (resource), `datahub_corp_user` (resource + data source), `datahub_local_user_login` (resource), `datahub_role` / `datahub_roles` (data sources), `datahub_role_assignment` (resource), `datahub_policy` (resource), `datahub_policies` (data source), `datahub_domain` (resource + data source), `datahub_domains` (data source), `datahub_glossary_node` (resource + data source), `datahub_glossary_nodes` (data source), `datahub_glossary_term` (resource + data source), `datahub_glossary_terms` (data source).
 
 ## Scope principles
 
@@ -71,8 +71,8 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 |---|---|---|---|---|
 | `createDomain` / `deleteDomain` / `moveDomain` + `domain(urn)` | M/Q | covered | no | `datahub_domain` resource + data source (v0.5.0, [PR #42](https://github.com/datahub-project/terraform-provider-datahub/pull/42)). User-supplied `domain_id` avoids UUID URN trap; reparenting via `moveDomain` mapped to `parent_domain` attribute. |
 | `createDataProduct` / `updateDataProduct` / `deleteDataProduct` + `dataProduct(urn)` | M/Q | **HIGH** | no | **New:** `datahub_data_product` resource + data source. Composition includes output-port URN list — aspect-list ownership applies. UI also creates UUID URNs — require explicit `id`. |
-| `createGlossaryNode` + `deleteGlossaryEntity` + `glossaryNode(urn)` | M/Q | **HIGH** | no | **New:** `datahub_glossary_node` resource + data source (term folders/categories). Properties set via OpenAPI aspect PATCH after create. |
-| `createGlossaryTerm` + `deleteGlossaryEntity` + `glossaryTerm(urn)` + scoped `updateName` / `updateDescription` / `updateParentNode` | M/Q | **HIGH** | no | **New:** `datahub_glossary_term` resource + data source. Shared `updateName`/`updateDescription` mutations are footguns — provider must scope to glossary URN types only. URN key: confirm SDK convention (hierarchical path vs UUID?). |
+| `createGlossaryNode` + `deleteGlossaryEntity` + `glossaryNode(urn)` | M/Q | covered | no | `datahub_glossary_node` resource + data source + `datahub_glossary_nodes` bulk-enumerate data source (v0.6.0, [PR #44](https://github.com/datahub-project/terraform-provider-datahub/pull/44)). User-supplied `node_id`; reparenting via `updateParentNode`; `domain` attribute via `setDomain`/`unsetDomain`. |
+| `createGlossaryTerm` + `deleteGlossaryEntity` + `glossaryTerm(urn)` + scoped `updateName` / `updateDescription` / `updateParentNode` | M/Q | covered | no | `datahub_glossary_term` resource + data source + `datahub_glossary_terms` bulk-enumerate data source (v0.6.0, [PR #44](https://github.com/datahub-project/terraform-provider-datahub/pull/44)). User-supplied `term_id` (max 56 chars); reparenting in place; `domain` attribute. |
 | `createTag` / `updateTag` / `deleteTag` / `setTagColor` + `tag(urn)` | M/Q | **HIGH** | no | **New:** `datahub_tag` resource + data source — **definitions only**. Assignments (`addTag`/etc.) are deny-list. `setTagColor` is a separate mutation; fold into the `update` lifecycle so name + description + color reconcile in one apply. |
 | `createOwnershipType` / `updateOwnershipType` / `deleteOwnershipType` + OpenAPI entity | M/Q | **HIGH** | no | **New:** `datahub_ownership_type` resource + data source. Custom roles like "Steward", "Producer", "Technical Owner". Common dependency — many other resources reference these by URN. |
 | `addRelatedTerms` / `removeRelatedTerms` | M | MEDIUM | no | Possible `datahub_glossary_term_relationship` resource (typed: isA, hasA, contains, values, relatedTerm). Aspect-list ownership applies. |
@@ -81,10 +81,10 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | `setDomain` / `unsetDomain` / `batchSetDomain` / `batchSet*Application` / `batchSet*DataProduct` | M | IRRELEVANT | no | Per-asset enrichment — deny-list. |
 | `getRootGlossaryNodes` / `getRootGlossaryTerms` / `listDomains` / `listDataProductAssets` | Q | LOW | no | OpenSearch-backed; data-source-only with documented lag. |
 
-**Glossary implementation notes:**
-- `glossaryNode` and `glossaryTerm` need property aspects (`glossaryNodeInfo`, `glossaryTermInfo`) set via OpenAPI aspect PATCH after create — pure GraphQL does not cover all fields. Plan for create + aspect-write steps with rollback on failure.
-- The shared `updateName`/`updateDescription`/`updateParentNode` mutations also apply to datasets, dashboards, etc. Provider must reject URN types it does not own.
-- URN convention for glossary terms: verify against DataHub Python SDK before implementation. If the SDK uses a hierarchical path-derived ID, the provider must match it or risk duplicate-entity problems.
+**Glossary implementation notes (resolved in v0.6.0):**
+- Property aspects (`glossaryNodeInfo`, `glossaryTermInfo`) are set via OpenAPI aspect PATCH after create, as planned.
+- Shared `updateName`/`updateDescription` mutations are scoped to glossary URN types in the shared client helpers `UpdateEntityName` / `UpdateEntityDescription`.
+- URN key is user-supplied `node_id` / `term_id` (not a hierarchical path or UUID), matching the deterministic pattern used across the provider.
 
 ---
 
@@ -327,8 +327,8 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | ~~1~~ | ~~`datahub_connection`~~ | resource | yes+OSS | **Shipped v0.3.0** ([PR #26](https://github.com/datahub-project/terraform-provider-datahub/pull/26)) |
 | ~~2~~ | ~~`datahub_domain`~~ | resource + data source | yes | **Shipped v0.5.0** ([PR #42](https://github.com/datahub-project/terraform-provider-datahub/pull/42)) |
 | 3 | `datahub_tag` | resource + data source | yes | Definitions only; `setTagColor` separate mutation |
-| 4 | `datahub_glossary_node` | resource + data source | yes | OpenAPI aspect write after create; URN convention |
-| 5 | `datahub_glossary_term` | resource + data source | yes | Shared mutations footgun; URN convention |
+| ~~4~~ | ~~`datahub_glossary_node`~~ | resource + data source | yes | **Shipped v0.6.0** ([PR #44](https://github.com/datahub-project/terraform-provider-datahub/pull/44)) |
+| ~~5~~ | ~~`datahub_glossary_term`~~ | resource + data source | yes | **Shipped v0.6.0** ([PR #44](https://github.com/datahub-project/terraform-provider-datahub/pull/44)) |
 | 6 | `datahub_structured_property` | resource + data source | yes | Straightforward; pairs with `datahub_form` |
 
 ### Tier 2 — high leverage, larger design effort

@@ -3,17 +3,55 @@
 [![CI](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/datahub-project/terraform-provider-datahub/graph/badge.svg)](https://codecov.io/gh/datahub-project/terraform-provider-datahub)
 
-Terraform provider for DataHub. Manage ingestion sources, secrets, and more as code.
+Terraform provider for DataHub. Manage ingestion, governance taxonomy, access control, and more as code.
 
 This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI v3 and GraphQL APIs.
 
 ## What it supports
 
-- Resources
-  - `datahub_ingestion_source`: creates/updates/deletes a DataHub ingestion source from a recipe JSON string.
-  - `datahub_secret`: creates/updates/deletes a named encrypted secret, referenced as `${SECRET_NAME}` in ingestion recipes.
-- Data sources
-  - `datahub_me`: reads the authenticated user's identity; useful for smoke-testing provider credentials at plan time.
+**Ingestion**
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_ingestion_source` | resource + data source | Ingestion source from a recipe JSON string. |
+| `datahub_secret` | resource | Named encrypted secret; reference as `${SECRET_NAME}` in recipes. |
+| `datahub_connection` | resource | Reusable, encrypted credential config for data platforms. |
+| `datahub_ingestion_sources` | data source | Enumerate all ingestion source URNs. |
+| `datahub_secrets` | data source | Enumerate all secret URNs (values are never returned). |
+| `datahub_connections` | data source | Enumerate all connection URNs. |
+| `datahub_remote_executor_pool` | resource + data source | Private executor pool for VPC-hosted sources. **DataHub Cloud only.** |
+
+**Governance taxonomy**
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_domain` | resource + data source | DataHub domains; nestable via `parent_domain`. |
+| `datahub_domains` | data source | Enumerate all domain URNs for bulk import. |
+| `datahub_glossary_node` | resource + data source | Glossary term groups; nestable via `parent_node`. |
+| `datahub_glossary_nodes` | data source | Enumerate all glossary node URNs for bulk import. |
+| `datahub_glossary_term` | resource + data source | Glossary terms; associated to a node via `parent_node`. |
+| `datahub_glossary_terms` | data source | Enumerate all glossary term URNs for bulk import. |
+
+**Access control**
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_corp_group` | resource + data source | Native DataHub groups. |
+| `datahub_corp_groups` | data source | Enumerate all group URNs for bulk import. |
+| `datahub_corp_group_member` | resource | Membership edge (one user in one group). |
+| `datahub_corp_user` | resource + data source | User catalog profile (`corpUserInfo` aspects). |
+| `datahub_local_user_login` | resource | Native-auth login credentials via the signUp flow. |
+| `datahub_role` | data source | Resolve a built-in role name to its URN. |
+| `datahub_roles` | data source | Enumerate all built-in role URNs. |
+| `datahub_role_assignment` | resource | Assign a built-in role to a user or group. |
+| `datahub_policy` | resource | PLATFORM and METADATA access policies with full actor/privilege/resource control. |
+| `datahub_policies` | data source | Enumerate all policy URNs for bulk import. |
+
+**Identity**
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_me` | data source | Authenticated user's identity; useful for smoke-testing provider credentials at plan time. |
 
 Generated docs live under `docs/`.
 
