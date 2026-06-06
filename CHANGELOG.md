@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_tag` resource: create and manage DataHub tags with a deterministic, user-supplied `tag_id` (URN suffix). Manages the tag entity itself -- its display `name`, `description`, and optional `color_hex` display colour (`#RRGGBB` format) -- not where the tag is applied to data assets. Tags are flat (no parent/child hierarchy). Create uses the `createTag` GraphQL mutation; colour is set via the dedicated `setTagColor` mutation; renames write the `tagProperties` aspect directly via OpenAPI v3 (the DataHub `updateName` mutation does not support the Tag entity type).
+- `datahub_tag` data source: look up an existing tag by `tag_id` and return its URN, name, description, and colour. Use this to reference a tag created outside Terraform without taking ownership of it.
+- `datahub_tags` data source: return the URNs of all DataHub tags for bulk import via `for_each` into `import {}` blocks.
+- `examples/runnable/tag-simple`: runnable example creating three tags (PII, Verified, Deprecated) with distinct colours, demonstrating the resource, singular data source, and plural list data source.
+
 ## [0.6.0] - 2026-06-06
 
 ### Added

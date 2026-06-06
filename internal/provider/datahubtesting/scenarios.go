@@ -2636,3 +2636,184 @@ func GlossaryTermCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// Tag scenarios
+// ---------------------------------------------------------------------------
+
+// TagLifecycleSteps returns test steps covering create (with description and
+// colour), in-place rename (exercises the tagProperties aspect-write path),
+// description and colour update, and import (by id and by URN) for
+// datahub_tag.
+//
+// tagID is the tag_id attribute and must be unique within the target DataHub
+// instance.
+func TagLifecycleSteps(tagID string) []resource.TestStep {
+	const addr = "datahub_tag.test"
+	urn := "urn:li:tag:" + tagID
+
+	return []resource.TestStep{
+		{
+			// Create a tag with name, description, and colour.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_tag" "test" {
+  tag_id      = %q
+  name        = "Sensitive"
+  description = "Marks sensitive data assets"
+  color_hex   = "#FF6B6B"
+}
+`, tagID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tag_id"), knownvalue.StringExact(tagID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Sensitive")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Marks sensitive data assets")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("color_hex"), knownvalue.StringExact("#FF6B6B")),
+			},
+		},
+		{
+			// Rename in place -- exercises WriteTagProperties (tagProperties aspect write).
+			// Must not trigger replacement.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_tag" "test" {
+  tag_id      = %q
+  name        = "Highly Sensitive"
+  description = "Marks sensitive data assets"
+  color_hex   = "#FF6B6B"
+}
+`, tagID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Highly Sensitive")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("color_hex"), knownvalue.StringExact("#FF6B6B")),
+			},
+		},
+		{
+			// Update description and colour independently (no rename).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_tag" "test" {
+  tag_id      = %q
+  name        = "Highly Sensitive"
+  description = "Marks highly sensitive data requiring special handling"
+  color_hex   = "#C0392B"
+}
+`, tagID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Marks highly sensitive data requiring special handling")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("color_hex"), knownvalue.StringExact("#C0392B")),
+			},
+		},
+		{
+			// Import by bare tag_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     tagID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// TagDataSourceSteps seeds a tag via the resource then reads it back via the
+// singular datahub_tag data source.
+func TagDataSourceSteps(tagID string) []resource.TestStep {
+	const addr = "data.datahub_tag.test"
+	urn := "urn:li:tag:" + tagID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_tag" "seed" {
+  tag_id      = %q
+  name        = "Lookup Tag"
+  description = "looked up"
+  color_hex   = "#3498DB"
+}
+
+data "datahub_tag" "test" {
+  tag_id = datahub_tag.seed.tag_id
+}
+`, tagID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tag_id"), knownvalue.StringExact(tagID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Lookup Tag")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("looked up")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("color_hex"), knownvalue.StringExact("#3498DB")),
+			},
+		},
+	}
+}
+
+// TagListSteps creates a tag and verifies its URN appears in the datahub_tags
+// enumeration data source.
+func TagListSteps(tagID string) []resource.TestStep {
+	urn := "urn:li:tag:" + tagID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_tag" "test" {
+  tag_id = %q
+  name   = "List Tag"
+}
+
+data "datahub_tags" "all" {
+  depends_on = [datahub_tag.test]
+}
+`, tagID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_tags.all", urn),
+			),
+		},
+	}
+}
+
+// TagCheckDestroy verifies every datahub_tag in the post-destroy state has
+// been removed from DataHub.
+func TagCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_tag" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		tag, getErr := client.GetTagByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_tag %q: %w", urn, getErr)
+		}
+		if tag != nil {
+			return fmt.Errorf("datahub_tag %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
