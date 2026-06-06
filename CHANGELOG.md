@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-07
+
 ### Added
 
 - `datahub_structured_property` resource: create and manage DataHub structured property definitions with a deterministic, user-supplied `property_id` (URN suffix and `qualifiedName`). Manages the property schema -- `value_type` (`string`, `number`, `date`, `urn`, `rich_text`), `cardinality` (`SINGLE`/`MULTIPLE`), `entity_types` (which asset types the property can be applied to), optional `allowed_values` enum constraint, optional `allowed_entity_types` filter for `urn`-typed properties, and the `structuredPropertySettings` display-flag aspect via a `settings {}` block. This resource manages the definition only; applying values to individual assets is per-asset enrichment and is out of scope. The DataHub `updateStructuredProperty` mutation is append-only for list fields (`entity_types`, `allowed_values`, `allowed_entity_types`) and cardinality can only widen `SINGLE`->`MULTIPLE`: additive changes are applied in-place, while removing an element or narrowing cardinality forces resource replacement (which hard-deletes the property and removes all applied values from assets).
 - `datahub_structured_property` data source: look up an existing structured property definition by `property_id` and return all fields. Use this to reference a property created outside Terraform without taking ownership of it.
 - `datahub_structured_properties` data source: return the URNs of all DataHub structured properties for bulk import via `for_each` into `import {}` blocks.
 - `examples/runnable/structured-property-simple`: runnable example creating a `number`-typed retention-days property (dataset) and a `string`-typed classification property with allowed values (dataset + dashboard), demonstrating the resource, singular data source, and plural list data source.
-
 - `datahub_tag` resource: create and manage DataHub tags with a deterministic, user-supplied `tag_id` (URN suffix). Manages the tag entity itself -- its display `name`, `description`, and optional `color_hex` display colour (`#RRGGBB` format) -- not where the tag is applied to data assets. Tags are flat (no parent/child hierarchy). Create uses the `createTag` GraphQL mutation; colour is set via the dedicated `setTagColor` mutation; renames write the `tagProperties` aspect directly via OpenAPI v3 (the DataHub `updateName` mutation does not support the Tag entity type).
 - `datahub_tag` data source: look up an existing tag by `tag_id` and return its URN, name, description, and colour. Use this to reference a tag created outside Terraform without taking ownership of it.
 - `datahub_tags` data source: return the URNs of all DataHub tags for bulk import via `for_each` into `import {}` blocks.
@@ -149,7 +150,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.0...v0.4.1
