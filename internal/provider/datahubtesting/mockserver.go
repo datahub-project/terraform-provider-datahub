@@ -76,10 +76,11 @@ type mockServer struct {
 	users            map[string]mockUser
 	policies         map[string]mockPolicy
 	domains          map[string]mockDomain
-	glossaryNodes    map[string]mockGlossaryNode
-	glossaryTerms    map[string]mockGlossaryTerm
-	tags             map[string]mockTag
-	defaultPoolID    string
+	glossaryNodes        map[string]mockGlossaryNode
+	glossaryTerms        map[string]mockGlossaryTerm
+	tags                 map[string]mockTag
+	structuredProperties map[string]mockStructuredProperty
+	defaultPoolID        string
 	inviteToken      string
 	resetTokens      map[string]string
 	ossSignUpMode    bool
@@ -102,10 +103,11 @@ func NewServer(t *testing.T) *httptest.Server {
 		users:            make(map[string]mockUser),
 		policies:         make(map[string]mockPolicy),
 		domains:          make(map[string]mockDomain),
-		glossaryNodes:    make(map[string]mockGlossaryNode),
-		glossaryTerms:    make(map[string]mockGlossaryTerm),
-		tags:             make(map[string]mockTag),
-		inviteToken:      "mock-invite-token-001",
+		glossaryNodes:        make(map[string]mockGlossaryNode),
+		glossaryTerms:        make(map[string]mockGlossaryTerm),
+		tags:                 make(map[string]mockTag),
+		structuredProperties: make(map[string]mockStructuredProperty),
+		inviteToken:          "mock-invite-token-001",
 		resetTokens:      make(map[string]string),
 		failDeleteFor:    make(map[string]struct{}),
 	}
@@ -122,6 +124,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)
 	mux.HandleFunc("/openapi/v3/entity/glossarynode/", s.handleGlossaryNodeItem)
 	mux.HandleFunc("/openapi/v3/entity/glossaryterm/", s.handleGlossaryTermItem)
+	mux.HandleFunc("/openapi/v3/entity/structuredproperty/", s.handleStructuredPropertyItem)
 	mux.HandleFunc("/openapi/v3/entity/tag", s.handleTagCollection)
 	mux.HandleFunc("/openapi/v3/entity/tag/", s.handleTagItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
@@ -184,6 +187,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateParentNode(w, req.Variables)
 	case strings.Contains(q, "deleteGlossaryEntity"):
 		s.handleDeleteGlossaryEntity(w, req.Variables)
+	case strings.Contains(q, "createStructuredProperty"):
+		s.handleCreateStructuredProperty(w, req.Variables)
+	case strings.Contains(q, "updateStructuredProperty"):
+		s.handleUpdateStructuredProperty(w, req.Variables)
+	case strings.Contains(q, "deleteStructuredProperty"):
+		s.handleDeleteStructuredProperty(w, req.Variables)
 	case strings.Contains(q, "createTag"):
 		s.handleCreateTag(w, req.Variables)
 	case strings.Contains(q, "setTagColor"):
@@ -421,6 +430,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": t.URN,
+					},
+				})
+			}
+		case "STRUCTURED_PROPERTY":
+			for _, sp := range s.structuredProperties {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": sp.URN,
 					},
 				})
 			}

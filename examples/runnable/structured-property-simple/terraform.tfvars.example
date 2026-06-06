@@ -1,0 +1,2 @@
+datahub_gms_url   = "https://your-datahub.example.com"
+datahub_gms_token = "your-personal-access-token"
