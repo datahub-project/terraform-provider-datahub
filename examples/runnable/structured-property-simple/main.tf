@@ -44,8 +44,8 @@ resource "datahub_structured_property" "classification" {
   description  = "Data sensitivity classification. Managed by Terraform."
 
   allowed_values = [
-    { string_value = "Public",       description = "Data that can be shared externally" },
-    { string_value = "Internal",     description = "Internal use only - not for external sharing" },
+    { string_value = "Public", description = "Data that can be shared externally" },
+    { string_value = "Internal", description = "Internal use only - not for external sharing" },
     { string_value = "Confidential", description = "Sensitive data requiring restricted access" },
   ]
 

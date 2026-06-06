@@ -67,23 +67,23 @@ type mockSecret struct {
 }
 
 type mockServer struct {
-	mu               sync.Mutex
-	ingestionSources map[string]mockIngestionSource
-	secrets          map[string]mockSecret
-	pools            map[string]mockExecutorPool
-	connections      map[string]mockConnection
-	groups           map[string]mockGroup
-	users            map[string]mockUser
-	policies         map[string]mockPolicy
-	domains          map[string]mockDomain
+	mu                   sync.Mutex
+	ingestionSources     map[string]mockIngestionSource
+	secrets              map[string]mockSecret
+	pools                map[string]mockExecutorPool
+	connections          map[string]mockConnection
+	groups               map[string]mockGroup
+	users                map[string]mockUser
+	policies             map[string]mockPolicy
+	domains              map[string]mockDomain
 	glossaryNodes        map[string]mockGlossaryNode
 	glossaryTerms        map[string]mockGlossaryTerm
 	tags                 map[string]mockTag
 	structuredProperties map[string]mockStructuredProperty
 	defaultPoolID        string
-	inviteToken      string
-	resetTokens      map[string]string
-	ossSignUpMode    bool
+	inviteToken          string
+	resetTokens          map[string]string
+	ossSignUpMode        bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -95,21 +95,21 @@ type mockServer struct {
 func NewServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	s := &mockServer{
-		ingestionSources: make(map[string]mockIngestionSource),
-		secrets:          make(map[string]mockSecret),
-		pools:            make(map[string]mockExecutorPool),
-		connections:      make(map[string]mockConnection),
-		groups:           make(map[string]mockGroup),
-		users:            make(map[string]mockUser),
-		policies:         make(map[string]mockPolicy),
-		domains:          make(map[string]mockDomain),
+		ingestionSources:     make(map[string]mockIngestionSource),
+		secrets:              make(map[string]mockSecret),
+		pools:                make(map[string]mockExecutorPool),
+		connections:          make(map[string]mockConnection),
+		groups:               make(map[string]mockGroup),
+		users:                make(map[string]mockUser),
+		policies:             make(map[string]mockPolicy),
+		domains:              make(map[string]mockDomain),
 		glossaryNodes:        make(map[string]mockGlossaryNode),
 		glossaryTerms:        make(map[string]mockGlossaryTerm),
 		tags:                 make(map[string]mockTag),
 		structuredProperties: make(map[string]mockStructuredProperty),
 		inviteToken:          "mock-invite-token-001",
-		resetTokens:      make(map[string]string),
-		failDeleteFor:    make(map[string]struct{}),
+		resetTokens:          make(map[string]string),
+		failDeleteFor:        make(map[string]struct{}),
 	}
 	s.seedUsers()
 	mux := http.NewServeMux()
