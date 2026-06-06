@@ -61,6 +61,7 @@ resource "datahub_glossary_term" "revenue" {
 ### Optional
 
 - `description` (String) Definition of the term's meaning and scope.
+- `domain` (String) Full URN of the DataHub domain to associate with this term (e.g. `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` so Terraform's dependency graph creates the domain before the term. Changing this updates the association in place without forcing replacement.
 - `parent_node` (String) Full URN of the parent glossary node (Term Group), e.g. `urn:li:glossaryNode:finance`. Set to `datahub_glossary_node.<name>.urn` (not a raw string) so Terraform's dependency graph orders creation and destruction correctly. The parent must be a glossary node -- terms cannot be parents of other terms. Omit to place the term at the root level. Changing this value reparents the term in place without forcing replacement.
 
 ### Read-Only

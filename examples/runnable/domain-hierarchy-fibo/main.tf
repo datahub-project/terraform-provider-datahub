@@ -11,7 +11,8 @@ terraform {
 provider "datahub" {
   # Credentials from environment variables:
   #   DATAHUB_GMS_URL   - DataHub GMS endpoint (e.g. https://your-instance.acryl.io/gms)
-  #   DATAHUB_GMS_TOKEN - personal access token with Manage Domains privilege
+  #   DATAHUB_GMS_TOKEN - personal access token with Manage Domains and
+  #                       Manage Glossaries privileges
 }
 
 # Read the locally-generated FIBO hierarchy.
@@ -35,17 +36,26 @@ locals {
     && (length(var.domains_filter) == 0 || contains(var.domains_filter, d.code))
   ]
 
-  # Level 1: top-level FIBO domains, keyed by id.
-  fibo_domains = { for d in local.selected_domains : d.id => d }
+  # Level 1: top-level FIBO domains -- exclude domains where every class across
+  # every leaf is deprecated or provisional (e.g. ACTUS, MD).
+  fibo_domains = {
+    for d in local.selected_domains : d.id => d
+    if anytrue([
+      for m in d.modules : anytrue([for l in m.leaves : length(l.terms) > 0])
+    ])
+  }
 
-  # Level 2: modules, keyed by "{domain_id}/{module_id}".
+  # Level 2: modules -- exclude modules where every leaf has no surviving terms
+  # (e.g. BE/Corporations, whose sole leaf is entirely deprecated).
   fibo_modules = merge([
     for d in local.selected_domains : {
       for m in d.modules : "${d.id}/${m.id}" => merge(m, { domain_id = d.id })
+      if anytrue([for l in m.leaves : length(l.terms) > 0])
     }
   ]...)
 
-  # Level 3: leaf ontology nodes, keyed by "{domain_id}/{module_id}/{leaf_id}".
+  # Level 3: leaf ontology nodes -- exclude leaves with no surviving terms
+  # (all classes deprecated or the whole file is provisional).
   fibo_leaves = merge([
     for d in local.selected_domains : merge([
       for m in d.modules : {
@@ -53,9 +63,64 @@ locals {
           domain_id = d.id
           module_id = m.id
         })
+        if length(l.terms) > 0
       }
     ]...)
   ]...)
+
+  # ---------------------------------------------------------------------------
+  # Glossary locals -- mirror the domain hierarchy as glossary nodes, with
+  # owl:Class definitions from each leaf ontology as glossary terms.
+  # ---------------------------------------------------------------------------
+
+  # Glossary domain nodes -- only domains that have at least one non-empty leaf
+  # after deprecated and provisional filtering. Domains where every class is
+  # deprecated or provisional (e.g. ACTUS, MD) produce 0 terms and are omitted.
+  fibo_glossary_domains = {
+    for d in local.selected_domains : d.id => d
+    if anytrue([
+      for m in d.modules : anytrue([for l in m.leaves : length(l.terms) > 0])
+    ])
+  }
+
+  # Glossary module nodes -- only modules that have at least one leaf with terms.
+  # Entirely-deprecated modules (e.g. BE/Corporations) are omitted.
+  fibo_glossary_modules = merge([
+    for d in local.selected_domains : {
+      for m in d.modules : "${d.id}/${m.id}" => merge(m, { domain_id = d.id })
+      if anytrue([for l in m.leaves : length(l.terms) > 0])
+    }
+  ]...)
+
+  # Glossary leaf nodes -- only leaves that have at least one term. Leaves where
+  # all classes are deprecated (e.g. BE/Corporations/Corporations.rdf) are omitted.
+  fibo_glossary_leaves = merge([
+    for d in local.selected_domains : merge([
+      for m in d.modules : {
+        for l in m.leaves : "${d.id}/${m.id}/${l.id}" => merge(l, {
+          domain_id = d.id
+          module_id = m.id
+        })
+        if length(l.terms) > 0
+      }
+    ]...)
+  ]...)
+
+  # Glossary terms -- one per owl:Class extracted from each leaf .rdf file.
+  # Keyed by "{domain_id}/{module_id}/{leaf_id}/{term_id}" for uniqueness.
+  fibo_terms = var.create_glossary ? merge([
+    for d in local.selected_domains : merge([
+      for m in d.modules : merge([
+        for l in m.leaves : {
+          for t in l.terms : "${d.id}/${m.id}/${l.id}/${t.id}" => merge(t, {
+            domain_id = d.id
+            module_id = m.id
+            leaf_id   = l.id
+          })
+        }
+      ]...)
+    ]...)
+  ]...) : {}
 }
 
 # Optional single root node above all domain nodes.
@@ -95,4 +160,73 @@ resource "datahub_domain" "fibo_leaf" {
   name          = each.value.name
   description   = each.value.description
   parent_domain = datahub_domain.fibo_module["${each.value.domain_id}/${each.value.module_id}"].urn
+}
+
+# =============================================================================
+# Glossary hierarchy
+#
+# Mirrors the domain hierarchy as a Business Glossary. Each leaf ontology
+# contributes a glossary node; each owl:Class defined in that ontology becomes
+# a glossary term nested beneath it.
+#
+# The glossary node IDs use the "g" infix to distinguish them from the domain
+# IDs above (e.g. "tf-example-fibo-g-sec-debt-bonds" vs
+# "tf-example-fibo-sec-debt-bonds").
+#
+# Destroy ordering is maintained by parent_node = <resource>.urn references,
+# which give Terraform the dependency edges to destroy terms before leaf nodes,
+# leaf nodes before module nodes, and so on. DataHub has no server-side child
+# guard for glossary deletes, so these edges are the only ordering guarantee.
+# =============================================================================
+
+# Optional root glossary node (created when both create_glossary and
+# create_root_node are true, mirroring datahub_domain.fibo_root).
+resource "datahub_glossary_node" "fibo_glossary_root" {
+  count       = var.create_glossary && var.create_root_node ? 1 : 0
+  node_id     = "tf-example-fibo-g-root"
+  name        = local._fibo.root.name
+  description = local._fibo.root.description
+}
+
+# Level 1 glossary nodes -- one per top-level FIBO domain.
+resource "datahub_glossary_node" "fibo_glossary_domain" {
+  for_each    = var.create_glossary ? local.fibo_glossary_domains : {}
+  node_id     = "tf-example-fibo-g-${each.value.id}"
+  name        = each.value.name
+  description = each.value.description
+  parent_node = var.create_root_node ? datahub_glossary_node.fibo_glossary_root[0].urn : null
+}
+
+# Level 2 glossary nodes -- one per FIBO module, nested under its domain.
+resource "datahub_glossary_node" "fibo_glossary_module" {
+  for_each    = var.create_glossary ? local.fibo_glossary_modules : {}
+  node_id     = "tf-example-fibo-g-${each.value.domain_id}-${each.value.id}"
+  name        = each.value.name
+  description = each.value.description
+  parent_node = datahub_glossary_node.fibo_glossary_domain[each.value.domain_id].urn
+}
+
+# Level 3 glossary nodes -- one per FIBO leaf ontology, nested under its module.
+resource "datahub_glossary_node" "fibo_glossary_leaf" {
+  for_each    = var.create_glossary ? local.fibo_glossary_leaves : {}
+  node_id     = "tf-example-fibo-g-${each.value.domain_id}-${each.value.module_id}-${each.value.id}"
+  name        = each.value.name
+  description = each.value.description
+  parent_node = datahub_glossary_node.fibo_glossary_module["${each.value.domain_id}/${each.value.module_id}"].urn
+}
+
+# Glossary terms -- one per owl:Class extracted from each leaf ontology file.
+# The term_id is pre-computed by the Python script and is guaranteed to be
+# <= 56 characters (DataHub GlossaryTermUrn key limit).
+#
+# Each term is associated with its top-level FIBO domain (e.g. all SEC terms
+# are linked to the Securities domain). This makes the domain visible on the
+# term's DataHub page and allows users to filter glossary terms by domain.
+resource "datahub_glossary_term" "fibo_term" {
+  for_each    = local.fibo_terms
+  term_id     = each.value.id
+  name        = each.value.name
+  description = each.value.definition
+  parent_node = datahub_glossary_node.fibo_glossary_leaf["${each.value.domain_id}/${each.value.module_id}/${each.value.leaf_id}"].urn
+  domain      = datahub_domain.fibo_domain[each.value.domain_id].urn
 }

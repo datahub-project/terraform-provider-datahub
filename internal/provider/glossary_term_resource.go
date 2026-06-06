@@ -36,6 +36,7 @@ type glossaryTermResourceModel struct {
 	Name        types.String `tfsdk:"name"`
 	Description types.String `tfsdk:"description"`
 	ParentNode  types.String `tfsdk:"parent_node"`
+	Domain      types.String `tfsdk:"domain"`
 }
 
 func NewGlossaryTermResource() resource.Resource {
@@ -123,6 +124,13 @@ func (r *glossaryTermResource) Schema(_ context.Context, _ resource.SchemaReques
 					"Omit to place the term at the root level. Changing this value reparents " +
 					"the term in place without forcing replacement.",
 			},
+			"domain": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Full URN of the DataHub domain to associate with this term " +
+					"(e.g. `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` so " +
+					"Terraform's dependency graph creates the domain before the term. " +
+					"Changing this updates the association in place without forcing replacement.",
+			},
 		},
 	}
 }
@@ -152,6 +160,14 @@ func (r *glossaryTermResource) Create(ctx context.Context, req resource.CreateRe
 
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
+
+	if domain := strVal(plan.Domain); domain != "" {
+		if err := r.client.SetEntityDomain(ctx, urn, domain); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -219,6 +235,20 @@ func (r *glossaryTermResource) Update(ctx context.Context, req resource.UpdateRe
 		if err := r.client.MoveGlossaryEntity(ctx, urn, strVal(plan.ParentNode)); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
+		}
+	}
+
+	if strVal(plan.Domain) != strVal(state.Domain) {
+		if domain := strVal(plan.Domain); domain != "" {
+			if err := r.client.SetEntityDomain(ctx, urn, domain); err != nil {
+				resp.Diagnostics.AddError("DataHub API Error", err.Error())
+				return
+			}
+		} else {
+			if err := r.client.UnsetEntityDomain(ctx, urn); err != nil {
+				resp.Diagnostics.AddError("DataHub API Error", err.Error())
+				return
+			}
 		}
 	}
 
@@ -305,4 +335,5 @@ func applyGlossaryTermToModel(term *datahub.GlossaryTerm, m *glossaryTermResourc
 	m.Name = types.StringValue(term.Name)
 	m.Description = nullIfEmpty(term.Definition)
 	m.ParentNode = nullIfEmpty(term.ParentNode)
+	m.Domain = nullIfEmpty(term.Domain)
 }

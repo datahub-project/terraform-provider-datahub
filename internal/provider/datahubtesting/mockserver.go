@@ -180,6 +180,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateParentNode(w, req.Variables)
 	case strings.Contains(q, "deleteGlossaryEntity"):
 		s.handleDeleteGlossaryEntity(w, req.Variables)
+	case strings.Contains(q, "setDomain"):
+		s.handleSetDomain(w, req.Variables)
+	case strings.Contains(q, "unsetDomain"):
+		s.handleUnsetDomain(w, req.Variables)
 	case strings.Contains(q, "updateDescription"):
 		s.handleUpdateDescription(w, req.Variables)
 	case strings.Contains(q, "createGroup"):

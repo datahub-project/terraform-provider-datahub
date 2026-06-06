@@ -44,6 +44,63 @@ mutation updateName($input: UpdateNameInput!) {
 	return nil
 }
 
+// SetEntityDomain associates any DataHub entity with a domain via the generic
+// setDomain GraphQL mutation. Pass a full domain URN (e.g.
+// "urn:li:domain:finance"). This replaces any previously set domain.
+//
+// This mutation is entity-agnostic and works for glossary nodes, glossary
+// terms, datasets, and any other entity that supports the domains aspect.
+func (c *Client) SetEntityDomain(ctx context.Context, entityURN, domainURN string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	const q = `
+mutation setDomain($entityUrn: String!, $domainUrn: String!) {
+  setDomain(entityUrn: $entityUrn, domainUrn: $domainUrn)
+}`
+	body := map[string]any{
+		"query": q,
+		"variables": map[string]any{
+			"entityUrn": entityURN,
+			"domainUrn": domainURN,
+		},
+	}
+	var gqlResp genericGraphQLErrors
+	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+		return err
+	}
+	if len(gqlResp.Errors) > 0 {
+		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
+}
+
+// UnsetEntityDomain removes any domain association from a DataHub entity via
+// the generic unsetDomain GraphQL mutation.
+func (c *Client) UnsetEntityDomain(ctx context.Context, entityURN string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	const q = `
+mutation unsetDomain($entityUrn: String!) {
+  unsetDomain(entityUrn: $entityUrn)
+}`
+	body := map[string]any{
+		"query": q,
+		"variables": map[string]any{
+			"entityUrn": entityURN,
+		},
+	}
+	var gqlResp genericGraphQLErrors
+	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+		return err
+	}
+	if len(gqlResp.Errors) > 0 {
+		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
+}
+
 // UpdateEntityDescription updates the description of any DataHub entity via
 // the generic updateDescription GraphQL mutation. Pass "" to clear the
 // description. The mutation input uses resourceUrn (not urn) for the target
