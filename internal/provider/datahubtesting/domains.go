@@ -117,6 +117,12 @@ func (s *mockServer) handleUpdateDescription(w http.ResponseWriter, variables ma
 			t.Definition = desc
 			s.glossaryTerms[id] = t
 		}
+	case strings.HasPrefix(urn, "urn:li:tag:"):
+		id := strings.TrimPrefix(urn, "urn:li:tag:")
+		if t, ok := s.tags[id]; ok {
+			t.Description = desc
+			s.tags[id] = t
+		}
 	}
 	s.mu.Unlock()
 

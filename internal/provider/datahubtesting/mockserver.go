@@ -78,6 +78,7 @@ type mockServer struct {
 	domains          map[string]mockDomain
 	glossaryNodes    map[string]mockGlossaryNode
 	glossaryTerms    map[string]mockGlossaryTerm
+	tags             map[string]mockTag
 	defaultPoolID    string
 	inviteToken      string
 	resetTokens      map[string]string
@@ -103,6 +104,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		domains:          make(map[string]mockDomain),
 		glossaryNodes:    make(map[string]mockGlossaryNode),
 		glossaryTerms:    make(map[string]mockGlossaryTerm),
+		tags:             make(map[string]mockTag),
 		inviteToken:      "mock-invite-token-001",
 		resetTokens:      make(map[string]string),
 		failDeleteFor:    make(map[string]struct{}),
@@ -120,6 +122,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)
 	mux.HandleFunc("/openapi/v3/entity/glossarynode/", s.handleGlossaryNodeItem)
 	mux.HandleFunc("/openapi/v3/entity/glossaryterm/", s.handleGlossaryTermItem)
+	mux.HandleFunc("/openapi/v3/entity/tag", s.handleTagCollection)
+	mux.HandleFunc("/openapi/v3/entity/tag/", s.handleTagItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -180,6 +184,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateParentNode(w, req.Variables)
 	case strings.Contains(q, "deleteGlossaryEntity"):
 		s.handleDeleteGlossaryEntity(w, req.Variables)
+	case strings.Contains(q, "createTag"):
+		s.handleCreateTag(w, req.Variables)
+	case strings.Contains(q, "setTagColor"):
+		s.handleSetTagColor(w, req.Variables)
+	case strings.Contains(q, "deleteTag"):
+		s.handleDeleteTag(w, req.Variables)
 	case strings.Contains(q, "setDomain"):
 		s.handleSetDomain(w, req.Variables)
 	case strings.Contains(q, "unsetDomain"):
@@ -400,6 +410,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 			}
 		case "GLOSSARY_TERM":
 			for _, t := range s.glossaryTerms {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": t.URN,
+					},
+				})
+			}
+		case "TAG":
+			for _, t := range s.tags {
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": t.URN,

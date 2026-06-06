@@ -282,6 +282,8 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewRoleDataSource,
 		NewRolesDataSource,
 		NewSecretsDataSource,
+		NewTagDataSource,
+		NewTagsDataSource,
 	}
 }
 
@@ -301,5 +303,6 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewSecretResource,
 		NewRemoteExecutorPoolResource,
 		NewRoleAssignmentResource,
+		NewTagResource,
 	}
 }
