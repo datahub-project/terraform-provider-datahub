@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-06
+
 ### Added
 
 - `datahub_glossary_node` resource: create and manage DataHub glossary nodes (the "Term Groups" shown in the DataHub UI) with a deterministic, user-supplied `node_id` (URN suffix). Nodes can be nested to any depth via an optional `parent_node` attribute. Set `parent_node` to another `datahub_glossary_node` resource's `.urn` attribute so Terraform's dependency graph creates parents before children and destroys children before parents. Unlike domains, DataHub does not refuse to delete a node that still has children, so correct ordering via `.urn` references is the only ordering guarantee. Reparenting is performed in place via `updateParentNode` without forcing replacement.
@@ -15,10 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `datahub_glossary_term` resource: create and manage DataHub glossary terms (the "Terms" shown in the DataHub UI) with a deterministic, user-supplied `term_id` (URN suffix, max 56 characters). Terms live under a `datahub_glossary_node` via the `parent_node` attribute; terms cannot be parents of other terms. Reparenting (including detaching to root) is performed in place via `updateParentNode` without forcing replacement.
 - `datahub_glossary_term` data source: look up an existing term by `term_id` and return its URN, name, description, and parent node.
 - `datahub_glossary_terms` data source: return the URNs of all DataHub glossary terms for bulk import via `for_each` into `import {}` blocks.
+- `domain` attribute on `datahub_glossary_node` and `datahub_glossary_term`: associate a glossary entity with a DataHub domain by setting this attribute to a domain URN (e.g. `datahub_domain.finance.urn`). The association is managed via the `setDomain`/`unsetDomain` GraphQL mutations and is read back from the `domains` aspect on the strongly-consistent OpenAPI v3 endpoint.
 
 ### Changed
 
 - Extracted the `updateName` and `updateDescription` GraphQL mutation wrappers into shared client helpers (`UpdateEntityName`, `UpdateEntityDescription`) reused by domains, glossary nodes, and glossary terms.
+- Extracted `SetEntityDomain` and `UnsetEntityDomain` as shared client helpers wrapping the `setDomain`/`unsetDomain` GraphQL mutations, available for reuse by future resources that support domain association.
 
 ## [0.5.0] - 2026-06-05
 
@@ -133,7 +137,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.3.0...v0.4.0
