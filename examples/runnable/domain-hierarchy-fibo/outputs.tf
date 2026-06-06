@@ -30,7 +30,7 @@ output "domain_urns" {
 
 output "glossary_node_count" {
   description = "Total glossary nodes created (root + domain + module + leaf levels)."
-  value       = (
+  value = (
     (var.create_glossary && var.create_root_node ? 1 : 0)
     + length(datahub_glossary_node.fibo_glossary_domain)
     + length(datahub_glossary_node.fibo_glossary_module)

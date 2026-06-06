@@ -61,6 +61,7 @@ resource "datahub_glossary_node" "finance" {
 ### Optional
 
 - `description` (String) Description of the term group's scope and purpose.
+- `domain` (String) Full URN of the DataHub domain to associate with this term group (e.g. `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` so Terraform's dependency graph creates the domain before the term group. Changing this updates the association in place without forcing replacement.
 - `parent_node` (String) Full URN of the parent glossary node (e.g. `urn:li:glossaryNode:finance`). Set to `datahub_glossary_node.<name>.urn` (not a raw string) so Terraform's dependency graph orders creation and destruction correctly. Omit for a root-level term group. Changing this value reparents the node in place without forcing replacement.
 
 ### Read-Only
