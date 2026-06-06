@@ -9,10 +9,10 @@ terraform {
   }
 }
 
-provider "datahub" {
-  gms_url   = var.datahub_gms_url
-  gms_token = var.datahub_gms_token
-}
+# Configure the DataHub provider.
+# Credentials can also be supplied via DATAHUB_GMS_URL / DATAHUB_GMS_TOKEN
+# environment variables.
+provider "datahub" {}
 
 # A number-valued structured property that records the data retention period
 # for datasets. Single-valued: each dataset has exactly one retention period.

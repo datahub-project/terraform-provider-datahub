@@ -15,14 +15,14 @@ Both properties are managed here as *definitions*. Applying values to individual
 ## Usage
 
 ```bash
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars and fill in your DataHub URL and token.
+export DATAHUB_GMS_URL=http://localhost:8080
+export DATAHUB_GMS_TOKEN=your-personal-access-token
 
 terraform init
 terraform apply
 ```
 
-After apply you can verify the properties in the DataHub UI at the URL shown in the `verify_url` output, or at `<your-datahub>/structured-properties`.
+After apply you can verify the properties in the DataHub UI at `$DATAHUB_GMS_URL/structured-properties`.
 
 ## Outputs
 
