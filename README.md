@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/datahub-project/terraform-provider-datahub/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/datahub-project/terraform-provider-datahub/graph/badge.svg)](https://codecov.io/gh/datahub-project/terraform-provider-datahub)
-[![Terraform Registry Downloads](https://img.shields.io/terraform/provider/dw/1896655?logo=terraform&labelColor=623CE4&color=4D27AA)](https://registry.terraform.io/providers/datahub-project/datahub/latest/docs)
+[![Terraform Registry Downloads](https://img.shields.io/terraform/provider/dw/1896655?logo=terraform&logoColor=white&labelColor=623CE4&color=4D27AA)](https://registry.terraform.io/providers/datahub-project/datahub/latest/docs)
 
 Terraform provider for DataHub. Manage ingestion, governance taxonomy, access control, and more as code.
 
