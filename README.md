@@ -28,10 +28,14 @@ This provider is implemented with the Terraform Plugin Framework and talks to Da
 |---|---|---|
 | `datahub_domain` | resource + data source | DataHub domains; nestable via `parent_domain`. |
 | `datahub_domains` | data source | Enumerate all domain URNs for bulk import. |
+| `datahub_tag` | resource + data source | Tag definitions (name, description, colour). Not tag assignments. |
+| `datahub_tags` | data source | Enumerate all tag URNs for bulk import. |
 | `datahub_glossary_node` | resource + data source | Glossary term groups; nestable via `parent_node`. |
 | `datahub_glossary_nodes` | data source | Enumerate all glossary node URNs for bulk import. |
 | `datahub_glossary_term` | resource + data source | Glossary terms; associated to a node via `parent_node`. |
 | `datahub_glossary_terms` | data source | Enumerate all glossary term URNs for bulk import. |
+| `datahub_structured_property` | resource + data source | Typed custom property schema (value type, cardinality, entity types, allowed values). |
+| `datahub_structured_properties` | data source | Enumerate all structured property URNs for bulk import. |
 
 **Access control**
 
