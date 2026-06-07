@@ -3039,3 +3039,168 @@ func StructuredPropertyCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// OwnershipTypeLifecycleSteps exercises the full resource lifecycle for
+// datahub_ownership_type: create with description, in-place update, and import
+// by both bare type_id and full URN.
+func OwnershipTypeLifecycleSteps(typeID string) []resource.TestStep {
+	const addr = "datahub_ownership_type.test"
+	urn := "urn:li:ownershipType:" + typeID
+
+	return []resource.TestStep{
+		{
+			// Create with name and description.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_ownership_type" "test" {
+  type_id     = %q
+  name        = "Data Quality Lead"
+  description = "Responsible for data quality and validation"
+}
+`, typeID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("type_id"), knownvalue.StringExact(typeID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Data Quality Lead")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Responsible for data quality and validation")),
+			},
+		},
+		{
+			// Update name and description in place -- must not trigger replacement.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_ownership_type" "test" {
+  type_id     = %q
+  name        = "Data Quality Owner"
+  description = "Owns data quality processes and remediation"
+}
+`, typeID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Data Quality Owner")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Owns data quality processes and remediation")),
+			},
+		},
+		{
+			// Remove description (optional field) -- must not trigger replacement.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_ownership_type" "test" {
+  type_id = %q
+  name    = "Data Quality Owner"
+}
+`, typeID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Data Quality Owner")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.Null()),
+			},
+		},
+		{
+			// Import by bare type_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     typeID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// OwnershipTypeDataSourceSteps seeds an ownership type via the resource then
+// reads it back via the singular datahub_ownership_type data source.
+func OwnershipTypeDataSourceSteps(typeID string) []resource.TestStep {
+	const addr = "data.datahub_ownership_type.test"
+	urn := "urn:li:ownershipType:" + typeID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_ownership_type" "seed" {
+  type_id     = %q
+  name        = "Lookup Ownership Type"
+  description = "looked up"
+}
+
+data "datahub_ownership_type" "test" {
+  type_id = datahub_ownership_type.seed.type_id
+}
+`, typeID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("type_id"), knownvalue.StringExact(typeID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Lookup Ownership Type")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("looked up")),
+			},
+		},
+	}
+}
+
+// OwnershipTypeListSteps creates an ownership type and verifies its URN appears
+// in the datahub_ownership_types enumeration data source.
+func OwnershipTypeListSteps(typeID string) []resource.TestStep {
+	urn := "urn:li:ownershipType:" + typeID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_ownership_type" "test" {
+  type_id = %q
+  name    = "List Ownership Type"
+}
+
+data "datahub_ownership_types" "all" {
+  depends_on = [datahub_ownership_type.test]
+}
+`, typeID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_ownership_types.all", urn),
+			),
+		},
+	}
+}
+
+// OwnershipTypeCheckDestroy verifies every datahub_ownership_type in the
+// post-destroy state has been removed from DataHub.
+func OwnershipTypeCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_ownership_type" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		ot, getErr := client.GetOwnershipTypeByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_ownership_type %q: %w", urn, getErr)
+		}
+		if ot != nil {
+			return fmt.Errorf("datahub_ownership_type %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}

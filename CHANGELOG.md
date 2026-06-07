@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_ownership_type` resource: create and manage custom DataHub ownership type definitions with a deterministic, user-supplied `type_id` (URN suffix). Ownership types are named roles assigned to asset owners (e.g. "Data Quality Lead", "Data Producer") visible throughout the DataHub UI. Create and update write the `ownershipTypeInfo` aspect directly via the OpenAPI v3 endpoint - the GraphQL `createOwnershipType` mutation is not used because it generates a server-side random UUID for the id, making URNs non-deterministic and unmanageable by Terraform. This matches the DataHub Python SDK convention (`make_ownership_type_urn(id)`). The four built-in system types (`__system__technical_owner`, `__system__business_owner`, `__system__data_steward`, `__system__none`) cannot be managed or deleted; `type_id` values beginning with `__system__` are rejected at plan time.
+- `datahub_ownership_type` data source: look up an existing ownership type by `type_id` and return its URN, name, and description. Works for both custom types and built-in system types. Use this to reference a built-in type's URN (e.g. `__system__technical_owner`) without taking ownership of it.
+- `datahub_ownership_types` data source: return the URNs of all DataHub ownership types (custom and system) for bulk import via `for_each` into `import {}` blocks. Backed by the `listOwnershipTypes` GraphQL query.
+- `examples/runnable/ownership-type-simple`: runnable example creating two custom ownership types (Data Quality Lead, Data Producer), reading back a custom type and the built-in Technical Owner type via the singular data source, and enumerating all ownership types via the plural data source.
+
 ## [0.7.0] - 2026-06-07
 
 ### Added

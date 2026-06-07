@@ -80,6 +80,7 @@ type mockServer struct {
 	glossaryTerms        map[string]mockGlossaryTerm
 	tags                 map[string]mockTag
 	structuredProperties map[string]mockStructuredProperty
+	ownershipTypes       map[string]mockOwnershipType
 	defaultPoolID        string
 	inviteToken          string
 	resetTokens          map[string]string
@@ -107,6 +108,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		glossaryTerms:        make(map[string]mockGlossaryTerm),
 		tags:                 make(map[string]mockTag),
 		structuredProperties: make(map[string]mockStructuredProperty),
+		ownershipTypes:       make(map[string]mockOwnershipType),
 		inviteToken:          "mock-invite-token-001",
 		resetTokens:          make(map[string]string),
 		failDeleteFor:        make(map[string]struct{}),
@@ -127,6 +129,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/structuredproperty/", s.handleStructuredPropertyItem)
 	mux.HandleFunc("/openapi/v3/entity/tag", s.handleTagCollection)
 	mux.HandleFunc("/openapi/v3/entity/tag/", s.handleTagItem)
+	mux.HandleFunc("/openapi/v3/entity/ownershiptype", s.handleOwnershipTypeCollection)
+	mux.HandleFunc("/openapi/v3/entity/ownershiptype/", s.handleOwnershipTypeItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -199,6 +203,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleSetTagColor(w, req.Variables)
 	case strings.Contains(q, "deleteTag"):
 		s.handleDeleteTag(w, req.Variables)
+	case strings.Contains(q, "listOwnershipTypes"):
+		s.handleListOwnershipTypes(w, req.Variables)
+	case strings.Contains(q, "deleteOwnershipType"):
+		s.handleDeleteOwnershipType(w, req.Variables)
 	case strings.Contains(q, "setDomain"):
 		s.handleSetDomain(w, req.Variables)
 	case strings.Contains(q, "unsetDomain"):
