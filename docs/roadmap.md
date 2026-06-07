@@ -133,8 +133,8 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
-| `createTest` / `updateTest` / `deleteTest` + `test(urn)` | M/Q | **HIGH** | verify OSS | **New:** `datahub_metadata_test` resource + data source. Declarative metadata-quality rules, e.g. "every PROD dataset must have an owner". `test(urn)` confirmed on Cloud; OSS presence needs verification. |
-| `validateTest` | Q | MEDIUM | verify | Useful for plan-time syntax validation of test definitions. |
+| `createTest` / `updateTest` / `deleteTest` + `test(urn)` | M/Q | **HIGH** | yes (API) | **New:** `datahub_metadata_test` resource + data source. Declarative metadata-quality rules, e.g. "every PROD dataset must have an owner". GraphQL mutations confirmed present in OSS schema (`datahub-graphql-core`); generated frontend hooks exist but no management UI in OSS (Cloud-only). OSS results display on the dataset Governance tab requires `testsConfig.enabled = true` in app config (defaults to false). |
+| `validateTest` | Q | MEDIUM | yes (API) | Useful for plan-time syntax validation of test definitions. No UI counterpart in OSS. |
 | `runTests` / `runTestDefinition` | M | IRRELEVANT | varies | Operational. |
 
 ---
@@ -338,7 +338,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | 7 | `datahub_data_product` | resource + data source | yes | Output-port list; domain reference; UUID URN trap |
 | 8 | `datahub_policy` | resource + data source | yes | Fat input type; aspect-list ownership for 3 lists |
 | 9 | `datahub_form` | resource + data source | yes | Prompts list; `dynamicFormAssignment` as nested attr |
-| 10 | `datahub_metadata_test` | resource + data source | verify | OSS presence needs confirmation |
+| 10 | `datahub_metadata_test` | resource + data source | yes (API) | API mutations confirmed OSS; management UI is Cloud-only; no nav entry in OSS frontend |
 | 11 | `datahub_ownership_type` | resource + data source | yes | Small surface; common dependency |
 
 ### Tier 3 — Cloud-only, high leverage, accept stability caveat
