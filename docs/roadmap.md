@@ -2,7 +2,7 @@
 
 This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — and classifies each area by relevance to the Terraform provider. It is the basis for deciding what to build next.
 
-**Current provider state (v0.7.0):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources), `datahub_corp_group` (resource + data source), `datahub_corp_groups` (data source), `datahub_corp_group_member` (resource), `datahub_corp_user` (resource + data source), `datahub_local_user_login` (resource), `datahub_role` / `datahub_roles` (data sources), `datahub_role_assignment` (resource), `datahub_policy` (resource), `datahub_policies` (data source), `datahub_domain` (resource + data source), `datahub_domains` (data source), `datahub_glossary_node` (resource + data source), `datahub_glossary_nodes` (data source), `datahub_glossary_term` (resource + data source), `datahub_glossary_terms` (data source), `datahub_tag` (resource + data source), `datahub_tags` (data source), `datahub_structured_property` (resource + data source), `datahub_structured_properties` (data source).
+**Current provider state (v0.7.0 + main):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources), `datahub_corp_group` (resource + data source), `datahub_corp_groups` (data source), `datahub_corp_group_member` (resource), `datahub_corp_user` (resource + data source), `datahub_local_user_login` (resource), `datahub_role` / `datahub_roles` (data sources), `datahub_role_assignment` (resource), `datahub_policy` (resource), `datahub_policies` (data source), `datahub_domain` (resource + data source), `datahub_domains` (data source), `datahub_glossary_node` (resource + data source), `datahub_glossary_nodes` (data source), `datahub_glossary_term` (resource + data source), `datahub_glossary_terms` (data source), `datahub_tag` (resource + data source), `datahub_tags` (data source), `datahub_structured_property` (resource + data source), `datahub_structured_properties` (data source), `datahub_ownership_type` (resource + data source), `datahub_ownership_types` (data source).
 
 ## Scope principles
 
@@ -74,7 +74,7 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | `createGlossaryNode` + `deleteGlossaryEntity` + `glossaryNode(urn)` | M/Q | covered | no | `datahub_glossary_node` resource + data source + `datahub_glossary_nodes` bulk-enumerate data source (v0.6.0, [PR #44](https://github.com/datahub-project/terraform-provider-datahub/pull/44)). User-supplied `node_id`; reparenting via `updateParentNode`; `domain` attribute via `setDomain`/`unsetDomain`. |
 | `createGlossaryTerm` + `deleteGlossaryEntity` + `glossaryTerm(urn)` + scoped `updateName` / `updateDescription` / `updateParentNode` | M/Q | covered | no | `datahub_glossary_term` resource + data source + `datahub_glossary_terms` bulk-enumerate data source (v0.6.0, [PR #44](https://github.com/datahub-project/terraform-provider-datahub/pull/44)). User-supplied `term_id` (max 56 chars); reparenting in place; `domain` attribute. |
 | `createTag` / `updateTag` / `deleteTag` / `setTagColor` + `tag(urn)` | M/Q | covered | no | `datahub_tag` resource + data source + `datahub_tags` bulk-enumerate data source (v0.7.0, [PR #48](https://github.com/datahub-project/terraform-provider-datahub/pull/48)). User-supplied `tag_id`; `color_hex` via `setTagColor`; renames via OpenAPI v3 tagProperties aspect (updateName does not support Tag). Tag assignments remain deny-list. |
-| `createOwnershipType` / `updateOwnershipType` / `deleteOwnershipType` + OpenAPI entity | M/Q | **HIGH** | no | **New:** `datahub_ownership_type` resource + data source. Custom roles like "Steward", "Producer", "Technical Owner". Common dependency — many other resources reference these by URN. |
+| `createOwnershipType` / `updateOwnershipType` / `deleteOwnershipType` + OpenAPI entity | M/Q | covered | no | `datahub_ownership_type` resource + data source + `datahub_ownership_types` bulk-enumerate data source ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50)). User-supplied `type_id`; create/update write via OpenAPI v3 aspect endpoint (GraphQL `createOwnershipType` mints a server-side UUID and is not used). `type_id` values beginning `__system__` rejected at plan time. |
 | `addRelatedTerms` / `removeRelatedTerms` | M | MEDIUM | no | Possible `datahub_glossary_term_relationship` resource (typed: isA, hasA, contains, values, relatedTerm). Aspect-list ownership applies. |
 | `createApplication` / `updateApplication` / `deleteApplication` + `application(urn)` | M/Q | MEDIUM | verify | Newer entity type; semantic overlap with `data_product` unclear. Confirmed present on Cloud. Defer until stable. |
 | `createGlossaryTermVersion` / versioning queries | M/Q | LOW | yes | Cloud-only temporal feature; not declarative. |
@@ -275,7 +275,7 @@ Before implementing any new resource, confirm the URN key strategy and that it m
 | `datahub_domain` | user-supplied `id` | UI creates UUID; provider must require explicit `id` |
 | `datahub_glossary_node` / `datahub_glossary_term` | hierarchical path or UUID? | confirm SDK convention before implementing |
 | `datahub_tag` | user-supplied `name` | confirm normalization |
-| `datahub_ownership_type` | user-supplied `id` | confirm |
+| `datahub_ownership_type` | user-supplied `id` | confirmed -- matches SDK `make_ownership_type_urn(id)` convention |
 | `datahub_structured_property` | user-supplied `id` | confirm |
 | `datahub_form` | user-supplied `id` | confirm |
 | `datahub_metadata_test` | user-supplied `id` | confirm |
@@ -336,10 +336,10 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | # | Terraform component | Type | OSS | Key concern |
 |---|---|---|---|---|
 | 7 | `datahub_data_product` | resource + data source | yes | Output-port list; domain reference; UUID URN trap |
-| 8 | `datahub_policy` | resource + data source | yes | Fat input type; aspect-list ownership for 3 lists |
+| ~~8~~ | ~~`datahub_policy`~~ | resource + data source | yes | **Shipped v0.4.0** |
 | 9 | `datahub_form` | resource + data source | yes | Prompts list; `dynamicFormAssignment` as nested attr |
 | 10 | `datahub_metadata_test` | resource + data source | yes (API) | API mutations confirmed OSS; management UI is Cloud-only; no nav entry in OSS frontend |
-| 11 | `datahub_ownership_type` | resource + data source | yes | Small surface; common dependency |
+| ~~11~~ | ~~`datahub_ownership_type`~~ | resource + data source | yes | **Shipped ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50))** |
 
 ### Tier 3 — Cloud-only, high leverage, accept stability caveat
 
@@ -349,7 +349,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | 13 | `datahub_data_contract` | resource | yes | No GraphQL read query; delete strategy unclear |
 | 14 | `datahub_service_account` | resource | yes | Write-once credentials; no import after create |
 | 15 | `datahub_oauth_authorization_server` | resource | yes | Stable config object |
-| 16 | `datahub_corp_group` + `datahub_corp_group_member` | resource + data source | yes | Only native groups; not IdP-synced groups |
+| ~~16~~ | ~~`datahub_corp_group` + `datahub_corp_group_member`~~ | resource + data source | yes | **Shipped v0.4.0** |
 
 ### Tier 4 — defer or revisit
 
