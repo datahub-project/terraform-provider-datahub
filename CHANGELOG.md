@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-08
+
 ### Added
 
 - `datahub_data_product` resource: create and manage DataHub data product definitions with a deterministic, user-supplied `data_product_id` (URN suffix). Manages the product definition -- `name`, `description`, optional `domain` (full domain URN), `external_url`, and `custom_properties` -- but not asset membership. Member datasets, charts, and other assets are intentionally out of scope: asset membership is per-asset enrichment and is managed via the DataHub UI, CLI, or SDK without interference from `terraform apply`. Create and update write the `dataProductProperties` and `domains` aspects directly via the OpenAPI v3 endpoint, not the GraphQL mutations, because `createDataProduct`/`updateDataProduct` cannot set `external_url` or `custom_properties`. The DataHub UI creates data products with a random UUID when no id is supplied; the provider requires an explicit `data_product_id` to produce stable, importable URNs that match the DataHub Python SDK convention (`make_data_product_urn(id)`).
@@ -161,7 +163,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.4.1...v0.5.0

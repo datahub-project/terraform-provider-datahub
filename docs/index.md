@@ -25,7 +25,7 @@ terraform {
   required_providers {
     datahub = {
       source  = "datahub-project/datahub"
-      version = "0.7.0"
+      version = "0.8.0"
     }
   }
 }
