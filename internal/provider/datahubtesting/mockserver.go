@@ -81,6 +81,7 @@ type mockServer struct {
 	tags                 map[string]mockTag
 	structuredProperties map[string]mockStructuredProperty
 	ownershipTypes       map[string]mockOwnershipType
+	dataProducts         map[string]mockDataProduct
 	defaultPoolID        string
 	inviteToken          string
 	resetTokens          map[string]string
@@ -109,6 +110,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		tags:                 make(map[string]mockTag),
 		structuredProperties: make(map[string]mockStructuredProperty),
 		ownershipTypes:       make(map[string]mockOwnershipType),
+		dataProducts:         make(map[string]mockDataProduct),
 		inviteToken:          "mock-invite-token-001",
 		resetTokens:          make(map[string]string),
 		failDeleteFor:        make(map[string]struct{}),
@@ -131,6 +133,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/tag/", s.handleTagItem)
 	mux.HandleFunc("/openapi/v3/entity/ownershiptype", s.handleOwnershipTypeCollection)
 	mux.HandleFunc("/openapi/v3/entity/ownershiptype/", s.handleOwnershipTypeItem)
+	mux.HandleFunc("/openapi/v3/entity/dataproduct", s.handleDataProductCollection)
+	mux.HandleFunc("/openapi/v3/entity/dataproduct/", s.handleDataProductItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -207,6 +211,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleListOwnershipTypes(w, req.Variables)
 	case strings.Contains(q, "deleteOwnershipType"):
 		s.handleDeleteOwnershipType(w, req.Variables)
+	case strings.Contains(q, "deleteDataProduct"):
+		s.handleDeleteDataProduct(w, req.Variables)
 	case strings.Contains(q, "setDomain"):
 		s.handleSetDomain(w, req.Variables)
 	case strings.Contains(q, "unsetDomain"):
@@ -446,6 +452,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": sp.URN,
+					},
+				})
+			}
+		case "DATA_PRODUCT":
+			for _, dp := range s.dataProducts {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": dp.URN,
 					},
 				})
 			}

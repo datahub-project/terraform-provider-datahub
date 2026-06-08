@@ -3204,3 +3204,218 @@ func OwnershipTypeCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// DataProductLifecycleSteps exercises the full resource lifecycle for
+// datahub_data_product: create with all optional fields, in-place update,
+// removal of optional fields, and import by both bare data_product_id and
+// full URN.
+func DataProductLifecycleSteps(dataProductID, domainID string) []resource.TestStep {
+	const addr = "datahub_data_product.test"
+	const domainAddr = "datahub_domain.test"
+	urn := "urn:li:dataProduct:" + dataProductID
+	domainURN := "urn:li:domain:" + domainID
+
+	return []resource.TestStep{
+		{
+			// Create with all optional fields set.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "TF Test Domain"
+}
+
+resource "datahub_data_product" "test" {
+  data_product_id   = %q
+  name              = "Orders v2"
+  description       = "Primary orders data product"
+  external_url      = "https://example.com/docs/orders"
+  domain            = datahub_domain.test.urn
+  custom_properties = { tier = "gold", team = "platform" }
+}
+`, domainID, dataProductID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("data_product_id"), knownvalue.StringExact(dataProductID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Orders v2")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Primary orders data product")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("external_url"), knownvalue.StringExact("https://example.com/docs/orders")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("domain"), knownvalue.StringExact(domainURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"tier": knownvalue.StringExact("gold"),
+					"team": knownvalue.StringExact("platform"),
+				})),
+				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("urn"), knownvalue.StringExact(domainURN)),
+			},
+		},
+		{
+			// Update name and description in place -- must not trigger replacement.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "TF Test Domain"
+}
+
+resource "datahub_data_product" "test" {
+  data_product_id   = %q
+  name              = "Orders v2 (updated)"
+  description       = "Updated description"
+  external_url      = "https://example.com/docs/orders-v2"
+  domain            = datahub_domain.test.urn
+  custom_properties = { tier = "platinum" }
+}
+`, domainID, dataProductID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Orders v2 (updated)")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Updated description")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("external_url"), knownvalue.StringExact("https://example.com/docs/orders-v2")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"tier": knownvalue.StringExact("platinum"),
+				})),
+			},
+		},
+		{
+			// Remove all optional fields -- must not trigger replacement.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "TF Test Domain"
+}
+
+resource "datahub_data_product" "test" {
+  data_product_id = %q
+  name            = "Orders v2 (updated)"
+}
+`, domainID, dataProductID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Orders v2 (updated)")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("external_url"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("domain"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
+			},
+		},
+		{
+			// Import by bare data_product_id.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     dataProductID,
+			ImportStateVerify: true,
+		},
+		{
+			// Import by full URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// DataProductDataSourceSteps seeds a data product via the resource then reads
+// it back via the singular datahub_data_product data source.
+func DataProductDataSourceSteps(dataProductID, domainID string) []resource.TestStep {
+	const addr = "data.datahub_data_product.test"
+	urn := "urn:li:dataProduct:" + dataProductID
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "TF Test Domain DS"
+}
+
+resource "datahub_data_product" "seed" {
+  data_product_id = %q
+  name            = "Lookup Data Product"
+  description     = "looked up"
+  domain          = datahub_domain.test.urn
+}
+
+data "datahub_data_product" "test" {
+  data_product_id = datahub_data_product.seed.data_product_id
+}
+`, domainID, dataProductID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("data_product_id"), knownvalue.StringExact(dataProductID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Lookup Data Product")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("looked up")),
+			},
+		},
+	}
+}
+
+// DataProductListSteps creates a data product and verifies its URN appears in
+// the datahub_data_products enumeration data source.
+func DataProductListSteps(dataProductID, domainID string) []resource.TestStep {
+	urn := "urn:li:dataProduct:" + dataProductID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "TF Test Domain List"
+}
+
+resource "datahub_data_product" "test" {
+  data_product_id = %q
+  name            = "List Data Product"
+  domain          = datahub_domain.test.urn
+}
+
+data "datahub_data_products" "all" {
+  depends_on = [datahub_data_product.test]
+}
+`, domainID, dataProductID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_data_products.all", urn),
+			),
+		},
+	}
+}
+
+// DataProductCheckDestroy verifies every datahub_data_product in the
+// post-destroy state has been removed from DataHub.
+func DataProductCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_data_product" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		dp, getErr := client.GetDataProductByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_data_product %q: %w", urn, getErr)
+		}
+		if dp != nil {
+			return fmt.Errorf("datahub_data_product %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
