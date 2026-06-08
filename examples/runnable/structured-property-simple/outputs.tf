@@ -18,7 +18,4 @@ output "all_structured_property_urns" {
   value       = data.datahub_structured_properties.all.urns
 }
 
-output "verify_url" {
-  description = "URL to verify the structured properties in the DataHub UI (replace with your DATAHUB_GMS_URL)."
-  value       = "http://localhost:8080/structured-properties"
-}
+

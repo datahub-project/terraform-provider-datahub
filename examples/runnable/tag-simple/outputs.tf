@@ -23,7 +23,3 @@ output "all_tag_urns" {
   value       = data.datahub_tags.all.urns
 }
 
-output "verify_url" {
-  description = "DataHub UI URL to verify the created tags."
-  value       = "${var.datahub_gms_url}/tags"
-}

@@ -22,7 +22,7 @@ terraform init
 terraform apply
 ```
 
-After apply you can verify the properties in the DataHub UI at `$DATAHUB_GMS_URL/structured-properties`.
+After apply you can verify the properties in the DataHub UI under **Govern → Structured Properties**.
 
 ## Outputs
 
@@ -32,7 +32,6 @@ After apply you can verify the properties in the DataHub UI at `$DATAHUB_GMS_URL
 | `classification_urn` | URN of the classification property |
 | `retention_lookup_display_name` | Display name read back via the data source |
 | `all_structured_property_urns` | All property URNs in DataHub (eventually consistent) |
-| `verify_url` | Direct link to the structured-properties page in DataHub |
 
 ## Cleanup
 
