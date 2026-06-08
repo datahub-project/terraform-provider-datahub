@@ -136,7 +136,7 @@ endif
 	  --version $(VERSION) \
 	  -r \
 	  datahub \
-	  ../examples/runnable
+	  ../examples
 	perl -pi -e \
 	  'if (/ubi:datahub-project/) { s/version = "[^"]+"/version = "$(VERSION)"/ }; s|tools-datahub-tf-extract_[0-9][^_]+_|tools-datahub-tf-extract_$(VERSION)_|; s|datahub-tf-extract_v[0-9][^ ]+|datahub-tf-extract_v$(VERSION)|' \
 	  templates/guides/import-existing.md.tmpl \
