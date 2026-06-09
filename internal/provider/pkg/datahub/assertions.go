@@ -1,0 +1,706 @@
+// Copyright 2026 The DataHub Project Authors
+// SPDX-License-Identifier: Apache-2.0
+
+// Assertion management for DataHub.
+//
+// Four assertion types are supported:
+//   - Custom assertions (OSS + Cloud): upsertCustomAssertion / deleteAssertion
+//   - Freshness monitors (Cloud-only): upsertDatasetFreshnessAssertionMonitor
+//   - Volume monitors (Cloud-only): upsertDatasetVolumeAssertionMonitor
+//   - SQL monitors (Cloud-only): upsertDatasetSqlAssertionMonitor
+//
+// All assertion types share the same URN format (urn:li:assertion:<uuid>) and
+// the same read path (GET /openapi/v3/entity/assertion/{urn}).
+//
+// The three monitor types require DataHub Cloud; they create a Monitor entity
+// that does not exist in OSS DataHub. Callers receive ErrAssertionCloudOnly
+// when the operation is attempted against an OSS instance.
+
+package datahub
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+)
+
+// ErrAssertionCloudOnly is returned when a monitor mutation is attempted
+// against an OSS DataHub instance that does not support the Monitor entity.
+var ErrAssertionCloudOnly = errors.New(
+	"this assertion type requires DataHub Cloud; " +
+		"the configured GMS instance does not expose assertion monitor management",
+)
+
+// isAssertionCloudOnlyError returns true when the GraphQL error indicates the
+// mutation or input type is absent from the OSS schema (cloud-only feature).
+func isAssertionCloudOnlyError(msg string) bool {
+	if strings.Contains(msg, "FieldUndefined") &&
+		(strings.Contains(msg, "in type 'Mutation'") || strings.Contains(msg, "in type 'Query'")) {
+		return true
+	}
+	if strings.Contains(msg, "UnknownType") &&
+		(strings.Contains(msg, "Freshness") || strings.Contains(msg, "Volume") ||
+			strings.Contains(msg, "SqlAssertion") || strings.Contains(msg, "MonitorMode") ||
+			strings.Contains(msg, "Monitor")) {
+		return true
+	}
+	return false
+}
+
+// AssertionInfo is the read-shape common to all assertion types.
+type AssertionInfo struct {
+	URN       string
+	Type      string // FRESHNESS, VOLUME, SQL, CUSTOM
+	EntityURN string
+	// Type-specific sub-structs; only one is non-nil depending on Type.
+	Freshness *FreshnessAssertionInfo
+	Volume    *VolumeAssertionInfo
+	SQL       *SQLAssertionInfo
+	Custom    *CustomAssertionInfo
+	// Actions
+	OnSuccessActions []string
+	OnFailureActions []string
+}
+
+type FreshnessAssertionInfo struct {
+	ScheduleType          string // FIXED_INTERVAL or CRON
+	FixedIntervalUnit     string // HOUR, DAY, WEEK, MONTH, YEAR
+	FixedIntervalMultiple int64
+	CronSchedule          string // cron expression for CRON type
+	CronTimezone          string
+}
+
+type VolumeAssertionInfo struct {
+	VolumeType string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	Operator   string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
+	MinValue   string
+	MaxValue   string
+	Value      string // single value when not BETWEEN
+}
+
+type SQLAssertionInfo struct {
+	SQLType     string // METRIC
+	Statement   string
+	Operator    string
+	Value       string
+	Description string
+}
+
+type CustomAssertionInfo struct {
+	AssertionType string
+	Description   string
+	FieldPath     string
+	PlatformURN   string
+	ExternalURL   string
+	Logic         string
+}
+
+// assertionEntity is the OpenAPI v3 response shape for
+// GET /openapi/v3/entity/assertion/{urn}.
+type assertionEntity struct {
+	URN string `json:"urn"`
+	Key *struct {
+		Value struct {
+			AssertionID string `json:"assertionId"`
+		} `json:"value"`
+	} `json:"assertionKey,omitempty"`
+	Info *struct {
+		Value assertionInfoValue `json:"value"`
+	} `json:"assertionInfo,omitempty"`
+	Actions *struct {
+		Value struct {
+			OnSuccess []struct {
+				Type string `json:"type"`
+			} `json:"onSuccess"`
+			OnFailure []struct {
+				Type string `json:"type"`
+			} `json:"onFailure"`
+		} `json:"value"`
+	} `json:"assertionActions,omitempty"`
+}
+
+type assertionInfoValue struct {
+	Type      string `json:"type"`
+	EntityURN string `json:"entityUrn"`
+	// Freshness
+	FreshnessAssertion *struct {
+		Schedule *struct {
+			Type          string `json:"type"`
+			FixedInterval *struct {
+				Unit     string `json:"unit"`
+				Multiple int64  `json:"multiple"`
+			} `json:"fixedInterval,omitempty"`
+			Cron *struct {
+				Cron     string `json:"cron"`
+				Timezone string `json:"timezone"`
+			} `json:"cron,omitempty"`
+		} `json:"schedule,omitempty"`
+	} `json:"freshnessAssertion,omitempty"`
+	// Volume
+	VolumeAssertion *struct {
+		Type          string `json:"type"`
+		RowCountTotal *struct {
+			Operator   string `json:"operator"`
+			Parameters *struct {
+				Value *struct {
+					Value string `json:"value"`
+				} `json:"value,omitempty"`
+				MinValue *struct {
+					Value string `json:"value"`
+				} `json:"minValue,omitempty"`
+				MaxValue *struct {
+					Value string `json:"value"`
+				} `json:"maxValue,omitempty"`
+			} `json:"parameters,omitempty"`
+		} `json:"rowCountTotal,omitempty"`
+	} `json:"volumeAssertion,omitempty"`
+	// SQL
+	SQLAssertion *struct {
+		Type        string `json:"type"`
+		Statement   string `json:"statement"`
+		Operator    string `json:"operator"`
+		Description string `json:"description"`
+		Parameters  *struct {
+			Value *struct {
+				Value string `json:"value"`
+			} `json:"value,omitempty"`
+		} `json:"parameters,omitempty"`
+	} `json:"sqlAssertion,omitempty"`
+	// Custom
+	CustomAssertion *struct {
+		Type        string `json:"type"`
+		Description string `json:"description"`
+		FieldPath   string `json:"fieldPath"`
+		Platform    *struct {
+			URN  string `json:"urn"`
+			Name string `json:"name"`
+		} `json:"platform,omitempty"`
+		ExternalURL string `json:"externalUrl"`
+		Logic       string `json:"logic"`
+	} `json:"customAssertion,omitempty"`
+}
+
+// GetAssertionByURN fetches an assertion directly from the OpenAPI v3 entity
+// endpoint (MySQL, strongly consistent). Returns nil (no error) on 404.
+func (c *Client) GetAssertionByURN(ctx context.Context, urn string) (*AssertionInfo, error) {
+	if c == nil {
+		return nil, errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	if urn == "" {
+		return nil, errors.New("URN is required")
+	}
+
+	path := fmt.Sprintf("/openapi/v3/entity/assertion/%s", urn)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_DATA_QUALITY privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("unexpected HTTP %d from DataHub assertion API: %s", res.StatusCode, body)
+	}
+
+	var entity assertionEntity
+	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
+		return nil, fmt.Errorf("parsing assertion entity response: %w", err)
+	}
+
+	if entity.Key == nil && entity.Info == nil {
+		return nil, nil
+	}
+
+	return toAssertionInfo(&entity), nil
+}
+
+func toAssertionInfo(e *assertionEntity) *AssertionInfo {
+	ai := &AssertionInfo{URN: e.URN}
+
+	if e.Info != nil {
+		v := e.Info.Value
+		ai.Type = v.Type
+		ai.EntityURN = v.EntityURN
+
+		if v.FreshnessAssertion != nil && v.FreshnessAssertion.Schedule != nil {
+			fi := &FreshnessAssertionInfo{
+				ScheduleType: v.FreshnessAssertion.Schedule.Type,
+			}
+			if v.FreshnessAssertion.Schedule.FixedInterval != nil {
+				fi.FixedIntervalUnit = v.FreshnessAssertion.Schedule.FixedInterval.Unit
+				fi.FixedIntervalMultiple = v.FreshnessAssertion.Schedule.FixedInterval.Multiple
+			}
+			if v.FreshnessAssertion.Schedule.Cron != nil {
+				fi.CronSchedule = v.FreshnessAssertion.Schedule.Cron.Cron
+				fi.CronTimezone = v.FreshnessAssertion.Schedule.Cron.Timezone
+			}
+			ai.Freshness = fi
+		}
+
+		if v.VolumeAssertion != nil {
+			vi := &VolumeAssertionInfo{VolumeType: v.VolumeAssertion.Type}
+			if v.VolumeAssertion.RowCountTotal != nil {
+				vi.Operator = v.VolumeAssertion.RowCountTotal.Operator
+				if p := v.VolumeAssertion.RowCountTotal.Parameters; p != nil {
+					if p.Value != nil {
+						vi.Value = p.Value.Value
+					}
+					if p.MinValue != nil {
+						vi.MinValue = p.MinValue.Value
+					}
+					if p.MaxValue != nil {
+						vi.MaxValue = p.MaxValue.Value
+					}
+				}
+			}
+			ai.Volume = vi
+		}
+
+		if v.SQLAssertion != nil {
+			si := &SQLAssertionInfo{
+				SQLType:     v.SQLAssertion.Type,
+				Statement:   v.SQLAssertion.Statement,
+				Operator:    v.SQLAssertion.Operator,
+				Description: v.SQLAssertion.Description,
+			}
+			if v.SQLAssertion.Parameters != nil && v.SQLAssertion.Parameters.Value != nil {
+				si.Value = v.SQLAssertion.Parameters.Value.Value
+			}
+			ai.SQL = si
+		}
+
+		if v.CustomAssertion != nil {
+			ci := &CustomAssertionInfo{
+				AssertionType: v.CustomAssertion.Type,
+				Description:   v.CustomAssertion.Description,
+				FieldPath:     v.CustomAssertion.FieldPath,
+				ExternalURL:   v.CustomAssertion.ExternalURL,
+				Logic:         v.CustomAssertion.Logic,
+			}
+			if v.CustomAssertion.Platform != nil {
+				ci.PlatformURN = v.CustomAssertion.Platform.URN
+			}
+			ai.Custom = ci
+		}
+	}
+
+	if e.Actions != nil {
+		for _, a := range e.Actions.Value.OnSuccess {
+			ai.OnSuccessActions = append(ai.OnSuccessActions, a.Type)
+		}
+		for _, a := range e.Actions.Value.OnFailure {
+			ai.OnFailureActions = append(ai.OnFailureActions, a.Type)
+		}
+	}
+
+	return ai
+}
+
+// DeleteAssertion deletes a DataHub assertion by URN. Works on OSS and Cloud.
+func (c *Client) DeleteAssertion(ctx context.Context, urn string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	if urn == "" {
+		return errors.New("URN is required")
+	}
+
+	const q = `
+mutation deleteAssertion($urn: String!) {
+  deleteAssertion(urn: $urn)
+}`
+	body := map[string]any{
+		"query":     q,
+		"variables": map[string]any{"urn": urn},
+	}
+	var gqlResp genericGraphQLErrors
+	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+		return err
+	}
+	if len(gqlResp.Errors) > 0 {
+		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
+}
+
+// UpsertCustomAssertionInput groups the inputs for upsertCustomAssertion.
+type UpsertCustomAssertionInput struct {
+	// ExistingURN is the assertion URN from prior state; empty on create.
+	ExistingURN   string
+	EntityURN     string
+	AssertionType string
+	Description   string
+	FieldPath     string // optional
+	PlatformURN   string
+	ExternalURL   string // optional
+	Logic         string // optional
+}
+
+// UpsertCustomAssertion creates or updates a custom (external) assertion.
+// Pass an empty ExistingURN on first create; subsequent calls pass the stored URN.
+// Works on both OSS DataHub and DataHub Cloud.
+func (c *Client) UpsertCustomAssertion(ctx context.Context, in UpsertCustomAssertionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	const q = `
+mutation upsertCustomAssertion($urn: String, $input: UpsertCustomAssertionInput!) {
+  upsertCustomAssertion(urn: $urn, input: $input) { urn }
+}`
+
+	input := map[string]any{
+		"entityUrn":   in.EntityURN,
+		"type":        in.AssertionType,
+		"description": in.Description,
+		"platform":    map[string]any{"urn": in.PlatformURN},
+	}
+	if in.FieldPath != "" {
+		input["fieldPath"] = in.FieldPath
+	}
+	if in.ExternalURL != "" {
+		input["externalUrl"] = in.ExternalURL
+	}
+	if in.Logic != "" {
+		input["logic"] = in.Logic
+	}
+
+	vars := map[string]any{"input": input}
+	if in.ExistingURN != "" {
+		vars["urn"] = in.ExistingURN
+	}
+
+	body := map[string]any{"query": q, "variables": vars}
+
+	var raw struct {
+		Data struct {
+			UpsertCustomAssertion struct {
+				URN string `json:"urn"`
+			} `json:"upsertCustomAssertion"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		return "", fmt.Errorf("DataHub API error: %s", raw.Errors[0].Message)
+	}
+	return raw.Data.UpsertCustomAssertion.URN, nil
+}
+
+// FreshnessAssertionInput groups inputs for upsertDatasetFreshnessAssertionMonitor.
+type FreshnessAssertionInput struct {
+	AssertionURN          string // empty on create
+	EntityURN             string
+	ScheduleType          string // FIXED_INTERVAL or CRON
+	FixedIntervalUnit     string // HOUR, DAY, WEEK, MONTH, YEAR
+	FixedIntervalMultiple int64
+	CronSchedule          string // freshness window cron (for CRON type)
+	CronTimezone          string
+	EvaluationCron        string
+	EvaluationTimezone    string
+	SourceType            string // INFORMATION_SCHEMA, QUERY, DATAHUB_DATASET_PROFILE
+	OnSuccessActions      []string
+	OnFailureActions      []string
+	Mode                  string // ACTIVE or PASSIVE
+	ExecutorID            string // optional
+}
+
+// UpsertFreshnessAssertion creates or updates a freshness assertion monitor.
+// Requires DataHub Cloud; returns ErrAssertionCloudOnly on OSS.
+func (c *Client) UpsertFreshnessAssertion(ctx context.Context, in FreshnessAssertionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	const q = `
+mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: UpsertDatasetFreshnessAssertionMonitorInput!) {
+  upsertDatasetFreshnessAssertionMonitor(assertionUrn: $assertionUrn, input: $input) { urn }
+}`
+
+	schedule := map[string]any{"type": in.ScheduleType}
+	switch in.ScheduleType {
+	case "FIXED_INTERVAL":
+		schedule["fixedInterval"] = map[string]any{
+			"unit":     in.FixedIntervalUnit,
+			"multiple": in.FixedIntervalMultiple,
+		}
+	case "CRON":
+		schedule["cron"] = map[string]any{
+			"cron":     in.CronSchedule,
+			"timezone": in.CronTimezone,
+		}
+	}
+
+	input := map[string]any{
+		"entityUrn": in.EntityURN,
+		"schedule":  schedule,
+		"evaluationSchedule": map[string]any{
+			"cron":     in.EvaluationCron,
+			"timezone": in.EvaluationTimezone,
+		},
+		"evaluationParameters": map[string]any{
+			"sourceType": in.SourceType,
+		},
+		"mode": in.Mode,
+	}
+	if len(in.OnSuccessActions) > 0 || len(in.OnFailureActions) > 0 {
+		input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
+	}
+	if in.ExecutorID != "" {
+		input["executorId"] = in.ExecutorID
+	}
+
+	vars := map[string]any{"input": input}
+	if in.AssertionURN != "" {
+		vars["assertionUrn"] = in.AssertionURN
+	}
+
+	body := map[string]any{"query": q, "variables": vars}
+
+	var raw struct {
+		Data struct {
+			UpsertDatasetFreshnessAssertionMonitor struct {
+				URN string `json:"urn"`
+			} `json:"upsertDatasetFreshnessAssertionMonitor"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		msg := raw.Errors[0].Message
+		if isAssertionCloudOnlyError(msg) {
+			return "", ErrAssertionCloudOnly
+		}
+		return "", fmt.Errorf("DataHub API error: %s", msg)
+	}
+	return raw.Data.UpsertDatasetFreshnessAssertionMonitor.URN, nil
+}
+
+// VolumeAssertionInput groups inputs for upsertDatasetVolumeAssertionMonitor.
+type VolumeAssertionInput struct {
+	AssertionURN       string
+	EntityURN          string
+	VolumeType         string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	Operator           string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
+	MinValue           string // for BETWEEN
+	MaxValue           string // for BETWEEN
+	SingleValue        string // for non-BETWEEN operators
+	EvaluationCron     string
+	EvaluationTimezone string
+	SourceType         string
+	OnSuccessActions   []string
+	OnFailureActions   []string
+	Mode               string
+	ExecutorID         string
+}
+
+// UpsertVolumeAssertion creates or updates a volume assertion monitor.
+// Requires DataHub Cloud; returns ErrAssertionCloudOnly on OSS.
+func (c *Client) UpsertVolumeAssertion(ctx context.Context, in VolumeAssertionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	const q = `
+mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: UpsertDatasetVolumeAssertionMonitorInput!) {
+  upsertDatasetVolumeAssertionMonitor(assertionUrn: $assertionUrn, input: $input) { urn }
+}`
+
+	params := buildAssertionParams(in.Operator, in.MinValue, in.MaxValue, in.SingleValue)
+	rowCountTotal := map[string]any{
+		"operator":   in.Operator,
+		"parameters": params,
+	}
+
+	input := map[string]any{
+		"entityUrn":     in.EntityURN,
+		"type":          in.VolumeType,
+		"rowCountTotal": rowCountTotal,
+		"evaluationSchedule": map[string]any{
+			"cron":     in.EvaluationCron,
+			"timezone": in.EvaluationTimezone,
+		},
+		"evaluationParameters": map[string]any{
+			"sourceType": in.SourceType,
+		},
+		"mode": in.Mode,
+	}
+	if len(in.OnSuccessActions) > 0 || len(in.OnFailureActions) > 0 {
+		input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
+	}
+	if in.ExecutorID != "" {
+		input["executorId"] = in.ExecutorID
+	}
+
+	vars := map[string]any{"input": input}
+	if in.AssertionURN != "" {
+		vars["assertionUrn"] = in.AssertionURN
+	}
+
+	body := map[string]any{"query": q, "variables": vars}
+
+	var raw struct {
+		Data struct {
+			UpsertDatasetVolumeAssertionMonitor struct {
+				URN string `json:"urn"`
+			} `json:"upsertDatasetVolumeAssertionMonitor"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		msg := raw.Errors[0].Message
+		if isAssertionCloudOnlyError(msg) {
+			return "", ErrAssertionCloudOnly
+		}
+		return "", fmt.Errorf("DataHub API error: %s", msg)
+	}
+	return raw.Data.UpsertDatasetVolumeAssertionMonitor.URN, nil
+}
+
+// SQLAssertionInput groups inputs for upsertDatasetSqlAssertionMonitor.
+type SQLAssertionInput struct {
+	AssertionURN       string
+	EntityURN          string
+	SQLType            string // METRIC
+	Statement          string
+	Operator           string
+	Value              string // single result value to compare against
+	Description        string
+	EvaluationCron     string
+	EvaluationTimezone string
+	OnSuccessActions   []string
+	OnFailureActions   []string
+	Mode               string
+	ExecutorID         string
+}
+
+// UpsertSQLAssertion creates or updates a SQL assertion monitor.
+// Requires DataHub Cloud; returns ErrAssertionCloudOnly on OSS.
+func (c *Client) UpsertSQLAssertion(ctx context.Context, in SQLAssertionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	const q = `
+mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertDatasetSqlAssertionMonitorInput!) {
+  upsertDatasetSqlAssertionMonitor(assertionUrn: $assertionUrn, input: $input) { urn }
+}`
+
+	input := map[string]any{
+		"entityUrn": in.EntityURN,
+		"type":      in.SQLType,
+		"statement": in.Statement,
+		"operator":  in.Operator,
+		"parameters": map[string]any{
+			"value": map[string]any{
+				"value": in.Value,
+				"type":  "NUMBER",
+			},
+		},
+		"evaluationSchedule": map[string]any{
+			"cron":     in.EvaluationCron,
+			"timezone": in.EvaluationTimezone,
+		},
+		"mode": in.Mode,
+	}
+	if in.Description != "" {
+		input["description"] = in.Description
+	}
+	if len(in.OnSuccessActions) > 0 || len(in.OnFailureActions) > 0 {
+		input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
+	}
+	if in.ExecutorID != "" {
+		input["executorId"] = in.ExecutorID
+	}
+
+	vars := map[string]any{"input": input}
+	if in.AssertionURN != "" {
+		vars["assertionUrn"] = in.AssertionURN
+	}
+
+	body := map[string]any{"query": q, "variables": vars}
+
+	var raw struct {
+		Data struct {
+			UpsertDatasetSQLAssertionMonitor struct {
+				URN string `json:"urn"`
+			} `json:"upsertDatasetSqlAssertionMonitor"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		msg := raw.Errors[0].Message
+		if isAssertionCloudOnlyError(msg) {
+			return "", ErrAssertionCloudOnly
+		}
+		return "", fmt.Errorf("DataHub API error: %s", msg)
+	}
+	return raw.Data.UpsertDatasetSQLAssertionMonitor.URN, nil
+}
+
+// buildActionsInput converts string slices to the AssertionActionsInput shape.
+func buildActionsInput(onSuccess, onFailure []string) map[string]any {
+	success := make([]map[string]any, len(onSuccess))
+	for i, t := range onSuccess {
+		success[i] = map[string]any{"type": t}
+	}
+	failure := make([]map[string]any, len(onFailure))
+	for i, t := range onFailure {
+		failure[i] = map[string]any{"type": t}
+	}
+	return map[string]any{
+		"onSuccess": success,
+		"onFailure": failure,
+	}
+}
+
+// buildAssertionParams converts operator + value strings to AssertionStdParametersInput.
+func buildAssertionParams(operator, minVal, maxVal, singleVal string) map[string]any {
+	params := map[string]any{}
+	if operator == "BETWEEN" {
+		if minVal != "" {
+			params["minValue"] = map[string]any{"value": minVal, "type": "NUMBER"}
+		}
+		if maxVal != "" {
+			params["maxValue"] = map[string]any{"value": maxVal, "type": "NUMBER"}
+		}
+	} else if singleVal != "" {
+		params["value"] = map[string]any{"value": singleVal, "type": "NUMBER"}
+	}
+	return params
+}

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_custom_assertion` resource: create and manage custom (external) DataHub assertion definitions. Custom assertions are evaluated by an external system (dbt tests, Great Expectations, custom scripts) and reported back to DataHub via `reportAssertionResult`. The resource declares the assertion and associates it with a dataset URN; it does not execute the assertion itself. Works on both OSS DataHub and DataHub Cloud. DataHub generates a server-side UUID for the URN on first creation; the provider stores and reuses it on all subsequent updates, passing the existing URN back to the `upsertCustomAssertion` mutation to guarantee idempotent upserts.
+- `datahub_freshness_assertion` resource: create and manage a DataHub freshness assertion monitor. Freshness assertions check that a dataset has been updated within an expected window, evaluated on a configurable cron schedule. Supports `FIXED_INTERVAL` (rolling window, e.g. data must arrive every 24 hours) and `CRON` (calendar window) schedule types. Requires DataHub Cloud; returns a clear diagnostic on OSS DataHub. URN is server-generated.
+- `datahub_volume_assertion` resource: create and manage a DataHub volume assertion monitor. Volume assertions check that a dataset has an expected row count at evaluation time. Supports `DATAHUB_DATASET_PROFILE` source type (evaluates against a previously ingested DatasetProfile - no live database query required), `INFORMATION_SCHEMA`, and `QUERY`. Requires DataHub Cloud; returns a clear diagnostic on OSS DataHub. URN is server-generated.
+- `datahub_sql_assertion` resource: create and manage a DataHub SQL assertion monitor. SQL assertions run a custom SELECT statement and compare the numeric result to an expected value, enabling business-logic checks (no negative values, referential integrity counts, etc.) that volume and freshness assertions cannot express. Requires DataHub Cloud; returns a clear diagnostic on OSS DataHub. URN is server-generated.
+- `datahub_assertion` data source: look up an existing DataHub assertion by URN and return its type and target entity URN. Use this to reference an assertion created outside Terraform without taking ownership of it.
+- `datahub_assertions` data source: return the URNs of all DataHub assertions for bulk import via `for_each` into `import {}` blocks. Backed by `searchAcrossEntities` (OpenSearch).
+- `examples/runnable/assertion-volume-sqlite`: runnable example demonstrating a volume assertion evaluated against a locally-seeded SQLite dataset profiled via the DataHub CLI. Includes a Python seed script and a README walkthrough of the PASS-FAIL-PASS cycle using `DATAHUB_DATASET_PROFILE` source type (no live database query from DataHub Cloud).
+
 ## [0.8.0] - 2026-06-08
 
 ### Added

@@ -82,6 +82,7 @@ type mockServer struct {
 	structuredProperties map[string]mockStructuredProperty
 	ownershipTypes       map[string]mockOwnershipType
 	dataProducts         map[string]mockDataProduct
+	assertions           map[string]mockAssertion
 	defaultPoolID        string
 	inviteToken          string
 	resetTokens          map[string]string
@@ -111,6 +112,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		structuredProperties: make(map[string]mockStructuredProperty),
 		ownershipTypes:       make(map[string]mockOwnershipType),
 		dataProducts:         make(map[string]mockDataProduct),
+		assertions:           make(map[string]mockAssertion),
 		inviteToken:          "mock-invite-token-001",
 		resetTokens:          make(map[string]string),
 		failDeleteFor:        make(map[string]struct{}),
@@ -135,6 +137,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/ownershiptype/", s.handleOwnershipTypeItem)
 	mux.HandleFunc("/openapi/v3/entity/dataproduct", s.handleDataProductCollection)
 	mux.HandleFunc("/openapi/v3/entity/dataproduct/", s.handleDataProductItem)
+	mux.HandleFunc("/openapi/v3/entity/assertion/", s.handleAssertionItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -253,6 +256,16 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeletePolicy(w, req.Variables)
 	case strings.Contains(q, "listPolicies"):
 		s.handleListPolicies(w)
+	case strings.Contains(q, "upsertCustomAssertion"):
+		s.handleUpsertCustomAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertDatasetVolumeAssertionMonitor"):
+		s.handleUpsertVolumeAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertDatasetFreshnessAssertionMonitor"):
+		s.handleUpsertFreshnessAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertDatasetSqlAssertionMonitor"):
+		s.handleUpsertSQLAssertion(w, req.Variables)
+	case strings.Contains(q, "deleteAssertion"):
+		s.handleDeleteAssertion(w, req.Variables)
 	case strings.Contains(q, "createRemoteExecutorPool"):
 		s.handleCreateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):
@@ -460,6 +473,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": dp.URN,
+					},
+				})
+			}
+		case "ASSERTION":
+			for _, a := range s.assertions {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": a.URN,
 					},
 				})
 			}
