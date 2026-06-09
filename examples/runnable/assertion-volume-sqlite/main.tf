@@ -26,8 +26,8 @@ resource "datahub_ingestion_source" "sqlite_profile" {
     source = {
       type = "sqlalchemy"
       config = {
-        sqlalchemy_uri  = "sqlite:///./fixtures/test.db"
-        table_pattern   = { allow = ["tf_test_data"] }
+        sqlalchemy_uri   = "sqlite:///./fixtures/test.db"
+        table_pattern    = { allow = ["tf_test_data"] }
         database_pattern = { allow = ["tf_assertion_test"] }
         profiling = {
           enabled = true
