@@ -3419,3 +3419,320 @@ func DataProductCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// CustomAssertionLifecycleSteps returns test steps covering create, update,
+// and import for datahub_custom_assertion.
+func CustomAssertionLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_custom_assertion.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_custom_assertion" "test" {
+  entity_urn     = "urn:li:dataset:(urn:li:dataPlatform:hive,test.table,PROD)"
+  assertion_type = "CUSTOM"
+  description    = "TF Example - custom assertion"
+  platform_urn   = "urn:li:dataPlatform:dbt"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("id"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("assertion_type"), knownvalue.StringExact("CUSTOM")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("entity_urn"), knownvalue.StringExact("urn:li:dataset:(urn:li:dataPlatform:hive,test.table,PROD)")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_custom_assertion" "test" {
+  entity_urn     = "urn:li:dataset:(urn:li:dataPlatform:hive,test.table,PROD)"
+  assertion_type = "CUSTOM"
+  description    = "TF Example - updated description"
+  platform_urn   = "urn:li:dataPlatform:dbt"
+  logic          = "SELECT COUNT(*) FROM test.table WHERE value < 0"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("TF Example - updated description")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("logic"), knownvalue.StringExact("SELECT COUNT(*) FROM test.table WHERE value < 0")),
+			},
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectNonEmptyPlan(),
+				},
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// CustomAssertionDataSourceSteps returns test steps for the datahub_assertion data source.
+func CustomAssertionDataSourceSteps() []resource.TestStep {
+	const rAddr = "datahub_custom_assertion.ds_test"
+	const dsAddr = "data.datahub_assertion.lookup"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_custom_assertion" "ds_test" {
+  entity_urn     = "urn:li:dataset:(urn:li:dataPlatform:hive,ds.table,PROD)"
+  assertion_type = "CUSTOM"
+  description    = "data source lookup test"
+  platform_urn   = "urn:li:dataPlatform:great_expectations"
+}
+
+data "datahub_assertion" "lookup" {
+  urn = datahub_custom_assertion.ds_test.urn
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("assertion_type"), knownvalue.StringExact("CUSTOM")),
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("entity_urn"), knownvalue.StringExact("urn:li:dataset:(urn:li:dataPlatform:hive,ds.table,PROD)")),
+			},
+		},
+		// Avoid an unused variable warning: ensure rAddr resource is referenced.
+		{
+			Config: providerBlock + `
+resource "datahub_custom_assertion" "ds_test" {
+  entity_urn     = "urn:li:dataset:(urn:li:dataPlatform:hive,ds.table,PROD)"
+  assertion_type = "CUSTOM"
+  description    = "data source lookup test"
+  platform_urn   = "urn:li:dataPlatform:great_expectations"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(rAddr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+			},
+		},
+	}
+}
+
+// CustomAssertionListSteps returns test steps for the datahub_assertions plural data source.
+func CustomAssertionListSteps() []resource.TestStep {
+	const dsAddr = "data.datahub_assertions.all"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_custom_assertion" "list_test" {
+  entity_urn     = "urn:li:dataset:(urn:li:dataPlatform:hive,list.table,PROD)"
+  assertion_type = "CUSTOM"
+  description    = "list test"
+  platform_urn   = "urn:li:dataPlatform:dbt"
+}
+
+data "datahub_assertions" "all" {
+  depends_on = [datahub_custom_assertion.list_test]
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("urns"), knownvalue.ListSizeExact(1)),
+			},
+		},
+	}
+}
+
+// CustomAssertionCheckDestroy verifies every datahub_custom_assertion in the
+// post-destroy state has been removed from DataHub.
+func CustomAssertionCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_custom_assertion" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		a, getErr := client.GetAssertionByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_custom_assertion %q: %w", urn, getErr)
+		}
+		if a != nil {
+			return fmt.Errorf("datahub_custom_assertion %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
+// VolumeAssertionLifecycleSteps returns test steps for datahub_volume_assertion.
+func VolumeAssertionLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_volume_assertion.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+  volume_type         = "ROW_COUNT_TOTAL"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "100"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+  on_success_actions  = ["RESOLVE_INCIDENT"]
+  on_failure_actions  = ["RAISE_INCIDENT"]
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume_type"), knownvalue.StringExact("ROW_COUNT_TOTAL")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+  volume_type         = "ROW_COUNT_TOTAL"
+  operator            = "BETWEEN"
+  min_value           = "80"
+  max_value           = "200"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("BETWEEN")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("min_value"), knownvalue.StringExact("80")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("max_value"), knownvalue.StringExact("200")),
+			},
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectNonEmptyPlan(),
+				},
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// VolumeAssertionCheckDestroy verifies every datahub_volume_assertion has been removed.
+func VolumeAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_volume_assertion")
+}
+
+// FreshnessAssertionLifecycleSteps returns test steps for datahub_freshness_assertion.
+func FreshnessAssertionLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_freshness_assertion.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn              = "urn:li:dataset:(urn:li:dataPlatform:hive,freshness.table,PROD)"
+  schedule_type           = "FIXED_INTERVAL"
+  fixed_interval_unit     = "HOUR"
+  fixed_interval_multiple = 24
+  evaluation_cron         = "0 */8 * * *"
+  evaluation_timezone     = "UTC"
+  source_type             = "DATAHUB_OPERATION"
+  mode                    = "ACTIVE"
+  on_success_actions      = ["RESOLVE_INCIDENT"]
+  on_failure_actions      = ["RAISE_INCIDENT"]
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("FIXED_INTERVAL")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.StringExact("HOUR")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FreshnessAssertionCheckDestroy verifies every datahub_freshness_assertion has been removed.
+func FreshnessAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_freshness_assertion")
+}
+
+// SQLAssertionLifecycleSteps returns test steps for datahub_sql_assertion.
+func SQLAssertionLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_sql_assertion.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)"
+  sql_type            = "METRIC"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table WHERE value < 0"
+  operator            = "EQUAL_TO"
+  value               = "0"
+  description         = "no negative values"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+  on_success_actions  = ["RESOLVE_INCIDENT"]
+  on_failure_actions  = ["RAISE_INCIDENT"]
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("sql_type"), knownvalue.StringExact("METRIC")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value"), knownvalue.StringExact("0")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "mode", "executor_id"},
+		},
+	}
+}
+
+// SQLAssertionCheckDestroy verifies every datahub_sql_assertion has been removed.
+func SQLAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_sql_assertion")
+}
+
+// assertionCheckDestroy is a shared helper for assertion CheckDestroy functions.
+func assertionCheckDestroy(s *terraform.State, resourceType string) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != resourceType {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		a, getErr := client.GetAssertionByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking %s %q: %w", resourceType, urn, getErr)
+		}
+		if a != nil {
+			return fmt.Errorf("%s %q still exists after destroy", resourceType, urn)
+		}
+	}
+	return nil
+}

@@ -1,0 +1,5 @@
+fixtures/test.db
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform.lock.hcl

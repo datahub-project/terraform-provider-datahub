@@ -39,6 +39,9 @@ Some resources and data sources target DataHub Cloud exclusively and will fail w
 | Resource / Data Source | Reason |
 |---|---|
 | `datahub_remote_executor_pool` (resource + data source) | The `dataHubRemoteExecutorPool` entity type and its GraphQL mutations do not exist in OSS DataHub. The underlying mutations are also classified as `category: internal` in DataHub Cloud, meaning they carry no external API stability guarantee and may change between Cloud releases without notice. |
+| `datahub_freshness_assertion` (resource) | The `upsertDatasetFreshnessAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
+| `datahub_volume_assertion` (resource) | The `upsertDatasetVolumeAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
+| `datahub_sql_assertion` (resource) | The `upsertDatasetSqlAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
 
 ## When to mention OSS vs Cloud
 
