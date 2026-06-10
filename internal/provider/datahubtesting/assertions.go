@@ -231,6 +231,33 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 	})
 }
 
+// handleGetAssertionMonitor handles the getAssertionMonitor GraphQL query.
+// Mock assertions have no associated monitor entities, so this always returns
+// monitor: null, which causes DeleteCloudAssertionWithMonitor to skip the
+// monitor deletion step on mock targets.
+func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables map[string]any) {
+	urn, _ := variables["urn"].(string)
+	_ = urn // The assertion may or may not exist; we always return no monitor.
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"assertion": map[string]any{
+				"urn":     urn,
+				"monitor": nil,
+			},
+		},
+	})
+}
+
+// handleMonitorDelete handles DELETE /openapi/v3/entity/monitor/{urn}.
+// Monitor entities are not tracked by the mock; this is a no-op that returns 200.
+func (s *mockServer) handleMonitorDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.NotFound(w, r)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
 // handleDeleteAssertion handles the deleteAssertion GraphQL mutation.
 func (s *mockServer) handleDeleteAssertion(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
@@ -277,13 +304,18 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 	case "CUSTOM":
 		if a.CustomAssertion != nil {
 			ca := *a.CustomAssertion
+			// Match the real DataHub API: description and externalUrl are top-level
+			// fields in assertionInfo.value, not inside customAssertion. Platform URN
+			// is in a separate dataPlatformInstance aspect on the entity.
+			if desc, _ := ca["description"].(string); desc != "" {
+				infoValue["description"] = desc
+			}
+			if extURL, _ := ca["externalUrl"].(string); extURL != "" {
+				infoValue["externalUrl"] = extURL
+			}
 			infoValue["customAssertion"] = map[string]any{
-				"type":        ca["type"],
-				"description": ca["description"],
-				"fieldPath":   ca["fieldPath"],
-				"platform":    ca["platform"],
-				"externalUrl": ca["externalUrl"],
-				"logic":       ca["logic"],
+				"type":  ca["type"],
+				"logic": ca["logic"],
 			}
 		}
 	case "VOLUME":
@@ -324,6 +356,17 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 		"assertionInfo": map[string]any{
 			"value": infoValue,
 		},
+	}
+
+	if a.AssertionType == "CUSTOM" && a.CustomAssertion != nil {
+		ca := *a.CustomAssertion
+		if p, ok := ca["platform"].(map[string]any); ok {
+			if urn, _ := p["urn"].(string); urn != "" {
+				entity["dataPlatformInstance"] = map[string]any{
+					"value": map[string]any{"platform": urn},
+				}
+			}
+		}
 	}
 
 	if len(a.OnSuccess) > 0 || len(a.OnFailure) > 0 {

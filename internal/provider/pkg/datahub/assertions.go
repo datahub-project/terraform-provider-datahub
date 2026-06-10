@@ -121,11 +121,23 @@ type assertionEntity struct {
 			} `json:"onFailure"`
 		} `json:"value"`
 	} `json:"assertionActions,omitempty"`
+	// DataPlatformInstance is a separate aspect that carries the platform URN
+	// for custom assertions (upsertCustomAssertion's platform input is stored here,
+	// not inside assertionInfo.value.customAssertion).
+	DataPlatformInstance *struct {
+		Value struct {
+			Platform string `json:"platform"`
+		} `json:"value"`
+	} `json:"dataPlatformInstance,omitempty"`
 }
 
 type assertionInfoValue struct {
 	Type      string `json:"type"`
 	EntityURN string `json:"entityUrn"`
+	// Description and ExternalURL are top-level fields in the real DataHub API response,
+	// not nested inside customAssertion.
+	Description string `json:"description"`
+	ExternalURL string `json:"externalUrl"`
 	// Freshness
 	FreshnessAssertion *struct {
 		Schedule *struct {
@@ -171,16 +183,13 @@ type assertionInfoValue struct {
 		} `json:"parameters,omitempty"`
 	} `json:"sqlAssertion,omitempty"`
 	// Custom
+	// Note: Description and ExternalURL are at the assertionInfoValue top level (above),
+	// not inside customAssertion. Platform is in the dataPlatformInstance aspect.
+	// FieldPath (fieldPath input) is stored as a full schema-field URN in customAssertion.field
+	// and cannot be round-tripped safely to the simple field name the user supplies.
 	CustomAssertion *struct {
-		Type        string `json:"type"`
-		Description string `json:"description"`
-		FieldPath   string `json:"fieldPath"`
-		Platform    *struct {
-			URN  string `json:"urn"`
-			Name string `json:"name"`
-		} `json:"platform,omitempty"`
-		ExternalURL string `json:"externalUrl"`
-		Logic       string `json:"logic"`
+		Type  string `json:"type"`
+		Logic string `json:"logic"`
 	} `json:"customAssertion,omitempty"`
 }
 
@@ -277,7 +286,7 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 				SQLType:     v.SQLAssertion.Type,
 				Statement:   v.SQLAssertion.Statement,
 				Operator:    v.SQLAssertion.Operator,
-				Description: v.SQLAssertion.Description,
+				Description: v.Description, // top-level field in real API, same as custom assertions
 			}
 			if v.SQLAssertion.Parameters != nil && v.SQLAssertion.Parameters.Value != nil {
 				si.Value = v.SQLAssertion.Parameters.Value.Value
@@ -288,13 +297,15 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 		if v.CustomAssertion != nil {
 			ci := &CustomAssertionInfo{
 				AssertionType: v.CustomAssertion.Type,
-				Description:   v.CustomAssertion.Description,
-				FieldPath:     v.CustomAssertion.FieldPath,
-				ExternalURL:   v.CustomAssertion.ExternalURL,
+				Description:   v.Description, // top-level field in real API
+				ExternalURL:   v.ExternalURL, // top-level field in real API
 				Logic:         v.CustomAssertion.Logic,
+				// FieldPath: not read back -- API stores as full schema-field URN which
+				// cannot be safely round-tripped to the simple field name in config.
+				// The value is preserved from prior state by the resource's Read function.
 			}
-			if v.CustomAssertion.Platform != nil {
-				ci.PlatformURN = v.CustomAssertion.Platform.URN
+			if e.DataPlatformInstance != nil {
+				ci.PlatformURN = e.DataPlatformInstance.Value.Platform
 			}
 			ai.Custom = ci
 		}
@@ -336,6 +347,106 @@ mutation deleteAssertion($urn: String!) {
 	}
 	if len(gqlResp.Errors) > 0 {
 		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
+}
+
+// DeleteCloudAssertionWithMonitor deletes a Cloud-only monitor-backed assertion
+// and its associated monitor entity. The assertion deletion is authoritative:
+// if it fails, the error is returned. The monitor deletion is best-effort: if
+// the monitor lookup or deletion fails, the error is discarded (the monitor
+// becomes an orphan but the assertion resource is removed from Terraform state).
+//
+// DataHub's deleteAssertion mutation removes the assertion entity but leaves
+// the monitor entity in place. Without also deleting the monitor, DataHub Cloud
+// enforces a one-active-monitor-per-dataset-per-type constraint that prevents
+// future terraform applies from recreating the assertion for the same dataset.
+func (c *Client) DeleteCloudAssertionWithMonitor(ctx context.Context, assertionURN string) error {
+	monitorURN, _ := c.GetAssertionMonitorURN(ctx, assertionURN)
+	if err := c.DeleteAssertion(ctx, assertionURN); err != nil {
+		return err
+	}
+	if monitorURN != "" {
+		_ = c.DeleteMonitor(ctx, monitorURN)
+	}
+	return nil
+}
+
+// GetAssertionMonitorURN looks up the monitor entity URN associated with the
+// given assertion URN. Returns an empty string (no error) when the assertion
+// has no linked monitor (e.g. custom assertions, or any assertion created before
+// DataHub's monitor service was available). Returns an error only on network or
+// parse failures.
+func (c *Client) GetAssertionMonitorURN(ctx context.Context, assertionURN string) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+	assertionURN = strings.TrimSpace(assertionURN)
+	if assertionURN == "" {
+		return "", errors.New("URN is required")
+	}
+
+	const q = `
+query getAssertionMonitor($urn: String!) {
+  assertion(urn: $urn) {
+    monitor { urn }
+  }
+}`
+	body := map[string]any{
+		"query":     q,
+		"variables": map[string]any{"urn": assertionURN},
+	}
+	var raw struct {
+		Data struct {
+			Assertion *struct {
+				Monitor *struct {
+					URN string `json:"urn"`
+				} `json:"monitor"`
+			} `json:"assertion"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		return "", fmt.Errorf("DataHub API error: %s", raw.Errors[0].Message)
+	}
+	if raw.Data.Assertion == nil || raw.Data.Assertion.Monitor == nil {
+		return "", nil
+	}
+	return raw.Data.Assertion.Monitor.URN, nil
+}
+
+// DeleteMonitor hard-deletes a DataHub monitor entity by URN via the OpenAPI
+// v3 entity endpoint. This is a separate step from DeleteAssertion because
+// DataHub's deleteAssertion mutation removes the assertion entity but leaves
+// the associated monitor entity in place.
+func (c *Client) DeleteMonitor(ctx context.Context, monitorURN string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	monitorURN = strings.TrimSpace(monitorURN)
+	if monitorURN == "" {
+		return errors.New("monitor URN is required")
+	}
+
+	path := fmt.Sprintf("/openapi/v3/entity/monitor/%s", monitorURN)
+	req, err := c.NewRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unexpected HTTP %d deleting monitor %q: %s", res.StatusCode, monitorURN, body)
 	}
 	return nil
 }
@@ -464,9 +575,9 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 		},
 		"mode": in.Mode,
 	}
-	if len(in.OnSuccessActions) > 0 || len(in.OnFailureActions) > 0 {
-		input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
-	}
+	// Always send actions -- even empty lists -- so that previously-set actions
+	// are cleared when the user removes them from config.
+	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
 	if in.ExecutorID != "" {
 		input["executorId"] = in.ExecutorID
 	}
@@ -550,9 +661,9 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 		},
 		"mode": in.Mode,
 	}
-	if len(in.OnSuccessActions) > 0 || len(in.OnFailureActions) > 0 {
-		input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
-	}
+	// Always send actions -- even empty lists -- so that previously-set actions
+	// are cleared when the user removes them from config.
+	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
 	if in.ExecutorID != "" {
 		input["executorId"] = in.ExecutorID
 	}
@@ -636,9 +747,9 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 	if in.Description != "" {
 		input["description"] = in.Description
 	}
-	if len(in.OnSuccessActions) > 0 || len(in.OnFailureActions) > 0 {
-		input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
-	}
+	// Always send actions -- even empty lists -- so that previously-set actions
+	// are cleared when the user removes them from config.
+	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
 	if in.ExecutorID != "" {
 		input["executorId"] = in.ExecutorID
 	}

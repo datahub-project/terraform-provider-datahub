@@ -342,7 +342,7 @@ func (r *volumeAssertionResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	if err := r.client.DeleteAssertion(ctx, urn); err != nil {
+	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn); err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
 	}

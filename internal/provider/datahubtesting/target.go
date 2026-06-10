@@ -4,10 +4,12 @@
 package datahubtesting
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -103,6 +105,160 @@ func (tg *Target) Name(base string) string {
 		return base
 	}
 	return base + "-" + strings.ToLower(acctest.RandString(8))
+}
+
+// EnsureDatasetEntity creates a minimal dataset entity on a live target so that
+// assertion monitor mutations (which require the referenced dataset to exist in
+// DataHub) succeed. A t.Cleanup is registered to hard-delete the entity after
+// the test ends. On the in-memory mock this is a no-op: the mock does not
+// validate entity existence before accepting GraphQL mutations.
+func (tg *Target) EnsureDatasetEntity(t *testing.T, entityURN string) {
+	t.Helper()
+	if tg.Kind == TargetMock {
+		return
+	}
+
+	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
+	token := os.Getenv("DATAHUB_GMS_TOKEN")
+
+	body, err := json.Marshal([]map[string]any{
+		{
+			"urn": entityURN,
+			"datasetProperties": map[string]any{
+				"value": map[string]any{
+					"name": "TF Provider Test Dataset",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnsureDatasetEntity: marshal: %v", err)
+	}
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		gmsURL+"/openapi/v3/entity/dataset", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("EnsureDatasetEntity: build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("EnsureDatasetEntity: POST /openapi/v3/entity/dataset: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		t.Fatalf("EnsureDatasetEntity: POST returned HTTP %d for URN %q", resp.StatusCode, entityURN)
+	}
+	t.Logf("EnsureDatasetEntity: created dataset entity %q (HTTP %d)", entityURN, resp.StatusCode)
+
+	t.Cleanup(func() {
+		deleteURL := gmsURL + "/openapi/v3/entity/dataset/" + url.PathEscape(entityURN)
+		delReq, delErr := http.NewRequestWithContext(context.Background(), http.MethodDelete, deleteURL, nil)
+		if delErr != nil {
+			t.Logf("EnsureDatasetEntity cleanup: build delete request: %v", delErr)
+			return
+		}
+		delReq.Header.Set("Authorization", "Bearer "+token)
+		delResp, delErr := httpClient.Do(delReq)
+		if delErr != nil {
+			t.Logf("EnsureDatasetEntity cleanup: DELETE %q: %v", entityURN, delErr)
+			return
+		}
+		defer delResp.Body.Close()
+		t.Logf("EnsureDatasetEntity cleanup: deleted dataset entity %q (HTTP %d)", entityURN, delResp.StatusCode)
+	})
+}
+
+// CleanupOrphanedMonitors searches for and deletes any DataHub monitor entities
+// whose URN references the given dataset URN. Orphaned monitors (left behind
+// when a previous test run's Delete failed to locate the monitor URN via the
+// assertion link) block future assertion creation for the same dataset and
+// assertion type, because DataHub Cloud enforces a one-active-monitor-per-
+// dataset-per-type constraint. Call this before EnsureDatasetEntity in any
+// test that creates Cloud-only assertion monitors. This is a no-op on the mock
+// target.
+func (tg *Target) CleanupOrphanedMonitors(t *testing.T, datasetURN string) {
+	t.Helper()
+	if tg.Kind == TargetMock {
+		return
+	}
+
+	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
+	token := os.Getenv("DATAHUB_GMS_TOKEN")
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+
+	gqlBody, _ := json.Marshal(map[string]any{
+		"query": `query {
+  searchAcrossEntities(input: {types: [MONITOR], query: "*", count: 50}) {
+    searchResults {
+      entity { urn }
+    }
+  }
+}`,
+		"variables": map[string]any{},
+	})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		gmsURL+"/api/graphql", bytes.NewReader(gqlBody))
+	if err != nil {
+		t.Logf("CleanupOrphanedMonitors: build request: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Logf("CleanupOrphanedMonitors: graphql search: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data struct {
+			SearchAcrossEntities struct {
+				SearchResults []struct {
+					Entity struct {
+						URN string `json:"urn"`
+					} `json:"entity"`
+				} `json:"searchResults"`
+			} `json:"searchAcrossEntities"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Logf("CleanupOrphanedMonitors: decode response: %v", err)
+		return
+	}
+
+	deleted := 0
+	for _, sr := range result.Data.SearchAcrossEntities.SearchResults {
+		urn := sr.Entity.URN
+		if !strings.Contains(urn, datasetURN) {
+			continue
+		}
+		deleteURL := gmsURL + "/openapi/v3/entity/monitor/" + url.PathEscape(urn)
+		delReq, delErr := http.NewRequestWithContext(context.Background(), http.MethodDelete, deleteURL, nil)
+		if delErr != nil {
+			t.Logf("CleanupOrphanedMonitors: build delete request for %q: %v", urn, delErr)
+			continue
+		}
+		delReq.Header.Set("Authorization", "Bearer "+token)
+		delResp, delErr := httpClient.Do(delReq)
+		if delErr != nil {
+			t.Logf("CleanupOrphanedMonitors: DELETE monitor %q: %v", urn, delErr)
+			continue
+		}
+		delResp.Body.Close()
+		t.Logf("CleanupOrphanedMonitors: deleted monitor %q (HTTP %d)", urn, delResp.StatusCode)
+		deleted++
+	}
+	if deleted > 0 {
+		t.Logf("CleanupOrphanedMonitors: deleted %d orphaned monitor(s) for dataset %q", deleted, datasetURN)
+	}
 }
 
 // SetupTarget selects the acceptance-test backend from the process

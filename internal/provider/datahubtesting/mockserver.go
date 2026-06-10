@@ -138,6 +138,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/dataproduct", s.handleDataProductCollection)
 	mux.HandleFunc("/openapi/v3/entity/dataproduct/", s.handleDataProductItem)
 	mux.HandleFunc("/openapi/v3/entity/assertion/", s.handleAssertionItem)
+	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -264,6 +265,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpsertFreshnessAssertion(w, req.Variables)
 	case strings.Contains(q, "upsertDatasetSqlAssertionMonitor"):
 		s.handleUpsertSQLAssertion(w, req.Variables)
+	case strings.Contains(q, "getAssertionMonitor"):
+		s.handleGetAssertionMonitor(w, req.Variables)
 	case strings.Contains(q, "deleteAssertion"):
 		s.handleDeleteAssertion(w, req.Variables)
 	case strings.Contains(q, "createRemoteExecutorPool"):

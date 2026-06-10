@@ -3643,7 +3643,7 @@ resource "datahub_freshness_assertion" "test" {
   fixed_interval_multiple = 24
   evaluation_cron         = "0 */8 * * *"
   evaluation_timezone     = "UTC"
-  source_type             = "AUDIT_LOG"
+  source_type             = "DATAHUB_OPERATION"
   mode                    = "ACTIVE"
   on_success_actions      = ["RESOLVE_INCIDENT"]
   on_failure_actions      = ["RAISE_INCIDENT"]

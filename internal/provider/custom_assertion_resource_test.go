@@ -46,3 +46,36 @@ func TestAssertionsDataSource_mock(t *testing.T) {
 		Steps:                    datahubtesting.CustomAssertionListSteps(),
 	})
 }
+
+func TestAcc_CustomAssertion_Lifecycle(t *testing.T) {
+	datahubtesting.SetupTarget(t) // OSS + Cloud; no RequireCloud
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.CustomAssertionCheckDestroy,
+		Steps:                    datahubtesting.CustomAssertionLifecycleSteps(),
+	})
+}
+
+func TestAcc_CustomAssertion_DataSource(t *testing.T) {
+	datahubtesting.SetupTarget(t) // OSS + Cloud; no RequireCloud
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.CustomAssertionCheckDestroy,
+		Steps:                    datahubtesting.CustomAssertionDataSourceSteps(),
+	})
+}
+
+func TestAcc_AssertionsDataSource_List(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.IsLive() {
+		t.Skip("list data source test uses exact-count check; live targets may have pre-existing assertions")
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.CustomAssertionCheckDestroy,
+		Steps:                    datahubtesting.CustomAssertionListSteps(),
+	})
+}

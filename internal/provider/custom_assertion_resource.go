@@ -324,7 +324,10 @@ func applyCustomAssertionToModel(ctx context.Context, ai *datahub.AssertionInfo,
 	if ai.Custom != nil {
 		m.AssertionType = types.StringValue(ai.Custom.AssertionType)
 		m.Description = types.StringValue(ai.Custom.Description)
-		m.FieldPath = nullIfEmpty(ai.Custom.FieldPath)
+		// FieldPath is not read back: the API stores it as a full schema-field URN
+		// (e.g. urn:li:schemaField:(...)) which cannot be safely round-tripped to
+		// the simple field name the user supplied. Leave m.FieldPath unchanged so
+		// the prior state value is preserved and no spurious drift is detected.
 		m.PlatformURN = types.StringValue(ai.Custom.PlatformURN)
 		m.ExternalURL = nullIfEmpty(ai.Custom.ExternalURL)
 		m.Logic = nullIfEmpty(ai.Custom.Logic)
