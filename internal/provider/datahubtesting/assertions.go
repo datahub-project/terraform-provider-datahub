@@ -336,12 +336,16 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 	case "SQL":
 		if a.SQLAssertion != nil {
 			sa := *a.SQLAssertion
+			// description is top-level in assertionInfo.value, matching the real
+			// DataHub Cloud API (same pattern as custom assertions).
+			if desc, _ := sa["description"].(string); desc != "" {
+				infoValue["description"] = desc
+			}
 			infoValue["sqlAssertion"] = map[string]any{
-				"type":        sa["type"],
-				"statement":   sa["statement"],
-				"operator":    sa["operator"],
-				"description": sa["description"],
-				"parameters":  sa["parameters"],
+				"type":       sa["type"],
+				"statement":  sa["statement"],
+				"operator":   sa["operator"],
+				"parameters": sa["parameters"],
 			}
 		}
 	}
