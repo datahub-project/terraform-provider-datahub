@@ -232,17 +232,31 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 }
 
 // handleGetAssertionMonitor handles the getAssertionMonitor GraphQL query.
-// Mock assertions have no associated monitor entities, so this always returns
-// monitor: null, which causes DeleteCloudAssertionWithMonitor to skip the
-// monitor deletion step on mock targets.
+// For Cloud-only assertion types (VOLUME, FRESHNESS, SQL), returns a synthetic
+// monitor URN so that waitForAssertionMonitor resolves immediately on the create
+// path. The monitor DELETE handler accepts any URN as a no-op, so returning a
+// synthetic URN here is safe for the delete path too.
+// CUSTOM assertions have no monitor entity; nil is returned for those.
 func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
-	_ = urn // The assertion may or may not exist; we always return no monitor.
+
+	s.mu.Lock()
+	a, exists := s.assertions[urn]
+	s.mu.Unlock()
+
+	var monitorVal any
+	if exists {
+		switch a.AssertionType {
+		case "VOLUME", "FRESHNESS", "SQL":
+			monitorVal = map[string]any{"urn": "urn:li:monitor:mock-" + urn}
+		}
+	}
+
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
 			"assertion": map[string]any{
 				"urn":     urn,
-				"monitor": nil,
+				"monitor": monitorVal,
 			},
 		},
 	})
