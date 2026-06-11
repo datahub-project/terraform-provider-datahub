@@ -26,6 +26,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // ErrAssertionCloudOnly is returned when a monitor mutation is attempted
@@ -188,8 +189,9 @@ type assertionInfoValue struct {
 	// FieldPath (fieldPath input) is stored as a full schema-field URN in customAssertion.field
 	// and cannot be round-tripped safely to the simple field name the user supplies.
 	CustomAssertion *struct {
-		Type  string `json:"type"`
-		Logic string `json:"logic"`
+		Type   string `json:"type"`
+		Logic  string `json:"logic"`
+		Entity string `json:"entity"` // OSS schema v3: entity URN stored here, not in top-level entityUrn
 	} `json:"customAssertion,omitempty"`
 }
 
@@ -246,6 +248,11 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 		v := e.Info.Value
 		ai.Type = v.Type
 		ai.EntityURN = v.EntityURN
+		// OSS assertionInfo schema v3 stores the entity URN inside customAssertion.entity
+		// rather than at the top-level entityUrn field. Fall back when entityUrn is absent.
+		if ai.EntityURN == "" && v.CustomAssertion != nil {
+			ai.EntityURN = v.CustomAssertion.Entity
+		}
 
 		if v.FreshnessAssertion != nil && v.FreshnessAssertion.Schedule != nil {
 			fi := &FreshnessAssertionInfo{
@@ -346,7 +353,36 @@ mutation deleteAssertion($urn: String!) {
 		return err
 	}
 	if len(gqlResp.Errors) > 0 {
+		// OSS DataHub rejects deleteAssertion for CUSTOM type. Fall back to the
+		// OpenAPI v3 entity endpoint, which works on both OSS and Cloud.
+		if strings.Contains(gqlResp.Errors[0].Message, "Unsupported Assertion Type") {
+			return c.deleteAssertionEntity(ctx, urn)
+		}
 		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
+}
+
+// deleteAssertionEntity hard-deletes an assertion via the OpenAPI v3 entity
+// endpoint. Used as an OSS fallback when the GraphQL deleteAssertion mutation
+// rejects the assertion type (e.g. CUSTOM on OSS DataHub).
+func (c *Client) deleteAssertionEntity(ctx context.Context, urn string) error {
+	path := fmt.Sprintf("/openapi/v3/entity/assertion/%s", urn)
+	req, err := c.NewRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	res, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unexpected HTTP %d deleting assertion: %s", res.StatusCode, body)
 	}
 	return nil
 }
@@ -449,6 +485,28 @@ func (c *Client) DeleteMonitor(ctx context.Context, monitorURN string) error {
 		return fmt.Errorf("unexpected HTTP %d deleting monitor %q: %s", res.StatusCode, monitorURN, body)
 	}
 	return nil
+}
+
+// waitForAssertionMonitor polls until the monitor entity linked to assertionURN
+// is visible. DataHub Cloud creates the monitor asynchronously after the upsert
+// mutation returns; without this wait an immediate update fails with "Monitor for
+// assertion X does not exist." Poll interval is 500ms; the caller controls the
+// timeout via ctx (30s is sufficient in practice).
+func (c *Client) waitForAssertionMonitor(ctx context.Context, assertionURN string) error {
+	for {
+		monURN, err := c.GetAssertionMonitorURN(ctx, assertionURN)
+		if err != nil {
+			return fmt.Errorf("polling assertion monitor: %w", err)
+		}
+		if monURN != "" {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("assertion %q: monitor not visible within timeout; retry the apply if the instance is still processing", assertionURN)
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 // UpsertCustomAssertionInput groups the inputs for upsertCustomAssertion.
@@ -609,7 +667,15 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 		}
 		return "", fmt.Errorf("DataHub API error: %s", msg)
 	}
-	return raw.Data.UpsertDatasetFreshnessAssertionMonitor.URN, nil
+	assertionURN := raw.Data.UpsertDatasetFreshnessAssertionMonitor.URN
+	if in.AssertionURN == "" {
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := c.waitForAssertionMonitor(waitCtx, assertionURN); err != nil {
+			return "", fmt.Errorf("freshness assertion created but monitor not ready: %w", err)
+		}
+	}
+	return assertionURN, nil
 }
 
 // VolumeAssertionInput groups inputs for upsertDatasetVolumeAssertionMonitor.
@@ -695,7 +761,15 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 		}
 		return "", fmt.Errorf("DataHub API error: %s", msg)
 	}
-	return raw.Data.UpsertDatasetVolumeAssertionMonitor.URN, nil
+	assertionURN := raw.Data.UpsertDatasetVolumeAssertionMonitor.URN
+	if in.AssertionURN == "" {
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := c.waitForAssertionMonitor(waitCtx, assertionURN); err != nil {
+			return "", fmt.Errorf("volume assertion created but monitor not ready: %w", err)
+		}
+	}
+	return assertionURN, nil
 }
 
 // SQLAssertionInput groups inputs for upsertDatasetSqlAssertionMonitor.
@@ -781,7 +855,15 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 		}
 		return "", fmt.Errorf("DataHub API error: %s", msg)
 	}
-	return raw.Data.UpsertDatasetSQLAssertionMonitor.URN, nil
+	assertionURN := raw.Data.UpsertDatasetSQLAssertionMonitor.URN
+	if in.AssertionURN == "" {
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := c.waitForAssertionMonitor(waitCtx, assertionURN); err != nil {
+			return "", fmt.Errorf("sql assertion created but monitor not ready: %w", err)
+		}
+	}
+	return assertionURN, nil
 }
 
 // buildActionsInput converts string slices to the AssertionActionsInput shape.
