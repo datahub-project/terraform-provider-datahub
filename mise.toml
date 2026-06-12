@@ -1,11 +1,11 @@
 [tools]
-go = "1.26.3"
-terraform = "1.15.4"
+go = "1.26.4"
+terraform = "1.15.6"
 golangci-lint = "2.12.2"
 jq = "1.8.1"
-yq = "4.53.2"
+yq = "4.53.3"
 python = "3.11.15"
-uv = "0.5.20"
+uv = "0.11.20"
 
 [env]
 _.file = ".mise.env"

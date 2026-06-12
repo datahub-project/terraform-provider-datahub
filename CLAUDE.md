@@ -76,7 +76,7 @@ The resource `datahub_ingestion_source` follows this rule: it maps to URN type `
 ## Build and development
 
 - Go module: `github.com/datahub-project/terraform-provider-datahub`
-- Go version: 1.26.3 (pinned in `mise.toml`; declared in `go.mod`)
+- Go version: 1.26.4 (pinned in `mise.toml`; declared in `go.mod`)
 - Tools submodule: `tools/` (Go 1.24.x; holds `tfplugindocs`)
 - Build: `make install` (writes to `./bin/terraform-provider-datahub`)
 - Verify: `go build ./...` and `go vet ./...`

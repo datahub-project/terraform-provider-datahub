@@ -1,6 +1,6 @@
 module github.com/datahub-project/terraform-provider-datahub
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/google/go-cmp v0.7.0
