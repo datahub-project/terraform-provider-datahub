@@ -77,7 +77,7 @@ The resource `datahub_ingestion_source` follows this rule: it maps to URN type `
 
 - Go module: `github.com/datahub-project/terraform-provider-datahub`
 - Go version: 1.26.4 (pinned in `mise.toml`; declared in `go.mod`)
-- Tools submodule: `tools/` (Go 1.24.x; holds `tfplugindocs`)
+- Tools submodule: `tools/` (holds `tfplugindocs`; its `go` directive is kept in sync with the main module)
 - Build: `make install` (writes to `./bin/terraform-provider-datahub`)
 - Verify: `go build ./...` and `go vet ./...`
 - Generate docs: `cd tools && go generate ./...`
@@ -92,11 +92,15 @@ Dependabot has no `mise` ecosystem support — tool versions pinned in `mise.tom
 Before cutting a release (or if `mise.toml` has not changed in a long time), check and update pinned tools:
 
 ```bash
-mise outdated --local          # check what is stale (--local scopes to this project only)
+mise outdated --local --bump   # check what is stale (--local scopes to this project only)
 mise upgrade --bump            # install newer versions and rewrite pins in mise.toml
 ```
 
 Always use `--local`; without it, global mise tools (e.g. `awscli`) appear as noise.
+
+`--bump` on the check is essential: every pin in `mise.toml` is exact, and without `--bump`, `mise outdated` only verifies that the installed version satisfies the pin — an exact pin always satisfies itself, so the command reports "All tools are up to date" no matter how stale the pins are.
+
+When bumping, hold `python` at 3.11.x (newer Pythons break `acryl-datahub` compatibility), and keep the `go` pin in sync with the `go` directive in `go.mod`, `tools/go.mod`, and `tools/serve/go.mod` (CI resolves its Go version from `go.mod` via `go-version-file`).
 
 ## Release strategy
 
