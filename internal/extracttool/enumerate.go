@@ -110,6 +110,16 @@ func Run(ctx context.Context, opts Options) error {
 			continue
 		}
 
+		// Dedupe URNs before generating import blocks. A list API that returns
+		// the same URN twice (observed with system ingestion sources) would
+		// otherwise produce two import {} blocks with distinct resource labels
+		// but identical import IDs -- two Terraform resources importing the same
+		// DataHub entity, a state conflict on apply.
+		urns, dropped := dedupeURNs(urns)
+		if dropped > 0 {
+			fmt.Printf("  %-40s (dropped %d duplicate URN(s) from enumeration)\n", t.ResourceTypeName, dropped)
+		}
+
 		labels := uniqueLabels(urns)
 		fmt.Printf("  %-40s %d URNs\n", t.ResourceTypeName, len(urns))
 		totalImports += len(urns)
@@ -229,13 +239,61 @@ type enumResult struct {
 // (e.g. "go run ." or "make install" without a release tag).
 const minProviderVersion = "0.3.0"
 
-// buildImportTF renders the import.tf content. version is the CLI version string
-// from ldflags; "dev" or empty triggers the minProviderVersion fallback.
-func buildImportTF(results []enumResult, version string) []byte {
-	constraint := version
-	if constraint == "" || constraint == "dev" {
-		constraint = minProviderVersion
+// dedupeURNs returns urns with duplicates removed, preserving first-seen order,
+// and the count of duplicates dropped. DataHub list APIs occasionally return the
+// same URN more than once; emitting an import block per occurrence would create
+// colliding imports (same import ID, different resource label).
+func dedupeURNs(urns []string) ([]string, int) {
+	seen := make(map[string]struct{}, len(urns))
+	out := urns[:0:0]
+	dropped := 0
+	for _, u := range urns {
+		if _, ok := seen[u]; ok {
+			dropped++
+			continue
+		}
+		seen[u] = struct{}{}
+		out = append(out, u)
 	}
+	return out, dropped
+}
+
+// normalizeVersionConstraint turns a raw CLI version string into a value usable
+// as the operand of a Terraform ">= X" version constraint. Terraform constraints
+// reject a leading "v" and cannot parse git-describe pseudo-versions
+// (e.g. "v0.9.0-2-g79369ea" from `make install` off a non-tag commit), so we
+// strip the "v" prefix and drop any pre-release/build metadata down to the base
+// MAJOR.MINOR.PATCH. Anything that does not reduce to three numeric components
+// (including "dev" and "") falls back to minProviderVersion.
+func normalizeVersionConstraint(version string) string {
+	v := strings.TrimPrefix(version, "v")
+	// Drop git-describe suffix ("-N-gHASH"), SemVer pre-release ("-rc.1") and
+	// build metadata ("+meta"); keep only the base release version.
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return minProviderVersion
+	}
+	for _, p := range parts {
+		if p == "" {
+			return minProviderVersion
+		}
+		for _, r := range p {
+			if r < '0' || r > '9' {
+				return minProviderVersion
+			}
+		}
+	}
+	return v
+}
+
+// buildImportTF renders the import.tf content. version is the CLI version string
+// from ldflags; "dev", empty, or any non-release pseudo-version triggers the
+// minProviderVersion fallback (see normalizeVersionConstraint).
+func buildImportTF(results []enumResult, version string) []byte {
+	constraint := normalizeVersionConstraint(version)
 
 	var b bytes.Buffer
 

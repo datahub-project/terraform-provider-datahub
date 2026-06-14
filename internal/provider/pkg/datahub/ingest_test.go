@@ -262,3 +262,35 @@ func TestDeleteIngestionSourceByID(t *testing.T) {
 		}
 	})
 }
+
+func TestListIngestionSourceURNs_FiltersSystem(t *testing.T) {
+	resp := `{"data":{"listIngestionSources":{"total":3,"ingestionSources":[` +
+		`{"urn":"urn:li:dataHubIngestionSource:real-1","source":null},` +
+		`{"urn":"urn:li:dataHubIngestionSource:datahub-gc","source":{"type":"SYSTEM"}},` +
+		`{"urn":"urn:li:dataHubIngestionSource:real-2","source":null}` +
+		`]}}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(resp))
+	}))
+	defer server.Close()
+
+	c := newTestClient(t, server)
+	urns, err := c.ListIngestionSourceURNs(t.Context())
+	if err != nil {
+		t.Fatalf("ListIngestionSourceURNs() error = %v", err)
+	}
+
+	want := []string{
+		"urn:li:dataHubIngestionSource:real-1",
+		"urn:li:dataHubIngestionSource:real-2",
+	}
+	if len(urns) != len(want) {
+		t.Fatalf("got %v, want %v (system source must be filtered)", urns, want)
+	}
+	for i := range want {
+		if urns[i] != want[i] {
+			t.Fatalf("got %v, want %v", urns, want)
+		}
+	}
+}
