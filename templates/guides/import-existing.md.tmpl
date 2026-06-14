@@ -84,6 +84,13 @@ To write `import.tf` only without running terraform (useful for inspecting URN e
 datahub-tf-extract enumerate --output ./import --skip-terraform
 ```
 
+#### What enumeration includes and excludes
+
+`enumerate` is deployment-wide: it discovers every instance of each supported type that the authenticated principal can see, not only the resources you (or one project) created. Two consequences are worth planning for:
+
+- **System objects are excluded automatically where they can be identified.** DataHub Cloud provisions internal ingestion sources (`datahub-gc`, `datahub-usage-reporting`, `semantic-anchor`, ...) and internal/OAuth connections; these are filtered out so you never adopt platform-managed objects into Terraform. The same is true for assertions: only `CUSTOM`-type assertions are enumerated for `datahub_custom_assertion`, because the `assertion` entity type is shared with monitor and native assertions that resource does not model.
+- **Shared instances surface other people's objects.** On a shared or multi-tenant instance, enumeration will also list tags, glossary terms, policies, users, etc. created by others or by the UI. Always start with `--skip-terraform` and review `import.tf`, narrow with `--types`, and delete any `import {}` blocks you do not want before generating config. Importing the whole deployment is rarely what you want.
+
 ### Step 2: fill in sensitive values
 
 If your DataHub deployment includes secrets or connections, `variables.tf` will be present. Open `IMPORT_README.md` for the exact list. Create `terraform.tfvars` (it is gitignored automatically) and fill in the values:
@@ -236,7 +243,7 @@ See [datahub_connection resource docs](../resources/connection.md) for the full 
 
 ### datahub_ingestion_source
 
-Ingestion sources import cleanly with no write-only attributes. The full recipe JSON is stored in state and returned on read.
+Ingestion sources import with no write-only attributes; the full recipe JSON is stored in state and returned on read. The `recipe` attribute is compared by JSON semantic equality, so differences in whitespace or key order between your config and the form DataHub returns do not cause drift. One caveat specific to `import`: Terraform does not apply semantic equality during `plan`, so the very first plan immediately after import may show a one-time `# whitespace changes` diff on `recipe`. Run `terraform apply` once -- it is a no-op that normalizes state -- and subsequent plans are clean. Note that `enumerate` filters out DataHub Cloud's internal system ingestion sources, so they are never imported.
 
 See [datahub_ingestion_source resource docs](../resources/ingestion_source.md).
 
@@ -246,13 +253,40 @@ Cloud-only. The `datahub-tf-extract` CLI skips remote executor pools when run ag
 
 See [datahub_remote_executor_pool resource docs](../resources/remote_executor_pool.md).
 
+### Assertions (datahub_custom_assertion, datahub_freshness/volume/sql_assertion)
+
+`datahub_custom_assertion` is the only assertion type the CLI enumerates, and it enumerates `CUSTOM`-type assertions only. The DataHub `assertion` entity type is shared by monitor assertions (freshness, volume, sql) and native dataset/field assertions; those are intentionally not enumerated as custom assertions because they would not import correctly.
+
+The Cloud-only monitor assertions (`datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`) import by full assertion URN via the manual path. Their evaluation schedule, source type, and mode live in a separate Monitor entity; the provider reads that entity on import, so these fields are recovered automatically and the imported resource plans clean (supply the dataset-side assertion fields in config as usual).
+
+See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_freshness_assertion](../resources/freshness_assertion.md), [datahub_volume_assertion](../resources/volume_assertion.md), and [datahub_sql_assertion](../resources/sql_assertion.md) resource docs.
+
 ---
 
 ## Supported resource types
+
+`datahub-tf-extract` and the provider share a single import-target registry, so the CLI enumerates every resource type the provider can import. "CLI enumeration: Yes" means `datahub-tf-extract enumerate` discovers all instances of that type automatically; "No" means there is no list API for it (or it cannot be safely distinguished), so you supply URNs yourself via the manual path.
 
 | Resource | CLI enumeration | Manual data source |
 |---|---|---|
 | `datahub_secret` | Yes | `datahub_secrets` |
 | `datahub_connection` | Yes | `datahub_connections` |
 | `datahub_ingestion_source` | Yes | `datahub_ingestion_sources` |
-| `datahub_remote_executor_pool` | Yes (Cloud only) | `datahub_remote_executor_pool` |
+| `datahub_domain` | Yes | `datahub_domains` |
+| `datahub_tag` | Yes | `datahub_tags` |
+| `datahub_glossary_node` | Yes | `datahub_glossary_nodes` |
+| `datahub_glossary_term` | Yes | `datahub_glossary_terms` |
+| `datahub_structured_property` | Yes | `datahub_structured_properties` |
+| `datahub_data_product` | Yes | `datahub_data_products` |
+| `datahub_ownership_type` | Yes | `datahub_ownership_types` |
+| `datahub_policy` | Yes | `datahub_policies` |
+| `datahub_corp_group` | Yes | `datahub_corp_groups` |
+| `datahub_corp_user` | Yes | `datahub_corp_user` |
+| `datahub_custom_assertion` | Yes (CUSTOM-type assertions only) | `datahub_assertions` |
+| `datahub_remote_executor_pool` | No (Cloud only; supply pool IDs) | `datahub_remote_executor_pool` |
+| `datahub_freshness_assertion` | No (Cloud only; import by URN) | `datahub_assertions` |
+| `datahub_volume_assertion` | No (Cloud only; import by URN) | `datahub_assertions` |
+| `datahub_sql_assertion` | No (Cloud only; import by URN) | `datahub_assertions` |
+| `datahub_corp_group_member` | No (relationship; import by composite ID) | -- |
+| `datahub_role_assignment` | No (relationship; import by composite ID) | -- |
+| `datahub_local_user_login` | No (import by user URN) | -- |

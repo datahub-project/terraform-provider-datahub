@@ -26,8 +26,12 @@ import (
 	"fmt"
 	"os"
 
-	_ "github.com/datahub-project/terraform-provider-datahub/cmd/datahub-tf-extract/internal/reg"
 	"github.com/datahub-project/terraform-provider-datahub/internal/extracttool"
+
+	// Side-effect import: registers every import target. This is the same
+	// framework-free package the provider imports, so the CLI enumerates exactly
+	// the set of types the provider can import - no separately-maintained list.
+	_ "github.com/datahub-project/terraform-provider-datahub/internal/provider/importtarget/targets"
 )
 
 var version = "dev"

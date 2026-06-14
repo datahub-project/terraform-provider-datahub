@@ -21,6 +21,12 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
+
+	// Side-effect import: registers every import target (enumeration + URN->ID
+	// mapping) with the importtarget registry that the enumeration data sources
+	// and the importtarget coverage test rely on. The same package is imported by
+	// the datahub-tf-extract CLI, so both share one source of truth.
+	_ "github.com/datahub-project/terraform-provider-datahub/internal/provider/importtarget/targets"
 )
 
 type datahubEnvConfig struct {

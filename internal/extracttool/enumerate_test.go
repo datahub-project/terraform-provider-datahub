@@ -190,6 +190,40 @@ func TestRunImportTF_importBlocksPerType(t *testing.T) {
 	}
 }
 
+// TestDedupeURNs guards against colliding import blocks when a DataHub list API
+// returns the same URN more than once (observed with Cloud system ingestion
+// sources, where "urn:li:dataHubIngestionSource:user-entity-resolution" appeared
+// twice and produced two import {} blocks with the same import ID).
+func TestDedupeURNs(t *testing.T) {
+	cases := []struct {
+		name        string
+		in          []string
+		want        []string
+		wantDropped int
+	}{
+		{"no dups", []string{"a", "b", "c"}, []string{"a", "b", "c"}, 0},
+		{"adjacent dup", []string{"a", "a", "b"}, []string{"a", "b"}, 1},
+		{"non-adjacent dup preserves order", []string{"b", "a", "b"}, []string{"b", "a"}, 1},
+		{"empty", nil, nil, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, dropped := dedupeURNs(c.in)
+			if dropped != c.wantDropped {
+				t.Errorf("dropped = %d, want %d", dropped, c.wantDropped)
+			}
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("got %v, want %v", got, c.want)
+				}
+			}
+		})
+	}
+}
+
 // TestBuildImportTF_VersionConstraint guards against the class of failure where
 // import.tf's provider version constraint is so permissive that Terraform
 // downloads an old registry release that pre-dates import support for the
@@ -219,6 +253,17 @@ func TestBuildImportTF_VersionConstraint(t *testing.T) {
 		// Release builds must pin to their own version so users always get a
 		// provider release tested alongside the CLI binary they downloaded.
 		{"explicit version", "0.4.0", ">= 0.4.0"},
+		// `make install` off a release tag embeds a "v" prefix via `git describe`.
+		// Terraform constraints reject the "v", so it must be stripped.
+		{"v-prefixed tag", "v0.9.0", ">= 0.9.0"},
+		// `make install` off a non-tag commit embeds a git-describe pseudo-version
+		// ("vX.Y.Z-<commits>-g<hash>"). Terraform cannot parse it as a constraint
+		// operand, so it must reduce to the base release version.
+		{"git-describe pseudo-version", "v0.9.0-2-g79369ea", ">= 0.9.0"},
+		// SemVer pre-release / build metadata likewise reduces to the base version.
+		{"semver pre-release", "1.2.3-rc.1", ">= 1.2.3"},
+		// Garbage that cannot reduce to MAJOR.MINOR.PATCH falls back to the floor.
+		{"unparseable fallback", "garbage", ">= " + minProviderVersion},
 	}
 
 	for _, c := range cases {
