@@ -247,31 +247,52 @@ func init() {
 
 	// --- Cloud-only, no auto-enumeration (import by explicit URN) ---
 
-	// The Cloud-only monitor assertion types share the same `assertion` entity
-	// type as custom assertions and cannot be distinguished at the list layer,
-	// so they have no Enumerate function and are imported by explicit URN.
+	// The Cloud-only monitor assertion types share the `assertion` entity type
+	// with custom, ingested (EXTERNAL), and auto (INFERRED) assertions, so each
+	// enumerator filters to source==NATIVE and the sub-shape its resource models
+	// (see List*AssertionURNs). EXTERNAL (e.g. dbt tests) and INFERRED (smart/AI)
+	// assertions are owned by the producing system and are intentionally never
+	// enumerated for import. The import ID is the full assertion URN.
 	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_freshness_assertion",
 		DataSourceTypeName: "datahub_assertions",
-		Enumerate:          nil,
-		IDFromURN:          func(urn string) string { return urn },
-		OSSCompatible:      false,
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListFreshnessAssertionURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing freshness assertion URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return urn },
+		OSSCompatible: false,
 	})
 
 	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_volume_assertion",
 		DataSourceTypeName: "datahub_assertions",
-		Enumerate:          nil,
-		IDFromURN:          func(urn string) string { return urn },
-		OSSCompatible:      false,
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListVolumeAssertionURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing volume assertion URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return urn },
+		OSSCompatible: false,
 	})
 
 	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_sql_assertion",
 		DataSourceTypeName: "datahub_assertions",
-		Enumerate:          nil,
-		IDFromURN:          func(urn string) string { return urn },
-		OSSCompatible:      false,
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListSQLAssertionURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing sql assertion URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return urn },
+		OSSCompatible: false,
 	})
 
 	// Remote executor pools are Cloud-only with no list API reachable via OSS

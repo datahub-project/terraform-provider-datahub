@@ -11,7 +11,7 @@ import (
 )
 
 // ListAssertionURNs returns the URNs of all DataHub assertions visible to the
-// authenticated principal, regardless of assertion type.
+// authenticated principal, regardless of assertion type or source.
 //
 // Uses searchAcrossEntities with entity type ASSERTION. The search index is
 // backed by OpenSearch and is eventually consistent. Assertions created within
@@ -19,23 +19,36 @@ import (
 // enumeration (inventory data sources), not for authoritative reads -- use
 // GetAssertionByURN for those.
 //
-// NOTE: this returns ALL assertion types (FRESHNESS, VOLUME, SQL, DATASET,
-// FIELD, CUSTOM, ...). It is NOT suitable for driving bulk import of
-// datahub_custom_assertion, which models only the CUSTOM type -- use
-// ListCustomAssertionURNs for that.
+// NOTE: this returns ALL assertion types and sources (including EXTERNAL
+// assertions reported by ingestion such as dbt tests, and INFERRED smart/AI
+// assertions). It is NOT suitable for driving bulk import of a specific
+// assertion resource -- use the type-specific List*AssertionURNs functions,
+// which filter to the assertion type, source, and sub-shape each resource models.
 func (c *Client) ListAssertionURNs(ctx context.Context) ([]string, error) {
 	return listURNsByEntityType(ctx, c, "ASSERTION")
 }
 
-// ListCustomAssertionURNs returns the URNs of only CUSTOM-type assertions.
+// assertionSearchEntity is the per-result shape returned by scanAssertions,
+// carrying enough of assertionInfo to route an assertion URN to the Terraform
+// resource that models it: the source (NATIVE / EXTERNAL / INFERRED), the
+// top-level type, and the sub-shape discriminator.
+type assertionSearchEntity struct {
+	URN    string
+	Source string // NATIVE, EXTERNAL, INFERRED
+	Type   string // FRESHNESS, VOLUME, SQL, DATASET, FIELD, DATA_SCHEMA, CUSTOM
+	// The following are "" unless the matching nested object is present.
+	VolumeSubType         string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	SQLSubType            string // METRIC, METRIC_CHANGE
+	FreshnessScheduleType string // CRON, FIXED_INTERVAL, SINCE_THE_LAST_CHECK
+}
+
+// scanAssertions pages the ASSERTION search index and returns the URNs of
+// entities for which keep returns true. The selection fetches the source and
+// the sub-shape discriminators so callers can filter precisely.
 //
-// The DataHub `assertion` entity type is shared by every assertion variant
-// (freshness/volume/sql monitors, native DATASET/FIELD assertions, and external
-// CUSTOM assertions). The datahub_custom_assertion resource only models the
-// CUSTOM type, so bulk import must enumerate by type -- importing a monitor or
-// native assertion as a custom assertion would fail or corrupt state. The
-// assertion type is read from `info.type` and filtered here.
-func (c *Client) ListCustomAssertionURNs(ctx context.Context) ([]string, error) {
+// Eventual-consistency and "enumeration not authoritative read" caveats from
+// ListAssertionURNs apply equally here.
+func (c *Client) scanAssertions(ctx context.Context, keep func(assertionSearchEntity) bool) ([]string, error) {
 	const q = `
 query searchAssertions($input: SearchAcrossEntitiesInput!) {
   searchAcrossEntities(input: $input) {
@@ -43,7 +56,15 @@ query searchAssertions($input: SearchAcrossEntitiesInput!) {
     searchResults {
       entity {
         urn
-        ... on Assertion { info { type } }
+        ... on Assertion {
+          info {
+            type
+            source { type }
+            volumeAssertion { type }
+            sqlAssertion { type }
+            freshnessAssertion { schedule { type } }
+          }
+        }
       }
     }
   }
@@ -57,7 +78,21 @@ query searchAssertions($input: SearchAcrossEntitiesInput!) {
 					Entity struct {
 						URN  string `json:"urn"`
 						Info *struct {
-							Type string `json:"type"`
+							Type   string `json:"type"`
+							Source *struct {
+								Type string `json:"type"`
+							} `json:"source"`
+							VolumeAssertion *struct {
+								Type string `json:"type"`
+							} `json:"volumeAssertion"`
+							SQLAssertion *struct {
+								Type string `json:"type"`
+							} `json:"sqlAssertion"`
+							FreshnessAssertion *struct {
+								Schedule *struct {
+									Type string `json:"type"`
+								} `json:"schedule"`
+							} `json:"freshnessAssertion"`
 						} `json:"info"`
 					} `json:"entity"`
 				} `json:"searchResults"`
@@ -110,8 +145,24 @@ query searchAssertions($input: SearchAcrossEntitiesInput!) {
 
 		page := gqlResp.Data.SearchAcrossEntities.SearchResults
 		for _, r := range page {
-			if r.Entity.URN != "" && r.Entity.Info != nil && r.Entity.Info.Type == "CUSTOM" {
-				urns = append(urns, r.Entity.URN)
+			if r.Entity.URN == "" || r.Entity.Info == nil {
+				continue
+			}
+			e := assertionSearchEntity{URN: r.Entity.URN, Type: r.Entity.Info.Type}
+			if s := r.Entity.Info.Source; s != nil {
+				e.Source = s.Type
+			}
+			if v := r.Entity.Info.VolumeAssertion; v != nil {
+				e.VolumeSubType = v.Type
+			}
+			if s := r.Entity.Info.SQLAssertion; s != nil {
+				e.SQLSubType = s.Type
+			}
+			if f := r.Entity.Info.FreshnessAssertion; f != nil && f.Schedule != nil {
+				e.FreshnessScheduleType = f.Schedule.Type
+			}
+			if keep(e) {
+				urns = append(urns, e.URN)
 			}
 		}
 
@@ -122,4 +173,47 @@ query searchAssertions($input: SearchAcrossEntitiesInput!) {
 	}
 
 	return urns, nil
+}
+
+// ListCustomAssertionURNs returns the URNs of CUSTOM-type assertions.
+//
+// datahub_custom_assertion models externally-evaluated assertions (a third
+// party runs the logic and reports results), so it is filtered by type==CUSTOM
+// only -- deliberately NOT by source. Unlike the monitor types below, a custom
+// assertion is external by design, so a NATIVE filter would wrongly exclude
+// every custom assertion. The type==CUSTOM filter already excludes ingested
+// dbt/GE tests, which are DATASET/FIELD types.
+func (c *Client) ListCustomAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "CUSTOM"
+	})
+}
+
+// ListFreshnessAssertionURNs returns the URNs of freshness assertions that
+// datahub_freshness_assertion can manage: NATIVE source (DataHub-run monitors,
+// not ingested/auto assertions) with a schedule type the resource models
+// (CRON or FIXED_INTERVAL; SINCE_THE_LAST_CHECK is excluded).
+func (c *Client) ListFreshnessAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "FRESHNESS" && e.Source == "NATIVE" &&
+			(e.FreshnessScheduleType == "CRON" || e.FreshnessScheduleType == "FIXED_INTERVAL")
+	})
+}
+
+// ListVolumeAssertionURNs returns the URNs of volume assertions that
+// datahub_volume_assertion can manage: NATIVE source with sub-type
+// ROW_COUNT_TOTAL (ROW_COUNT_CHANGE is excluded).
+func (c *Client) ListVolumeAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "VOLUME" && e.Source == "NATIVE" && e.VolumeSubType == "ROW_COUNT_TOTAL"
+	})
+}
+
+// ListSQLAssertionURNs returns the URNs of SQL assertions that
+// datahub_sql_assertion can manage: NATIVE source with sub-type METRIC
+// (METRIC_CHANGE is excluded).
+func (c *Client) ListSQLAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "SQL" && e.Source == "NATIVE" && e.SQLSubType == "METRIC"
+	})
 }
