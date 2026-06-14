@@ -9,7 +9,7 @@ description: |-
   Schedule types
   Set schedule_type to FIXED_INTERVAL and supply fixed_interval_unit / fixed_interval_multiple for a rolling window (e.g. data must arrive every 1 day). Set schedule_type to CRON and supply cron_schedule / cron_timezone for a calendar-based window.
   URN
-  DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>).
+  DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
 ---
 
 # datahub_freshness_assertion (Resource)
@@ -26,7 +26,7 @@ Set `schedule_type` to `FIXED_INTERVAL` and supply `fixed_interval_unit` / `fixe
 
 ## URN
 
-DataHub generates a server-side UUID for each assertion. The `urn` and `id` attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`).
+DataHub generates a server-side UUID for each assertion. The `urn` and `id` attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
 
 
 

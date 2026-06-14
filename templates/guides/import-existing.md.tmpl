@@ -88,7 +88,7 @@ datahub-tf-extract enumerate --output ./import --skip-terraform
 
 `enumerate` is deployment-wide: it discovers every instance of each supported type that the authenticated principal can see, not only the resources you (or one project) created. Two consequences are worth planning for:
 
-- **System objects are excluded automatically where they can be identified.** DataHub Cloud provisions internal ingestion sources (`datahub-gc`, `datahub-usage-reporting`, `semantic-anchor`, ...) and internal/OAuth connections; these are filtered out so you never adopt platform-managed objects into Terraform. The same is true for assertions: only `CUSTOM`-type assertions are enumerated for `datahub_custom_assertion`, because the `assertion` entity type is shared with monitor and native assertions that resource does not model.
+- **System objects are excluded automatically where they can be identified.** DataHub Cloud provisions internal ingestion sources (`datahub-gc`, `datahub-usage-reporting`, `semantic-anchor`, ...) and internal/OAuth connections; these are filtered out so you never adopt platform-managed objects into Terraform. Assertions are filtered the same way: only `NATIVE` (author-as-code) assertions are enumerated, and only of the type/sub-shape each resource models -- ingested `EXTERNAL` assertions (e.g. dbt or Great Expectations tests) and `INFERRED` smart/AI assertions are never enumerated, since they are owned by the system that produces them.
 - **Shared instances surface other people's objects.** On a shared or multi-tenant instance, enumeration will also list tags, glossary terms, policies, users, etc. created by others or by the UI. Always start with `--skip-terraform` and review `import.tf`, narrow with `--types`, and delete any `import {}` blocks you do not want before generating config. Importing the whole deployment is rarely what you want.
 
 ### Step 2: fill in sensitive values
@@ -255,9 +255,11 @@ See [datahub_remote_executor_pool resource docs](../resources/remote_executor_po
 
 ### Assertions (datahub_custom_assertion, datahub_freshness/volume/sql_assertion)
 
-`datahub_custom_assertion` is the only assertion type the CLI enumerates, and it enumerates `CUSTOM`-type assertions only. The DataHub `assertion` entity type is shared by monitor assertions (freshness, volume, sql) and native dataset/field assertions; those are intentionally not enumerated as custom assertions because they would not import correctly.
+The CLI enumerates `datahub_custom_assertion` (CUSTOM-type assertions) and the Cloud-only monitor assertions `datahub_freshness_assertion`, `datahub_volume_assertion`, and `datahub_sql_assertion`. The monitor enumerators are scoped to `source == NATIVE` (author-as-code monitors) and to the sub-shape each resource models -- `FIXED_INTERVAL`/`CRON` freshness, `ROW_COUNT_TOTAL` volume, `METRIC` sql. Ingested `EXTERNAL` assertions (dbt, Great Expectations) and `INFERRED` smart/AI assertions are never enumerated, and a direct `terraform import` of a non-NATIVE assertion into one of these resources is refused with a clear diagnostic -- those assertions are owned by the system that produces them, like ingested lineage and profiles.
 
-The Cloud-only monitor assertions (`datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`) import by full assertion URN via the manual path. Their evaluation schedule, source type, and mode live in a separate Monitor entity; the provider reads that entity on import, so these fields are recovered automatically and the imported resource plans clean (supply the dataset-side assertion fields in config as usual).
+The monitor assertions' evaluation schedule, source type, and mode live in a separate Monitor entity; the provider reads that entity on import, so those fields are recovered automatically and an imported resource plans clean (supply the dataset-side assertion fields in config as usual).
+
+Not auto-enumerated, even when NATIVE: assertion sub-shapes the typed resources cannot model (e.g. `ROW_COUNT_CHANGE`, `METRIC_CHANGE`, `SINCE_THE_LAST_CHECK`) and the FIELD / SCHEMA assertion types. Import those by URN if you need them.
 
 See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_freshness_assertion](../resources/freshness_assertion.md), [datahub_volume_assertion](../resources/volume_assertion.md), and [datahub_sql_assertion](../resources/sql_assertion.md) resource docs.
 
@@ -284,9 +286,9 @@ See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_f
 | `datahub_corp_user` | Yes | `datahub_corp_user` |
 | `datahub_custom_assertion` | Yes (CUSTOM-type assertions only) | `datahub_assertions` |
 | `datahub_remote_executor_pool` | No (Cloud only; supply pool IDs) | `datahub_remote_executor_pool` |
-| `datahub_freshness_assertion` | No (Cloud only; import by URN) | `datahub_assertions` |
-| `datahub_volume_assertion` | No (Cloud only; import by URN) | `datahub_assertions` |
-| `datahub_sql_assertion` | No (Cloud only; import by URN) | `datahub_assertions` |
+| `datahub_freshness_assertion` | Yes (Cloud only; NATIVE, CRON/FIXED_INTERVAL) | `datahub_assertions` |
+| `datahub_volume_assertion` | Yes (Cloud only; NATIVE, ROW_COUNT_TOTAL) | `datahub_assertions` |
+| `datahub_sql_assertion` | Yes (Cloud only; NATIVE, METRIC) | `datahub_assertions` |
 | `datahub_corp_group_member` | No (relationship; import by composite ID) | -- |
 | `datahub_role_assignment` | No (relationship; import by composite ID) | -- |
 | `datahub_local_user_login` | No (import by user URN) | -- |

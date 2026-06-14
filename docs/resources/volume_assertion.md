@@ -7,7 +7,7 @@ description: |-
   Creates and manages a DataHub volume assertion monitor on a dataset.
   Volume assertions check that a dataset has an expected number of rows at scheduled evaluation times. DataHub evaluates the assertion against a previously ingested DatasetProfile (set source_type = "DATAHUB_DATASET_PROFILE") or by querying the source system directly.
   URN
-  DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>).
+  DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
   Operator and value attributes
   For BETWEEN operator: supply min_value and max_value. For all other operators (GREATER_THAN, LESS_THAN, EQUAL_TO, etc.): supply single_value.
 ---
@@ -22,7 +22,7 @@ Volume assertions check that a dataset has an expected number of rows at schedul
 
 ## URN
 
-DataHub generates a server-side UUID for each assertion. The `urn` and `id` attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`).
+DataHub generates a server-side UUID for each assertion. The `urn` and `id` attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
 
 ## Operator and value attributes
 

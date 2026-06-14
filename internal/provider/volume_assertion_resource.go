@@ -82,7 +82,9 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 			"## URN\n\n" +
 			"DataHub generates a server-side UUID for each assertion. The `urn` and `id` " +
 			"attributes are populated after creation and are stable across updates. " +
-			"ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`).\n\n" +
+			"ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`). " +
+			"Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL " +
+			"(e.g. dbt) or smart/AI INFERRED assertions are refused.\n\n" +
 			"## Operator and value attributes\n\n" +
 			"For `BETWEEN` operator: supply `min_value` and `max_value`. " +
 			"For all other operators (`GREATER_THAN`, `LESS_THAN`, `EQUAL_TO`, etc.): supply `single_value`.",
@@ -242,6 +244,10 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 	}
 	if ai == nil {
 		resp.State.RemoveResource(ctx)
+		return
+	}
+	if d, bad := nonNativeAssertionError(urn, ai.Source); bad {
+		resp.Diagnostics.Append(d)
 		return
 	}
 

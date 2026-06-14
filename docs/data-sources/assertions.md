@@ -5,7 +5,8 @@ subcategory: ""
 description: |-
   DataHub ✅ | DataHub Cloud ✅
   Returns the URNs of all DataHub assertions visible to the authenticated principal.
-  Backed by searchAcrossEntities (OpenSearch). Assertions created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing assertions into Terraform state.
+  Backed by searchAcrossEntities (OpenSearch). Assertions created within the last few seconds may not yet appear.
+  This lists assertions of every type and source (including ingested EXTERNAL assertions such as dbt tests, and INFERRED smart/AI assertions). Not all are importable: only NATIVE assertions of a type the provider models import cleanly, and the assertion resources refuse a non-NATIVE import. For bulk import prefer datahub-tf-extract enumerate, which filters to importable assertions automatically; use this data source for inventory or when you want to select URNs yourself.
 ---
 
 # datahub_assertions (Data Source)
@@ -14,7 +15,9 @@ description: |-
 
 Returns the URNs of all DataHub assertions visible to the authenticated principal.
 
-Backed by `searchAcrossEntities` (OpenSearch). Assertions created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing assertions into Terraform state.
+Backed by `searchAcrossEntities` (OpenSearch). Assertions created within the last few seconds may not yet appear.
+
+This lists assertions of every type and source (including ingested `EXTERNAL` assertions such as dbt tests, and `INFERRED` smart/AI assertions). Not all are importable: only NATIVE assertions of a type the provider models import cleanly, and the assertion resources refuse a non-NATIVE import. For bulk import prefer `datahub-tf-extract enumerate`, which filters to importable assertions automatically; use this data source for inventory or when you want to select URNs yourself.
 
 
 

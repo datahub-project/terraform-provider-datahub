@@ -3736,3 +3736,59 @@ func assertionCheckDestroy(s *terraform.State, resourceType string) error {
 	}
 	return nil
 }
+
+// SeedAssertion injects an assertion into the mock store at baseURL via the
+// /test-control/seed-assertion endpoint. Used to create assertions the normal
+// API cannot -- e.g. an EXTERNAL (ingested) assertion. Mock-only.
+func SeedAssertion(baseURL, urn, typ, source, subType string) {
+	body := fmt.Sprintf(`{"urn":%q,"type":%q,"source":%q,"subType":%q}`, urn, typ, source, subType)
+	resp, err := http.Post(baseURL+"/test-control/seed-assertion", "application/json", strings.NewReader(body)) //nolint:noctx
+	if err != nil {
+		panic(fmt.Sprintf("SeedAssertion: %v", err))
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		panic(fmt.Sprintf("SeedAssertion: unexpected status %d", resp.StatusCode))
+	}
+}
+
+// VolumeAssertionImportGuardSteps verifies that a direct `terraform import` of a
+// non-NATIVE assertion (an ingested EXTERNAL one here) into datahub_volume_assertion
+// is refused at point-of-import by the resource's source guard. Mock-only: it
+// seeds the EXTERNAL assertion via /test-control/seed-assertion, which a live
+// target does not expose.
+func VolumeAssertionImportGuardSteps() []resource.TestStep {
+	const addr = "datahub_volume_assertion.test"
+	const externalURN = "urn:li:assertion:external-volume-import-guard"
+	cfg := providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+  volume_type         = "ROW_COUNT_TOTAL"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "100"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`
+	return []resource.TestStep{
+		// Step 1: create a NATIVE assertion so the address exists and CheckDestroy
+		// has something to clean up.
+		{Config: cfg},
+		// Step 2: seed an EXTERNAL (ingested) volume assertion and attempt to
+		// import it into the same resource address. The Read source guard, which
+		// runs as part of ImportState, must refuse it.
+		{
+			PreConfig: func() {
+				SeedAssertion(os.Getenv("DATAHUB_GMS_URL"), externalURN, "VOLUME", "EXTERNAL", "ROW_COUNT_TOTAL")
+			},
+			ResourceName:  addr,
+			ImportState:   true,
+			ImportStateId: externalURN,
+			ExpectError:   regexp.MustCompile(`not Terraform-manageable`),
+		},
+		// Step 3: re-apply so the test framework can destroy cleanly.
+		{Config: cfg},
+	}
+}
