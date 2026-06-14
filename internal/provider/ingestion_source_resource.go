@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -37,18 +38,18 @@ type ingestionSourceResource struct {
 }
 
 type ingestionSourceResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	SourceID         types.String `tfsdk:"source_id"`
-	SourceName       types.String `tfsdk:"source_name"`
-	SourceType       types.String `tfsdk:"source_type"`
-	RemoteExecutorID types.String `tfsdk:"remote_executor_id"`
-	CronInterval     types.String `tfsdk:"cron_interval"`
-	Timezone         types.String `tfsdk:"timezone"`
-	CLIVersion       types.String `tfsdk:"cli_version"`
-	ExtraArgs        types.Map    `tfsdk:"extra_args"`
-	Recipe           types.String `tfsdk:"recipe"`
-	DebugMode        types.Bool   `tfsdk:"debug_mode"`
-	Platform         types.String `tfsdk:"platform"`
+	ID               types.String         `tfsdk:"id"`
+	SourceID         types.String         `tfsdk:"source_id"`
+	SourceName       types.String         `tfsdk:"source_name"`
+	SourceType       types.String         `tfsdk:"source_type"`
+	RemoteExecutorID types.String         `tfsdk:"remote_executor_id"`
+	CronInterval     types.String         `tfsdk:"cron_interval"`
+	Timezone         types.String         `tfsdk:"timezone"`
+	CLIVersion       types.String         `tfsdk:"cli_version"`
+	ExtraArgs        types.Map            `tfsdk:"extra_args"`
+	Recipe           jsontypes.Normalized `tfsdk:"recipe"`
+	DebugMode        types.Bool           `tfsdk:"debug_mode"`
+	Platform         types.String         `tfsdk:"platform"`
 }
 
 type createOrUpdateResult struct {
@@ -179,7 +180,8 @@ func (r *ingestionSourceResource) Schema(_ context.Context, _ resource.SchemaReq
 			},
 			"recipe": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "Recipe JSON string. Avoid embedding secrets directly; prefer `${SECRET_NAME}` / `${ENV_VAR}` placeholders so DataHub can resolve credentials via Secrets or environment variables.",
+				CustomType:          jsontypes.NormalizedType{},
+				MarkdownDescription: "Recipe JSON string. Avoid embedding secrets directly; prefer `${SECRET_NAME}` / `${ENV_VAR}` placeholders so DataHub can resolve credentials via Secrets or environment variables. Compared by JSON semantic equality, so formatting and key-order differences (e.g. between your config and the form DataHub returns on read) do not produce spurious plan diffs.",
 			},
 			"debug_mode": schema.BoolAttribute{
 				Optional:            true,
@@ -316,7 +318,7 @@ func (r *ingestionSourceResource) Read(ctx context.Context, req resource.ReadReq
 	}
 
 	if remoteRecipe := strings.TrimSpace(remote.DataHubIngestionSourceInfo.Value.Config.Recipe); remoteRecipe != "" {
-		state.Recipe = types.StringValue(remoteRecipe)
+		state.Recipe = jsontypes.NewNormalizedValue(remoteRecipe)
 	}
 
 	if remote.DataHubIngestionSourceInfo.Value.Config.DebugMode != nil {

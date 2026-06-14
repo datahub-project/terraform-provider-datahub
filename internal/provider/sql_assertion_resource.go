@@ -252,6 +252,22 @@ func (r *sqlAssertionResource) Read(ctx context.Context, req resource.ReadReques
 	resp.Diagnostics.Append(d...)
 	state.OnFailureActions = onFailure
 
+	// Recover monitor-side fields (evaluation schedule, mode) from the associated
+	// Monitor entity so ImportState produces a clean plan. SQL assertions have no
+	// source_type.
+	mon, err := r.client.GetAssertionMonitor(ctx, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	if mon != nil {
+		state.EvaluationCron = nullIfEmpty(mon.EvaluationCron)
+		state.EvaluationTimezone = nullIfEmpty(mon.EvaluationTimezone)
+		if mon.Mode != "" {
+			state.Mode = types.StringValue(mon.Mode)
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

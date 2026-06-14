@@ -245,9 +245,9 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	// Monitor-only fields (evaluation schedule, source type, mode) are not
-	// readable from the OSS OpenAPI entity endpoint. Preserve state for those
-	// fields; only update what is readable from assertionInfo.
+	// Volume parameters come from assertionInfo; the monitor-side fields
+	// (evaluation schedule, source type, mode) are recovered from the Monitor
+	// entity below.
 	if ai.Volume != nil {
 		state.VolumeType = types.StringValue(ai.Volume.VolumeType)
 		state.Operator = types.StringValue(ai.Volume.Operator)
@@ -265,6 +265,22 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 	onFailure, d := stringsToList(ctx, ai.OnFailureActions)
 	resp.Diagnostics.Append(d...)
 	state.OnFailureActions = onFailure
+
+	// Recover monitor-side fields (evaluation schedule, source type, mode) from
+	// the associated Monitor entity so ImportState produces a clean plan.
+	mon, err := r.client.GetAssertionMonitor(ctx, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	if mon != nil {
+		state.EvaluationCron = nullIfEmpty(mon.EvaluationCron)
+		state.EvaluationTimezone = nullIfEmpty(mon.EvaluationTimezone)
+		state.SourceType = nullIfEmpty(mon.SourceType)
+		if mon.Mode != "" {
+			state.Mode = types.StringValue(mon.Mode)
+		}
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
