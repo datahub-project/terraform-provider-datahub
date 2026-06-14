@@ -87,7 +87,9 @@ func (r *freshnessAssertionResource) Schema(_ context.Context, _ resource.Schema
 			"## URN\n\n" +
 			"DataHub generates a server-side UUID for each assertion. The `urn` and `id` " +
 			"attributes are populated after creation and are stable across updates. " +
-			"ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`).",
+			"ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`). " +
+			"Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL " +
+			"(e.g. dbt) or smart/AI INFERRED assertions are refused.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,

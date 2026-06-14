@@ -7,7 +7,7 @@ description: |-
   Creates and manages a DataHub SQL assertion monitor on a dataset.
   SQL assertions run a custom SQL query against the dataset and compare the numeric result to an expected value. Use them for business-logic checks that volume and freshness assertions cannot express (e.g. no negative values, referential integrity counts).
   URN
-  DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>).
+  DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
 ---
 
 # datahub_sql_assertion (Resource)
@@ -20,7 +20,7 @@ SQL assertions run a custom SQL query against the dataset and compare the numeri
 
 ## URN
 
-DataHub generates a server-side UUID for each assertion. The `urn` and `id` attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`).
+DataHub generates a server-side UUID for each assertion. The `urn` and `id` attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. `urn:li:assertion:<uuid>`). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
 
 
 
