@@ -244,6 +244,10 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	if d, bad := nonNativeAssertionError(urn, ai.Source); bad {
+		resp.Diagnostics.Append(d)
+		return
+	}
 
 	// Volume parameters come from assertionInfo; the monitor-side fields
 	// (evaluation schedule, source type, mode) are recovered from the Monitor

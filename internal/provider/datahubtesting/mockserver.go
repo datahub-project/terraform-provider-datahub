@@ -148,6 +148,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
+	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -483,7 +484,8 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 			for _, a := range s.assertions {
 				results = append(results, map[string]any{
 					"entity": map[string]any{
-						"urn": a.URN,
+						"urn":  a.URN,
+						"info": assertionSearchInfo(a),
 					},
 				})
 			}

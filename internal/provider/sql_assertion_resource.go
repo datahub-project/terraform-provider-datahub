@@ -233,6 +233,10 @@ func (r *sqlAssertionResource) Read(ctx context.Context, req resource.ReadReques
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	if d, bad := nonNativeAssertionError(urn, ai.Source); bad {
+		resp.Diagnostics.Append(d)
+		return
+	}
 
 	if ai.SQL != nil {
 		state.SQLType = types.StringValue(ai.SQL.SQLType)

@@ -247,6 +247,10 @@ func (r *freshnessAssertionResource) Read(ctx context.Context, req resource.Read
 		resp.State.RemoveResource(ctx)
 		return
 	}
+	if d, bad := nonNativeAssertionError(urn, ai.Source); bad {
+		resp.Diagnostics.Append(d)
+		return
+	}
 
 	// Merge readable fields from assertionInfo; preserve monitor-only state fields.
 	if ai.Freshness != nil {

@@ -56,6 +56,7 @@ func isAssertionCloudOnlyError(msg string) bool {
 type AssertionInfo struct {
 	URN       string
 	Type      string // FRESHNESS, VOLUME, SQL, CUSTOM
+	Source    string // NATIVE, EXTERNAL, INFERRED (empty if absent)
 	EntityURN string
 	// Type-specific sub-structs; only one is non-nil depending on Type.
 	Freshness *FreshnessAssertionInfo
@@ -133,7 +134,10 @@ type assertionEntity struct {
 }
 
 type assertionInfoValue struct {
-	Type      string `json:"type"`
+	Type   string `json:"type"`
+	Source *struct {
+		Type string `json:"type"`
+	} `json:"source"`
 	EntityURN string `json:"entityUrn"`
 	// Description and ExternalURL are top-level fields in the real DataHub API response,
 	// not nested inside customAssertion.
@@ -247,6 +251,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 	if e.Info != nil {
 		v := e.Info.Value
 		ai.Type = v.Type
+		if v.Source != nil {
+			ai.Source = v.Source.Type
+		}
 		ai.EntityURN = v.EntityURN
 		// OSS assertionInfo schema v3 stores the entity URN inside customAssertion.entity
 		// rather than at the top-level entityUrn field. Fall back when entityUrn is absent.

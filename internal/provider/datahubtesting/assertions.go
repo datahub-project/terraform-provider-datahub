@@ -14,7 +14,8 @@ import (
 // mockAssertion stores the in-memory state for a single assertion entity.
 type mockAssertion struct {
 	URN           string
-	AssertionType string // CUSTOM, FRESHNESS, VOLUME, SQL
+	AssertionType string // CUSTOM, FRESHNESS, VOLUME, SQL, DATASET, ...
+	Source        string // NATIVE, EXTERNAL, INFERRED (defaults to NATIVE on upsert)
 	EntityURN     string
 	// Type-specific params stored as raw maps for echo-back.
 	CustomAssertion *map[string]any
@@ -87,6 +88,7 @@ func (s *mockServer) handleUpsertCustomAssertion(w http.ResponseWriter, variable
 	s.assertions[urn] = mockAssertion{
 		URN:             urn,
 		AssertionType:   "CUSTOM",
+		Source:          "NATIVE",
 		EntityURN:       entityURN,
 		CustomAssertion: &customParams,
 	}
@@ -128,6 +130,7 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 	s.assertions[urn] = mockAssertion{
 		URN:             urn,
 		AssertionType:   "VOLUME",
+		Source:          "NATIVE",
 		EntityURN:       entityURN,
 		VolumeAssertion: &volumeParams,
 		OnSuccess:       onSuccess,
@@ -169,6 +172,7 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 	s.assertions[urn] = mockAssertion{
 		URN:             urn,
 		AssertionType:   "FRESHNESS",
+		Source:          "NATIVE",
 		EntityURN:       entityURN,
 		FreshnessAssert: &freshnessParams,
 		OnSuccess:       onSuccess,
@@ -218,6 +222,7 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 	s.assertions[urn] = mockAssertion{
 		URN:           urn,
 		AssertionType: "SQL",
+		Source:        "NATIVE",
 		EntityURN:     entityURN,
 		SQLAssertion:  &sqlParams,
 		OnSuccess:     onSuccess,
@@ -313,6 +318,9 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 		"type":      a.AssertionType,
 		"entityUrn": a.EntityURN,
 	}
+	if a.Source != "" {
+		infoValue["source"] = map[string]any{"type": a.Source}
+	}
 
 	switch a.AssertionType {
 	case "CUSTOM":
@@ -405,4 +413,70 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 	}
 
 	return entity
+}
+
+// assertionSearchInfo builds the assertionInfo shape returned in
+// searchAcrossEntities results: the type, source, and the sub-shape
+// discriminator the type-routed enumerators filter on.
+func assertionSearchInfo(a mockAssertion) map[string]any {
+	info := map[string]any{"type": a.AssertionType}
+	if a.Source != "" {
+		info["source"] = map[string]any{"type": a.Source}
+	}
+	if a.VolumeAssertion != nil {
+		if t, ok := (*a.VolumeAssertion)["type"]; ok {
+			info["volumeAssertion"] = map[string]any{"type": t}
+		}
+	}
+	if a.SQLAssertion != nil {
+		if t, ok := (*a.SQLAssertion)["type"]; ok {
+			info["sqlAssertion"] = map[string]any{"type": t}
+		}
+	}
+	if a.FreshnessAssert != nil {
+		if sched, ok := (*a.FreshnessAssert)["schedule"].(map[string]any); ok {
+			info["freshnessAssertion"] = map[string]any{"schedule": map[string]any{"type": sched["type"]}}
+		}
+	}
+	return info
+}
+
+// handleSeedAssertion injects an assertion into the mock store with an explicit
+// source and sub-shape -- used by tests to create assertions the normal API
+// cannot, e.g. an EXTERNAL (ingested) assertion, to exercise source-based
+// enumeration filtering and the import guard.
+//
+//	POST /test-control/seed-assertion
+//	{"urn":"...","type":"VOLUME","source":"EXTERNAL","subType":"ROW_COUNT_TOTAL"}
+func (s *mockServer) handleSeedAssertion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		URN     string `json:"urn"`
+		Type    string `json:"type"`
+		Source  string `json:"source"`
+		SubType string `json:"subType"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.URN == "" || body.Type == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	a := mockAssertion{URN: body.URN, AssertionType: body.Type, Source: body.Source}
+	switch body.Type {
+	case "VOLUME":
+		m := map[string]any{"type": body.SubType}
+		a.VolumeAssertion = &m
+	case "SQL":
+		m := map[string]any{"type": body.SubType}
+		a.SQLAssertion = &m
+	case "FRESHNESS":
+		m := map[string]any{"schedule": map[string]any{"type": body.SubType}}
+		a.FreshnessAssert = &m
+	}
+	s.mu.Lock()
+	s.assertions[body.URN] = a
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
