@@ -41,8 +41,13 @@ func (d *assertionsDataSource) Schema(_ context.Context, _ datasource.SchemaRequ
 		MarkdownDescription: ossAndCloudBadge +
 			"Returns the URNs of all DataHub assertions visible to the authenticated principal.\n\n" +
 			"Backed by `searchAcrossEntities` (OpenSearch). Assertions created within the last few " +
-			"seconds may not yet appear. Use the returned `urns` list as the `for_each` value " +
-			"in `import {}` blocks to bulk-import existing assertions into Terraform state.",
+			"seconds may not yet appear.\n\n" +
+			"This lists assertions of every type and source (including ingested `EXTERNAL` " +
+			"assertions such as dbt tests, and `INFERRED` smart/AI assertions). Not all are " +
+			"importable: only NATIVE assertions of a type the provider models import cleanly, and " +
+			"the assertion resources refuse a non-NATIVE import. For bulk import prefer " +
+			"`datahub-tf-extract enumerate`, which filters to importable assertions automatically; " +
+			"use this data source for inventory or when you want to select URNs yourself.",
 		Attributes: map[string]schema.Attribute{
 			"urns": schema.ListAttribute{
 				ElementType:         types.StringType,
