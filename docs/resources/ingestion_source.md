@@ -72,7 +72,7 @@ resource "datahub_ingestion_source" "csv_enricher" {
 
 ### Required
 
-- `recipe` (String) Recipe JSON string. Avoid embedding secrets directly; prefer `${SECRET_NAME}` / `${ENV_VAR}` placeholders so DataHub can resolve credentials via Secrets or environment variables.
+- `recipe` (String) Recipe JSON string. Avoid embedding secrets directly; prefer `${SECRET_NAME}` / `${ENV_VAR}` placeholders so DataHub can resolve credentials via Secrets or environment variables. Compared by JSON semantic equality, so formatting and key-order differences (e.g. between your config and the form DataHub returns on read) do not produce spurious plan diffs.
 - `source_name` (String) Human-friendly name for the ingestion source as shown in the DataHub UI. Changing this forces a new resource.
 
 ### Optional

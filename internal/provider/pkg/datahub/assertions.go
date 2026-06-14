@@ -897,3 +897,127 @@ func buildAssertionParams(operator, minVal, maxVal, singleVal string) map[string
 	}
 	return params
 }
+
+// AssertionMonitorInfo holds the monitor-side configuration for a dataset
+// assertion monitor. These fields (the evaluation schedule, source type, and
+// monitoring mode) live in the separate Monitor entity rather than in the
+// assertion entity, so they cannot be recovered from GetAssertionByURN alone.
+// They are required to make ImportState of the Cloud monitor assertion
+// resources (freshness, volume, sql) reconstruct a clean plan.
+type AssertionMonitorInfo struct {
+	MonitorURN         string
+	EvaluationCron     string
+	EvaluationTimezone string
+	SourceType         string // INFORMATION_SCHEMA, QUERY, etc.; empty for SQL
+	Mode               string // ACTIVE or PASSIVE
+}
+
+// monitorEntity is the OpenAPI v3 response shape for
+// GET /openapi/v3/entity/monitor/{urn}.
+type monitorEntity struct {
+	URN  string `json:"urn"`
+	Info *struct {
+		Value struct {
+			AssertionMonitor *struct {
+				Assertions []struct {
+					Assertion string `json:"assertion"`
+					Schedule  *struct {
+						Cron     string `json:"cron"`
+						Timezone string `json:"timezone"`
+					} `json:"schedule"`
+					Parameters *struct {
+						DatasetFreshnessParameters *struct {
+							SourceType string `json:"sourceType"`
+						} `json:"datasetFreshnessParameters"`
+						DatasetVolumeParameters *struct {
+							SourceType string `json:"sourceType"`
+						} `json:"datasetVolumeParameters"`
+						DatasetFieldParameters *struct {
+							SourceType string `json:"sourceType"`
+						} `json:"datasetFieldParameters"`
+					} `json:"parameters"`
+				} `json:"assertions"`
+			} `json:"assertionMonitor"`
+			Status *struct {
+				Mode string `json:"mode"`
+			} `json:"status"`
+		} `json:"value"`
+	} `json:"monitorInfo,omitempty"`
+}
+
+// GetAssertionMonitor returns the monitor-side configuration for a dataset
+// assertion, or nil if the assertion has no associated monitor (custom and
+// third-party assertions have none). It follows the assertion's incoming
+// "Evaluates" relationship to the Monitor entity, then reads that entity from
+// the strongly-consistent OpenAPI v3 endpoint and extracts the evaluation
+// schedule, source type, and mode for the entry matching assertionURN.
+func (c *Client) GetAssertionMonitor(ctx context.Context, assertionURN string) (*AssertionMonitorInfo, error) {
+	if c == nil {
+		return nil, errors.New("client is nil")
+	}
+	assertionURN = strings.TrimSpace(assertionURN)
+	if assertionURN == "" {
+		return nil, errors.New("assertion URN is required")
+	}
+
+	monitorURN, err := c.GetAssertionMonitorURN(ctx, assertionURN)
+	if err != nil {
+		return nil, err
+	}
+	if monitorURN == "" {
+		return nil, nil // no monitor (e.g. custom assertion)
+	}
+
+	path := fmt.Sprintf("/openapi/v3/entity/monitor/%s", monitorURN)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("unexpected HTTP %d from DataHub monitor API: %s", res.StatusCode, body)
+	}
+
+	var entity monitorEntity
+	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
+		return nil, fmt.Errorf("parsing monitor entity response: %w", err)
+	}
+	if entity.Info == nil || entity.Info.Value.AssertionMonitor == nil {
+		return nil, nil
+	}
+
+	out := &AssertionMonitorInfo{MonitorURN: monitorURN}
+	if entity.Info.Value.Status != nil {
+		out.Mode = entity.Info.Value.Status.Mode
+	}
+	for _, a := range entity.Info.Value.AssertionMonitor.Assertions {
+		if a.Assertion != assertionURN {
+			continue
+		}
+		if a.Schedule != nil {
+			out.EvaluationCron = a.Schedule.Cron
+			out.EvaluationTimezone = a.Schedule.Timezone
+		}
+		if a.Parameters != nil {
+			switch {
+			case a.Parameters.DatasetFreshnessParameters != nil:
+				out.SourceType = a.Parameters.DatasetFreshnessParameters.SourceType
+			case a.Parameters.DatasetVolumeParameters != nil:
+				out.SourceType = a.Parameters.DatasetVolumeParameters.SourceType
+			case a.Parameters.DatasetFieldParameters != nil:
+				out.SourceType = a.Parameters.DatasetFieldParameters.SourceType
+			}
+		}
+		break
+	}
+	return out, nil
+}

@@ -271,6 +271,23 @@ func (r *freshnessAssertionResource) Read(ctx context.Context, req resource.Read
 	resp.Diagnostics.Append(d...)
 	state.OnFailureActions = onFailure
 
+	// Recover the monitor-side fields (evaluation schedule, source type, mode)
+	// from the associated Monitor entity. Without this, ImportState leaves these
+	// required/optional fields empty and the first plan shows a spurious diff.
+	mon, err := r.client.GetAssertionMonitor(ctx, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	if mon != nil {
+		state.EvaluationCron = nullIfEmpty(mon.EvaluationCron)
+		state.EvaluationTimezone = nullIfEmpty(mon.EvaluationTimezone)
+		state.SourceType = nullIfEmpty(mon.SourceType)
+		if mon.Mode != "" {
+			state.Mode = types.StringValue(mon.Mode)
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
