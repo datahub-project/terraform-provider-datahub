@@ -3905,6 +3905,217 @@ func SQLAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_sql_assertion")
 }
 
+// SchemaAssertionLifecycleSteps returns test steps for datahub_schema_assertion:
+// create a SUPERSET assertion over two columns, tighten it to EXACT_MATCH, then
+// import and verify.
+func SchemaAssertionLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_schema_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_schema_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  compatibility       = "SUPERSET"
+  description         = "expected core columns"
+  fields = [
+    { path = "id",    type = "NUMBER", native_type = "INTEGER" },
+    { path = "email", type = "STRING", native_type = "VARCHAR" },
+  ]
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("compatibility"), knownvalue.StringExact("SUPERSET")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(0).AtMapKey("path"), knownvalue.StringExact("id")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(0).AtMapKey("type"), knownvalue.StringExact("NUMBER")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(1).AtMapKey("type"), knownvalue.StringExact("STRING")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_schema_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  compatibility       = "EXACT_MATCH"
+  fields = [
+    { path = "id",    type = "NUMBER", native_type = "INTEGER" },
+    { path = "email", type = "STRING", native_type = "VARCHAR" },
+  ]
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("compatibility"), knownvalue.StringExact("EXACT_MATCH")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "mode", "executor_id"},
+		},
+	}
+}
+
+// SchemaAssertionCheckDestroy verifies every datahub_schema_assertion is removed.
+func SchemaAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_schema_assertion")
+}
+
+// FieldAssertionMetricLifecycleSteps returns test steps for a FIELD_METRIC
+// (aggregate column metric) field assertion: create, update the metric, then
+// import and verify. FIELD_METRIC works against a DatasetProfile source, so it
+// runs on the sqlite test dataset.
+func FieldAssertionMetricLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_field_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_assertion_type = "FIELD_METRIC"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  metric               = "NULL_COUNT"
+  operator             = "EQUAL_TO"
+  single_value         = "0"
+  description          = "id has no nulls"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_assertion_type"), knownvalue.StringExact("FIELD_METRIC")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("metric"), knownvalue.StringExact("NULL_COUNT")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_path"), knownvalue.StringExact("id")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_assertion_type = "FIELD_METRIC"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  metric               = "UNIQUE_COUNT"
+  operator             = "GREATER_THAN"
+  single_value         = "1"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("metric"), knownvalue.StringExact("UNIQUE_COUNT")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FieldAssertionValuesLifecycleSteps returns mock-only test steps for a
+// FIELD_VALUES (per-row value) field assertion, exercising transform-free value
+// checks with a fail threshold and exclude_nulls. FIELD_VALUES requires a
+// warehouse-backed platform on a live target, so this is used for mock coverage.
+func FieldAssertionValuesLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_field_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.events,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_assertion_type = "FIELD_VALUES"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  operator             = "GREATER_THAN_OR_EQUAL_TO"
+  single_value         = "0"
+  fail_threshold_type  = "COUNT"
+  fail_threshold_value = 0
+  exclude_nulls        = true
+  source_type          = "ALL_ROWS_QUERY"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_assertion_type"), knownvalue.StringExact("FIELD_VALUES")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fail_threshold_type"), knownvalue.StringExact("COUNT")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("exclude_nulls"), knownvalue.Bool(true)),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FieldAssertionValidationSteps returns config-only steps asserting the
+// FIELD_VALUES / FIELD_METRIC attribute split is enforced at plan time.
+func FieldAssertionValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+	base := func(body string) string {
+		return providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  operator             = "EQUAL_TO"
+  single_value         = "0"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+` + body + `
+}
+`
+	}
+	return []resource.TestStep{
+		{
+			Config:      base(`  field_assertion_type = "FIELD_METRIC"`),
+			ExpectError: regexp.MustCompile(`metric is required`),
+			PlanOnly:    true,
+		},
+		{
+			Config:      base("  field_assertion_type = \"FIELD_VALUES\"\n  metric = \"NULL_COUNT\""),
+			ExpectError: regexp.MustCompile(`metric is only valid for FIELD_METRIC`),
+			PlanOnly:    true,
+		},
+	}
+}
+
+// FieldAssertionCheckDestroy verifies every datahub_field_assertion is removed.
+func FieldAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_field_assertion")
+}
+
 // SQLAssertionChangeLifecycleSteps returns test steps for the METRIC_CHANGE sql
 // assertion sub-type: create an ABSOLUTE change assertion, update the change type
 // to PERCENTAGE, then import and verify.

@@ -23,6 +23,8 @@ type mockAssertion struct {
 	VolumeAssertion *map[string]any
 	FreshnessAssert *map[string]any
 	SQLAssertion    *map[string]any
+	FieldAssertion  *map[string]any
+	SchemaAssertion *map[string]any
 	OnSuccess       []string
 	OnFailure       []string
 }
@@ -260,6 +262,105 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 	})
 }
 
+// handleUpsertSchemaAssertion handles the upsertDatasetSchemaAssertionMonitor mutation.
+func (s *mockServer) handleUpsertSchemaAssertion(w http.ResponseWriter, variables map[string]any) {
+	urnRaw, _ := variables["assertionUrn"].(string)
+	input, _ := variables["input"].(map[string]any)
+
+	entityURN, _ := input["entityUrn"].(string)
+	description, _ := input["description"].(string)
+	assertion, _ := input["assertion"].(map[string]any)
+
+	var onSuccess, onFailure []string
+	if actions, ok := input["actions"].(map[string]any); ok {
+		onSuccess = actionsToStrings(actions["onSuccess"])
+		onFailure = actionsToStrings(actions["onFailure"])
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	urn := urnRaw
+	if urn == "" {
+		urn = "urn:li:assertion:" + nextAssertionID()
+	}
+
+	schemaParams := map[string]any{}
+	if assertion != nil {
+		schemaParams["compatibility"] = assertion["compatibility"]
+		schemaParams["fields"] = assertion["fields"]
+	}
+
+	s.assertions[urn] = mockAssertion{
+		URN:             urn,
+		AssertionType:   "DATA_SCHEMA",
+		Source:          "NATIVE",
+		EntityURN:       entityURN,
+		Description:     description,
+		SchemaAssertion: &schemaParams,
+		OnSuccess:       onSuccess,
+		OnFailure:       onFailure,
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"upsertDatasetSchemaAssertionMonitor": map[string]any{"urn": urn},
+		},
+	})
+}
+
+// handleUpsertFieldAssertion handles the upsertDatasetFieldAssertionMonitor mutation.
+func (s *mockServer) handleUpsertFieldAssertion(w http.ResponseWriter, variables map[string]any) {
+	urnRaw, _ := variables["assertionUrn"].(string)
+	input, _ := variables["input"].(map[string]any)
+
+	entityURN, _ := input["entityUrn"].(string)
+	description, _ := input["description"].(string)
+	fieldType, _ := input["type"].(string)
+
+	var onSuccess, onFailure []string
+	if actions, ok := input["actions"].(map[string]any); ok {
+		onSuccess = actionsToStrings(actions["onSuccess"])
+		onFailure = actionsToStrings(actions["onFailure"])
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	urn := urnRaw
+	if urn == "" {
+		urn = "urn:li:assertion:" + nextAssertionID()
+	}
+
+	fieldParams := map[string]any{"type": fieldType}
+	if fv, ok := input["fieldValuesAssertion"]; ok {
+		fieldParams["fieldValuesAssertion"] = fv
+	}
+	if fm, ok := input["fieldMetricAssertion"]; ok {
+		fieldParams["fieldMetricAssertion"] = fm
+	}
+	if f, ok := input["filter"]; ok {
+		fieldParams["filter"] = f
+	}
+
+	s.assertions[urn] = mockAssertion{
+		URN:            urn,
+		AssertionType:  "FIELD",
+		Source:         "NATIVE",
+		EntityURN:      entityURN,
+		Description:    description,
+		FieldAssertion: &fieldParams,
+		OnSuccess:      onSuccess,
+		OnFailure:      onFailure,
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"upsertDatasetFieldAssertionMonitor": map[string]any{"urn": urn},
+		},
+	})
+}
+
 // handleGetAssertionMonitor handles the getAssertionMonitor GraphQL query.
 // For Cloud-only assertion types (VOLUME, FRESHNESS, SQL), returns a synthetic
 // monitor URN so that waitForAssertionMonitor resolves immediately on the create
@@ -276,7 +377,7 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	var monitorVal any
 	if exists {
 		switch a.AssertionType {
-		case "VOLUME", "FRESHNESS", "SQL":
+		case "VOLUME", "FRESHNESS", "SQL", "FIELD", "DATA_SCHEMA":
 			monitorVal = map[string]any{"urn": "urn:li:monitor:mock-" + urn}
 		}
 	}
@@ -419,6 +520,37 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 			}
 			infoValue["sqlAssertion"] = sqlObj
 		}
+	case "FIELD":
+		if a.FieldAssertion != nil {
+			fa := *a.FieldAssertion
+			// fieldValuesAssertion / fieldMetricAssertion round-trip as sent.
+			infoValue["fieldAssertion"] = fa
+		}
+	case "DATA_SCHEMA":
+		if a.SchemaAssertion != nil {
+			sa := *a.SchemaAssertion
+			// Reproduce the real read shape: the write field list ({path,type,nativeType})
+			// comes back under schema.fields with the std type re-encoded as a
+			// SchemaFieldDataType class object, exercising the client's class->std mapping.
+			var rfields []map[string]any
+			if raw, ok := sa["fields"].([]any); ok {
+				for _, fi := range raw {
+					fm, _ := fi.(map[string]any)
+					path, _ := fm["path"].(string)
+					std, _ := fm["type"].(string)
+					nt, _ := fm["nativeType"].(string)
+					rfields = append(rfields, map[string]any{
+						"fieldPath":      path,
+						"nativeDataType": nt,
+						"type":           map[string]any{"type": map[string]any{mockSchemaClassForStd(std): map[string]any{}}},
+					})
+				}
+			}
+			infoValue["schemaAssertion"] = map[string]any{
+				"compatibility": sa["compatibility"],
+				"schema":        map[string]any{"fields": rfields},
+			}
+		}
 	}
 
 	entity := map[string]any{
@@ -462,6 +594,20 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 	}
 
 	return entity
+}
+
+// mockSchemaClassForStd maps a write std type (NUMBER, STRING, ...) to the
+// SchemaFieldDataType class the real read shape uses, so the mock reproduces the
+// write/read type encoding mismatch the client must reverse. Mirror of the
+// client's stdTypeFromSchemaClass.
+func mockSchemaClassForStd(std string) string {
+	special := map[string]string{"STRUCT": "RecordType"}
+	short, ok := special[std]
+	if !ok {
+		// NUMBER -> Number, STRING -> String, ...
+		short = strings.ToUpper(std[:1]) + strings.ToLower(std[1:]) + "Type"
+	}
+	return "com.linkedin.schema." + short
 }
 
 // assertionSearchInfo builds the assertionInfo shape returned in

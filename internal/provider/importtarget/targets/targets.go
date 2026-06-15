@@ -295,6 +295,34 @@ func init() {
 		OSSCompatible: false,
 	})
 
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_field_assertion",
+		DataSourceTypeName: "datahub_assertions",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListFieldAssertionURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing field assertion URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return urn },
+		OSSCompatible: false,
+	})
+
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_schema_assertion",
+		DataSourceTypeName: "datahub_assertions",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListSchemaAssertionURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing schema assertion URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return urn },
+		OSSCompatible: false,
+	})
+
 	// Remote executor pools are Cloud-only with no list API reachable via OSS
 	// GraphQL; users supply pool IDs manually when importing.
 	importtarget.Register(importtarget.Target{

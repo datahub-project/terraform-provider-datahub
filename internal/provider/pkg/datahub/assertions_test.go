@@ -162,6 +162,132 @@ func TestGetAssertionByURN_FreshnessSinceLastCheck(t *testing.T) {
 	}
 }
 
+// TestGetAssertionByURN_Schema verifies the read parse of a NATIVE schema
+// assertion, including the class->std type mapping: on read the field std type
+// is a SchemaFieldDataType class object (verified live), not the plain string
+// sent on write, so NumberType must map back to NUMBER and StringType to STRING.
+func TestGetAssertionByURN_Schema(t *testing.T) {
+	const urn = "urn:li:assertion:schema-1"
+	body := `{
+	  "urn": "` + urn + `",
+	  "assertionInfo": { "value": {
+	    "type": "DATA_SCHEMA",
+	    "source": { "type": "NATIVE" },
+	    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,db.t,PROD)",
+	    "schemaAssertion": {
+	      "compatibility": "SUPERSET",
+	      "schema": { "fields": [
+	        { "fieldPath": "id", "nativeDataType": "INTEGER", "type": { "type": { "com.linkedin.schema.NumberType": {} } } },
+	        { "fieldPath": "email", "nativeDataType": "VARCHAR", "type": { "type": { "com.linkedin.schema.StringType": {} } } }
+	      ] }
+	    }
+	  } }
+	}`
+	server := assertionEntityServer(t, body)
+	defer server.Close()
+
+	ai, err := newTestClient(t, server).GetAssertionByURN(t.Context(), urn)
+	if err != nil {
+		t.Fatalf("GetAssertionByURN() error = %v", err)
+	}
+	if ai == nil || ai.Schema == nil {
+		t.Fatal("GetAssertionByURN() returned no schema assertion")
+	}
+	if ai.Schema.Compatibility != "SUPERSET" {
+		t.Errorf("Compatibility = %q, want SUPERSET", ai.Schema.Compatibility)
+	}
+	if len(ai.Schema.Fields) != 2 {
+		t.Fatalf("got %d fields, want 2", len(ai.Schema.Fields))
+	}
+	if ai.Schema.Fields[0].Path != "id" || ai.Schema.Fields[0].StdType != "NUMBER" || ai.Schema.Fields[0].NativeType != "INTEGER" {
+		t.Errorf("field[0] = %+v, want {id NUMBER INTEGER}", ai.Schema.Fields[0])
+	}
+	if ai.Schema.Fields[1].StdType != "STRING" {
+		t.Errorf("field[1] StdType = %q, want STRING", ai.Schema.Fields[1].StdType)
+	}
+}
+
+// TestGetAssertionByURN_FieldMetric verifies the read parse of a NATIVE
+// FIELD_METRIC assertion: the field spec round-trips as {path,type,nativeType}.
+func TestGetAssertionByURN_FieldMetric(t *testing.T) {
+	const urn = "urn:li:assertion:field-1"
+	body := `{
+	  "urn": "` + urn + `",
+	  "assertionInfo": { "value": {
+	    "type": "FIELD",
+	    "source": { "type": "NATIVE" },
+	    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,db.t,PROD)",
+	    "fieldAssertion": {
+	      "type": "FIELD_METRIC",
+	      "fieldMetricAssertion": {
+	        "field": { "path": "id", "type": "NUMBER", "nativeType": "INTEGER" },
+	        "metric": "NULL_COUNT",
+	        "operator": "EQUAL_TO",
+	        "parameters": { "value": { "type": "NUMBER", "value": "0" } }
+	      }
+	    }
+	  } }
+	}`
+	server := assertionEntityServer(t, body)
+	defer server.Close()
+
+	ai, err := newTestClient(t, server).GetAssertionByURN(t.Context(), urn)
+	if err != nil {
+		t.Fatalf("GetAssertionByURN() error = %v", err)
+	}
+	if ai == nil || ai.Field == nil {
+		t.Fatal("GetAssertionByURN() returned no field assertion")
+	}
+	f := ai.Field
+	if f.FieldType != "FIELD_METRIC" || f.FieldPath != "id" || f.StdType != "NUMBER" {
+		t.Errorf("field = %+v, want FIELD_METRIC/id/NUMBER", f)
+	}
+	if f.Metric != "NULL_COUNT" || f.Operator != "EQUAL_TO" || f.Value != "0" {
+		t.Errorf("metric/op/value = %q/%q/%q, want NULL_COUNT/EQUAL_TO/0", f.Metric, f.Operator, f.Value)
+	}
+}
+
+// TestGetAssertionByURN_FieldValues verifies the read parse of a NATIVE
+// FIELD_VALUES assertion, including failThreshold and excludeNulls.
+func TestGetAssertionByURN_FieldValues(t *testing.T) {
+	const urn = "urn:li:assertion:field-2"
+	body := `{
+	  "urn": "` + urn + `",
+	  "assertionInfo": { "value": {
+	    "type": "FIELD",
+	    "source": { "type": "NATIVE" },
+	    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:bigquery,db.t,PROD)",
+	    "fieldAssertion": {
+	      "type": "FIELD_VALUES",
+	      "fieldValuesAssertion": {
+	        "field": { "path": "id", "type": "NUMBER", "nativeType": "INTEGER" },
+	        "operator": "GREATER_THAN_OR_EQUAL_TO",
+	        "parameters": { "value": { "type": "NUMBER", "value": "0" } },
+	        "failThreshold": { "type": "COUNT", "value": 0 },
+	        "excludeNulls": true
+	      }
+	    }
+	  } }
+	}`
+	server := assertionEntityServer(t, body)
+	defer server.Close()
+
+	ai, err := newTestClient(t, server).GetAssertionByURN(t.Context(), urn)
+	if err != nil {
+		t.Fatalf("GetAssertionByURN() error = %v", err)
+	}
+	if ai == nil || ai.Field == nil {
+		t.Fatal("GetAssertionByURN() returned no field assertion")
+	}
+	f := ai.Field
+	if f.FieldType != "FIELD_VALUES" || f.Operator != "GREATER_THAN_OR_EQUAL_TO" || f.Value != "0" {
+		t.Errorf("field = %+v, want FIELD_VALUES/GTE/0", f)
+	}
+	if f.FailThreshold != "COUNT" || f.FailThresholdN != 0 || !f.ExcludeNulls || !f.HasExcludeNull {
+		t.Errorf("threshold/excludeNulls = %q/%d/%v/%v, want COUNT/0/true/true", f.FailThreshold, f.FailThresholdN, f.ExcludeNulls, f.HasExcludeNull)
+	}
+}
+
 // TestGetAssertionByURN_VolumeRowCountChangeBetween verifies the BETWEEN variant
 // of a ROW_COUNT_CHANGE assertion parses into min/max rather than a single value.
 func TestGetAssertionByURN_VolumeRowCountChangeBetween(t *testing.T) {

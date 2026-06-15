@@ -32,9 +32,23 @@ Each increment repeats the same shape:
 - **`inferWithAI` / `inferenceSettings`** (all). Setting `inferWithAI` flips the assertion to `source = INFERRED`, out of scope by the source rule. Never to be modeled on the typed resources. (A separate future `user-declared AI monitor` capability is noted in the modeling doc.)
 - **Exclusion windows.** Surface under AI `adjustmentSettings` on the monitor; tied to the INFERRED path, hence out of scope alongside `inferWithAI`.
 
-## Not built this pass -- probe then decide (Phase 5)
+## New assertion types (Phase 5)
 
-New assertion *types* (not "complete the existing types"): `datahub_field_assertion` (FIELD), `datahub_schema_assertion` (DATA_SCHEMA), and DATA_JOB_RUN freshness (targets a DataJob, not a dataset). Gated on evidence of real NATIVE use -- column/schema checks in the wild are frequently EXTERNAL (dbt) or INFERRED (smart), so a NATIVE FIELD/SCHEMA resource may serve very few assertions. Probe a live instance for NATIVE FIELD/DATA_SCHEMA usage before committing to build.
+These are *new* assertion types, not "complete the existing types". The field-test instance had **zero** NATIVE FIELD/DATA_SCHEMA assertions (101 assertions: 96 EXTERNAL dbt DATASET tests + 5 NATIVE freshness/volume/sql), so they were initially gated on demand. Built anyway as forward-looking surface after confirming the read shapes empirically (create + inspect + delete throwaway assertions of each type on a live Cloud instance):
+
+- **`datahub_field_assertion`** (FIELD) -- **built.** Models both sub-types: `FIELD_VALUES` (per-row value check, with optional `transform_type`, `fail_threshold_*`, `exclude_nulls`) and `FIELD_METRIC` (aggregate column metric over 17 `metric` choices). The column is a `{field_path, field_type, field_native_type}` spec that round-trips as a plain std type (unlike schema fields). FIELD_VALUES requires a warehouse-backed platform (bigquery/snowflake/redshift/databricks) and a query `source_type`; FIELD_METRIC works against a DatasetProfile.
+- **`datahub_schema_assertion`** (DATA_SCHEMA) -- **built.** Owns the complete expected `fields` list and a `compatibility` mode (EXACT_MATCH / SUPERSET / SUBSET). On read the field std type comes back as a `SchemaFieldDataType` class object (`type.type.{com.linkedin.schema.NumberType:{}}`), so the client maps the class back to the std type (NumberType -> NUMBER).
+
+### DATA_JOB_RUN freshness -- deferred
+
+`FreshnessAssertionType` has `DATASET_CHANGE` (what `datahub_freshness_assertion` models) and `DATA_JOB_RUN`, which asserts a **DataJob** ran within a window. Deferred, because it is genuinely different surface on an unsuitable mutation:
+
+- It targets a DataJob URN, not a dataset.
+- The only mutation that accepts `type: DATA_JOB_RUN` is `createFreshnessAssertion` (entityUrn, schedule, filter, failureSeverityConfig, actions) -- a **create-only** assertion mutation with **no monitor** (no evaluationSchedule / mode / source / executor). The dataset monitor upsert (`upsertDatasetFreshnessAssertionMonitor`) is dataset-only and does not accept DATA_JOB_RUN.
+- Create-only with no upsert means no clean update path, and no monitor means a different resource shape from the existing dataset freshness resource.
+- Zero observed usage on the field-test instance.
+
+Revisit if a real DataJob-run freshness need appears; it would be a separate `datahub_data_job_freshness_assertion`-style resource, not an extension of `datahub_freshness_assertion`.
 
 ## Generic backstop (Phase 6)
 

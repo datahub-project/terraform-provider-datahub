@@ -211,6 +211,23 @@ func (c *Client) ListVolumeAssertionURNs(ctx context.Context) ([]string, error) 
 	})
 }
 
+// ListFieldAssertionURNs returns the URNs of NATIVE field (column) assertions.
+// Both sub-shapes (FIELD_VALUES, FIELD_METRIC) are managed by the one
+// datahub_field_assertion resource, so no sub-shape discriminator is needed.
+func (c *Client) ListFieldAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "FIELD" && e.Source == "NATIVE"
+	})
+}
+
+// ListSchemaAssertionURNs returns the URNs of NATIVE schema assertions
+// (AssertionType DATA_SCHEMA).
+func (c *Client) ListSchemaAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "DATA_SCHEMA" && e.Source == "NATIVE"
+	})
+}
+
 // ListSQLAssertionURNs returns the URNs of SQL assertions that
 // datahub_sql_assertion can manage: NATIVE source with a sub-type the resource
 // models (METRIC or METRIC_CHANGE).
