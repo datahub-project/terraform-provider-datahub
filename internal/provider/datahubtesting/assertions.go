@@ -17,6 +17,7 @@ type mockAssertion struct {
 	AssertionType string // CUSTOM, FRESHNESS, VOLUME, SQL, DATASET, ...
 	Source        string // NATIVE, EXTERNAL, INFERRED (defaults to NATIVE on upsert)
 	EntityURN     string
+	Description   string // top-level assertionInfo.description (volume/freshness)
 	// Type-specific params stored as raw maps for echo-back.
 	CustomAssertion *map[string]any
 	VolumeAssertion *map[string]any
@@ -107,6 +108,7 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 
 	entityURN, _ := input["entityUrn"].(string)
 	volumeType, _ := input["type"].(string)
+	description, _ := input["description"].(string)
 
 	var onSuccess, onFailure []string
 	if actions, ok := input["actions"].(map[string]any); ok {
@@ -137,6 +139,7 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 		AssertionType:   "VOLUME",
 		Source:          "NATIVE",
 		EntityURN:       entityURN,
+		Description:     description,
 		VolumeAssertion: &volumeParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
@@ -155,6 +158,7 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 	input, _ := variables["input"].(map[string]any)
 
 	entityURN, _ := input["entityUrn"].(string)
+	description, _ := input["description"].(string)
 
 	var onSuccess, onFailure []string
 	if actions, ok := input["actions"].(map[string]any); ok {
@@ -179,6 +183,7 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 		AssertionType:   "FRESHNESS",
 		Source:          "NATIVE",
 		EntityURN:       entityURN,
+		Description:     description,
 		FreshnessAssert: &freshnessParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
@@ -327,6 +332,12 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 	}
 	if a.Source != "" {
 		infoValue["source"] = map[string]any{"type": a.Source}
+	}
+	// description is a top-level assertionInfo field in the real API. Custom and
+	// sql carry it inside their own param maps (handled below); volume and
+	// freshness store it on mockAssertion.Description.
+	if a.Description != "" {
+		infoValue["description"] = a.Description
 	}
 
 	switch a.AssertionType {

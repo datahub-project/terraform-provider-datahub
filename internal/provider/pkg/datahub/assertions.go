@@ -54,10 +54,11 @@ func isAssertionCloudOnlyError(msg string) bool {
 
 // AssertionInfo is the read-shape common to all assertion types.
 type AssertionInfo struct {
-	URN       string
-	Type      string // FRESHNESS, VOLUME, SQL, CUSTOM
-	Source    string // NATIVE, EXTERNAL, INFERRED (empty if absent)
-	EntityURN string
+	URN         string
+	Type        string // FRESHNESS, VOLUME, SQL, CUSTOM
+	Source      string // NATIVE, EXTERNAL, INFERRED (empty if absent)
+	EntityURN   string
+	Description string // top-level assertionInfo.description (all monitor types)
 	// Type-specific sub-structs; only one is non-nil depending on Type.
 	Freshness *FreshnessAssertionInfo
 	Volume    *VolumeAssertionInfo
@@ -268,6 +269,7 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 			ai.Source = v.Source.Type
 		}
 		ai.EntityURN = v.EntityURN
+		ai.Description = v.Description // top-level field, shared by all monitor types
 		// OSS assertionInfo schema v3 stores the entity URN inside customAssertion.entity
 		// rather than at the top-level entityUrn field. Fall back when entityUrn is absent.
 		if ai.EntityURN == "" && v.CustomAssertion != nil {
@@ -597,6 +599,7 @@ mutation upsertCustomAssertion($urn: String, $input: UpsertCustomAssertionInput!
 type FreshnessAssertionInput struct {
 	AssertionURN          string // empty on create
 	EntityURN             string
+	Description           string // optional
 	ScheduleType          string // FIXED_INTERVAL or CRON
 	FixedIntervalUnit     string // HOUR, DAY, WEEK, MONTH, YEAR
 	FixedIntervalMultiple int64
@@ -649,6 +652,9 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 		},
 		"mode": in.Mode,
 	}
+	if in.Description != "" {
+		input["description"] = in.Description
+	}
 	// Always send actions -- even empty lists -- so that previously-set actions
 	// are cleared when the user removes them from config.
 	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
@@ -698,6 +704,7 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 type VolumeAssertionInput struct {
 	AssertionURN       string
 	EntityURN          string
+	Description        string // optional
 	VolumeType         string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
 	ChangeType         string // ABSOLUTE or PERCENTAGE (required for ROW_COUNT_CHANGE)
 	Operator           string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
@@ -738,6 +745,9 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 			"sourceType": in.SourceType,
 		},
 		"mode": in.Mode,
+	}
+	if in.Description != "" {
+		input["description"] = in.Description
 	}
 	// Route the threshold to the sub-type the user selected. ROW_COUNT_CHANGE
 	// carries an extra change type (ABSOLUTE/PERCENTAGE); both variants reuse the

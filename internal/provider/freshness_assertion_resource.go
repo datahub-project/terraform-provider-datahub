@@ -36,6 +36,7 @@ type freshnessAssertionResourceModel struct {
 	ID                    types.String `tfsdk:"id"`
 	URN                   types.String `tfsdk:"urn"`
 	EntityURN             types.String `tfsdk:"entity_urn"`
+	Description           types.String `tfsdk:"description"`
 	ScheduleType          types.String `tfsdk:"schedule_type"`
 	FixedIntervalUnit     types.String `tfsdk:"fixed_interval_unit"`
 	FixedIntervalMultiple types.Int64  `tfsdk:"fixed_interval_multiple"`
@@ -111,6 +112,10 @@ func (r *freshnessAssertionResource) Schema(_ context.Context, _ resource.Schema
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
+			},
+			"description": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "Human-readable description of what this freshness assertion checks.",
 			},
 			"schedule_type": schema.StringAttribute{
 				Required: true,
@@ -267,6 +272,7 @@ func (r *freshnessAssertionResource) Create(ctx context.Context, req resource.Cr
 
 	urn, err := r.client.UpsertFreshnessAssertion(ctx, datahub.FreshnessAssertionInput{
 		EntityURN:             plan.EntityURN.ValueString(),
+		Description:           strVal(plan.Description),
 		ScheduleType:          plan.ScheduleType.ValueString(),
 		FixedIntervalUnit:     strVal(plan.FixedIntervalUnit),
 		FixedIntervalMultiple: plan.FixedIntervalMultiple.ValueInt64(),
@@ -340,6 +346,7 @@ func (r *freshnessAssertionResource) Read(ctx context.Context, req resource.Read
 			state.CronTimezone = nullIfEmpty(ai.Freshness.CronTimezone)
 		}
 	}
+	state.Description = nullIfEmpty(ai.Description)
 	state.EntityURN = types.StringValue(ai.EntityURN)
 	state.URN = types.StringValue(ai.URN)
 	state.ID = types.StringValue(ai.URN)
@@ -395,6 +402,7 @@ func (r *freshnessAssertionResource) Update(ctx context.Context, req resource.Up
 	_, err := r.client.UpsertFreshnessAssertion(ctx, datahub.FreshnessAssertionInput{
 		AssertionURN:          state.URN.ValueString(),
 		EntityURN:             plan.EntityURN.ValueString(),
+		Description:           strVal(plan.Description),
 		ScheduleType:          plan.ScheduleType.ValueString(),
 		FixedIntervalUnit:     strVal(plan.FixedIntervalUnit),
 		FixedIntervalMultiple: plan.FixedIntervalMultiple.ValueInt64(),
@@ -494,6 +502,7 @@ func (r *freshnessAssertionResource) ImportState(ctx context.Context, req resour
 		ID:                 types.StringValue(ai.URN),
 		URN:                types.StringValue(ai.URN),
 		EntityURN:          types.StringValue(ai.EntityURN),
+		Description:        nullIfEmpty(ai.Description),
 		OnSuccessActions:   onSuccess,
 		OnFailureActions:   onFailure,
 		EvaluationCron:     types.StringValue(""),

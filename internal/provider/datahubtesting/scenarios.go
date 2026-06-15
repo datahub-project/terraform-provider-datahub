@@ -3576,6 +3576,7 @@ resource "datahub_volume_assertion" "test" {
   volume_type         = "ROW_COUNT_TOTAL"
   operator            = "GREATER_THAN_OR_EQUAL_TO"
   single_value        = "100"
+  description         = "at least 100 rows"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   source_type         = "DATAHUB_DATASET_PROFILE"
@@ -3588,6 +3589,7 @@ resource "datahub_volume_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume_type"), knownvalue.StringExact("ROW_COUNT_TOTAL")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("at least 100 rows")),
 			},
 		},
 		{
@@ -3745,6 +3747,7 @@ resource "datahub_freshness_assertion" "test" {
   schedule_type           = "FIXED_INTERVAL"
   fixed_interval_unit     = "HOUR"
   fixed_interval_multiple = 24
+  description             = "data must land daily"
   evaluation_cron         = "0 */8 * * *"
   evaluation_timezone     = "UTC"
   source_type             = "DATAHUB_OPERATION"
@@ -3757,6 +3760,7 @@ resource "datahub_freshness_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("FIXED_INTERVAL")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.StringExact("HOUR")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("data must land daily")),
 			},
 		},
 		{

@@ -35,6 +35,7 @@ type volumeAssertionResourceModel struct {
 	ID                 types.String `tfsdk:"id"`
 	URN                types.String `tfsdk:"urn"`
 	EntityURN          types.String `tfsdk:"entity_urn"`
+	Description        types.String `tfsdk:"description"`
 	VolumeType         types.String `tfsdk:"volume_type"`
 	ChangeType         types.String `tfsdk:"change_type"`
 	Operator           types.String `tfsdk:"operator"`
@@ -108,6 +109,10 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
+			},
+			"description": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "Human-readable description of what this volume assertion checks.",
 			},
 			"volume_type": schema.StringAttribute{
 				Required: true,
@@ -236,6 +241,7 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 
 	urn, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
 		EntityURN:          plan.EntityURN.ValueString(),
+		Description:        strVal(plan.Description),
 		VolumeType:         plan.VolumeType.ValueString(),
 		ChangeType:         strVal(plan.ChangeType),
 		Operator:           plan.Operator.ValueString(),
@@ -309,6 +315,7 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 		state.MaxValue = nullIfEmpty(ai.Volume.MaxValue)
 		state.SingleValue = nullIfEmpty(ai.Volume.Value)
 	}
+	state.Description = nullIfEmpty(ai.Description)
 	state.EntityURN = types.StringValue(ai.EntityURN)
 	state.URN = types.StringValue(ai.URN)
 	state.ID = types.StringValue(ai.URN)
@@ -363,6 +370,7 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 	_, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
 		AssertionURN:       state.URN.ValueString(),
 		EntityURN:          plan.EntityURN.ValueString(),
+		Description:        strVal(plan.Description),
 		VolumeType:         plan.VolumeType.ValueString(),
 		ChangeType:         strVal(plan.ChangeType),
 		Operator:           plan.Operator.ValueString(),
@@ -463,6 +471,7 @@ func (r *volumeAssertionResource) ImportState(ctx context.Context, req resource.
 		ID:               types.StringValue(ai.URN),
 		URN:              types.StringValue(ai.URN),
 		EntityURN:        types.StringValue(ai.EntityURN),
+		Description:      nullIfEmpty(ai.Description),
 		OnSuccessActions: onSuccess,
 		OnFailureActions: onFailure,
 		// Monitor-only fields cannot be read from assertionInfo; use empty defaults.

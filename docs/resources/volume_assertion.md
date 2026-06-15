@@ -46,6 +46,7 @@ For `BETWEEN` operator: supply `min_value` and `max_value`. For all other operat
 ### Optional
 
 - `change_type` (String) How the row-count change is measured: `ABSOLUTE` (a raw row delta) or `PERCENTAGE` (a percentage change). Required when `volume_type = "ROW_COUNT_CHANGE"`; must be omitted otherwise.
+- `description` (String) Human-readable description of what this volume assertion checks.
 - `executor_id` (String) ID of the remote executor pool to use for evaluation. Omit to use the default executor.
 - `max_value` (String) Maximum row count (used with `operator = "BETWEEN"`).
 - `min_value` (String) Minimum row count (used with `operator = "BETWEEN"`).
