@@ -43,15 +43,15 @@ So even for NATIVE assertions the provider covers 4 of 7 types, and within those
 | Capability | API | Resource |
 |---|---|---|
 | Sub-type `ROW_COUNT_TOTAL` ("row count is …") | yes | yes |
-| Sub-type `ROW_COUNT_CHANGE` ("row count growing by …") | yes | **no** (client hardcodes `rowCountTotal`) |
-| Change type `ABSOLUTE` / `PERCENTAGE` (for change) | yes | **no** |
+| Sub-type `ROW_COUNT_CHANGE` ("row count growing by …") | yes | yes (`change_type` + reused operator/value) |
+| Change type `ABSOLUTE` / `PERCENTAGE` (for change) | yes | yes (`change_type`) |
 | Operators (`AssertionStdOperator`, 18 values) | 18 | 6 (`BETWEEN, LESS_THAN, LESS_THAN_OR_EQUAL_TO, GREATER_THAN, GREATER_THAN_OR_EQUAL_TO, EQUAL_TO`) |
 | Source type (`DatasetVolumeSourceType`): `INFORMATION_SCHEMA, QUERY, TABLE_STATISTICS, DATAHUB_DATASET_PROFILE, PLATFORM_API` | 5 | passthrough (3 documented) |
-| `filter` (row-level filter) | yes | **no** |
-| `inferWithAI` + `inferenceSettings` (smart/auto thresholds) | yes | **no** |
-| `failureSeverityConfig` | yes | **no** |
-| `backfillConfig` (seed historical evals) | yes | **no** |
-| `description` | yes | **no** |
+| `filter` (row-level filter) | yes | yes (`filter_sql`) |
+| `inferWithAI` + `inferenceSettings` (smart/auto thresholds) | yes | **no** (INFERRED -- out of scope) |
+| `failureSeverityConfig` | n/a | n/a (not a field on the volume input -- freshness/sql only) |
+| `backfillConfig` (seed historical evals) | yes | **no** (deferred -- imperative one-shot bootstrap, does not round-trip; see completion plan) |
+| `description` | yes | yes |
 | `evaluationSchedule`, `mode`, `actions`, `executorId` | yes | yes |
 
 ## datahub_freshness_assertion
@@ -62,12 +62,12 @@ So even for NATIVE assertions the provider covers 4 of 7 types, and within those
 |---|---|---|
 | Schedule type `CRON` | yes | yes |
 | Schedule type `FIXED_INTERVAL` | yes | yes |
-| Schedule type `SINCE_THE_LAST_CHECK` | yes | **no** |
+| Schedule type `SINCE_THE_LAST_CHECK` | yes | yes (`schedule_type`) |
 | Source type (`DatasetFreshnessSourceType`): `FIELD_VALUE, INFORMATION_SCHEMA, AUDIT_LOG, FILE_METADATA, DATAHUB_OPERATION, PLATFORM_API` | 6 | passthrough (2 documented) |
-| `filter` | yes | **no** |
-| `inferWithAI` + `inferenceSettings` | yes | **no** |
-| `failureSeverityConfig` | yes | **no** |
-| `description` | yes | **no** |
+| `filter` | yes | yes (`filter_sql`) |
+| `inferWithAI` + `inferenceSettings` | yes | **no** (INFERRED -- out of scope) |
+| `failureSeverityConfig` (`defaultSeverity`) | yes | yes (`failure_severity`; conditional `rules` not modeled) |
+| `description` | yes | yes |
 | `evaluationSchedule`, `mode`, `actions`, `executorId` | yes | yes |
 
 ## datahub_sql_assertion
@@ -77,20 +77,24 @@ So even for NATIVE assertions the provider covers 4 of 7 types, and within those
 | Capability | API | Resource |
 |---|---|---|
 | Sub-type `METRIC` | yes | yes |
-| Sub-type `METRIC_CHANGE` (+ `changeType` ABSOLUTE/PERCENTAGE) | yes | **no** |
+| Sub-type `METRIC_CHANGE` (+ `changeType` ABSOLUTE/PERCENTAGE) | yes | yes (`change_type`; requires `description`) |
 | Operators (`AssertionStdOperator`, 18 values) | 18 | 6 |
 | `statement`, `value`, `description` | yes | yes |
-| `inferWithAI` + `inferenceSettings` | yes | **no** |
-| `failureSeverityConfig` | yes | **no** |
+| `inferWithAI` + `inferenceSettings` | yes | **no** (INFERRED -- out of scope) |
+| `failureSeverityConfig` (`defaultSeverity`) | yes | yes (`failure_severity`; conditional `rules` not modeled) |
 | `evaluationSchedule`, `mode`, `actions`, `executorId` | yes | yes |
 
-## Cross-cutting gaps (all three monitor types)
+## Status after the typed-completion build (see typed-assertion-completion-plan.md)
 
-- `inferWithAI` + `inferenceSettings` -- AI/smart thresholds, a headline DataHub Observe feature -- modeled by none.
-- `failureSeverityConfig` -- per-severity failure behaviour -- modeled by none.
-- The `*_CHANGE` half of volume and sql, and the `SINCE_THE_LAST_CHECK` freshness schedule -- not modeled.
+The `*_CHANGE` sub-types (volume `ROW_COUNT_CHANGE`, sql `METRIC_CHANGE`), the `SINCE_THE_LAST_CHECK` freshness schedule, and the cross-cutting `description` / `filter` (volume+freshness) / `failureSeverityConfig.defaultSeverity` (freshness+sql) fields are now modeled. The field-availability per input was corrected against the live schema during that build: `failureSeverityConfig` is on the **freshness and sql** inputs only (not volume), and `backfillConfig` is on the **volume** input only.
+
+Remaining gaps, all deliberate:
+
+- `inferWithAI` + `inferenceSettings` -- AI/smart thresholds. Setting `inferWithAI` makes DataHub classify the assertion `source = INFERRED`, which is out of scope by the source rule. Never modeled.
+- `failureSeverityConfig.rules` -- the conditional per-result severity escalation list. `defaultSeverity` is modeled; the rules engine is deferred (list-ownership semantics, niche).
+- `backfillConfig` (volume) -- a one-shot imperative bootstrap: it seeds historical evaluations from a start date, is constrained to a 365-day lookback, and does **not** round-trip into the assertion or monitor entity on read. Modeling it as a managed attribute would produce perpetual drift, so it is deferred as out-of-band imperative work rather than IaC state.
+- Operators: 6 of 18 documented (passthrough -- the others are usable, just undocumented).
 - `MonitorMode` is `ACTIVE, INACTIVE, PASSIVE`; resources document `ACTIVE`/`PASSIVE` (passthrough, so `INACTIVE` is usable).
-- `filter` (volume, freshness) and `backfillConfig` (volume) -- not modeled.
 
 ## Interpretation
 
