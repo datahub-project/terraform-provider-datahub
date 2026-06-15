@@ -211,10 +211,11 @@ func (c *Client) ListVolumeAssertionURNs(ctx context.Context) ([]string, error) 
 }
 
 // ListSQLAssertionURNs returns the URNs of SQL assertions that
-// datahub_sql_assertion can manage: NATIVE source with sub-type METRIC
-// (METRIC_CHANGE is excluded).
+// datahub_sql_assertion can manage: NATIVE source with a sub-type the resource
+// models (METRIC or METRIC_CHANGE).
 func (c *Client) ListSQLAssertionURNs(ctx context.Context) ([]string, error) {
 	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
-		return e.Type == "SQL" && e.Source == "NATIVE" && e.SQLSubType == "METRIC"
+		return e.Type == "SQL" && e.Source == "NATIVE" &&
+			(e.SQLSubType == "METRIC" || e.SQLSubType == "METRIC_CHANGE")
 	})
 }

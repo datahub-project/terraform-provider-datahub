@@ -198,6 +198,7 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 
 	entityURN, _ := input["entityUrn"].(string)
 	sqlType, _ := input["type"].(string)
+	changeType, _ := input["changeType"].(string)
 	statement, _ := input["statement"].(string)
 	operator, _ := input["operator"].(string)
 	description, _ := input["description"].(string)
@@ -218,6 +219,7 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 
 	sqlParams := map[string]any{
 		"type":        sqlType,
+		"changeType":  changeType,
 		"statement":   statement,
 		"operator":    operator,
 		"description": description,
@@ -372,12 +374,16 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 			if desc, _ := sa["description"].(string); desc != "" {
 				infoValue["description"] = desc
 			}
-			infoValue["sqlAssertion"] = map[string]any{
+			sqlObj := map[string]any{
 				"type":       sa["type"],
 				"statement":  sa["statement"],
 				"operator":   sa["operator"],
 				"parameters": sa["parameters"],
 			}
+			if ct, _ := sa["changeType"].(string); ct != "" {
+				sqlObj["changeType"] = ct
+			}
+			infoValue["sqlAssertion"] = sqlObj
 		}
 	}
 

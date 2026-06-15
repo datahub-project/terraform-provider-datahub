@@ -13,13 +13,14 @@ import (
 
 // assertion search fixture covering the filtering dimensions: source
 // (NATIVE/EXTERNAL/INFERRED), type, and sub-shape.
-const assertionSearchFixture = `{"data":{"searchAcrossEntities":{"total":8,"searchResults":[
+const assertionSearchFixture = `{"data":{"searchAcrossEntities":{"total":9,"searchResults":[
   {"entity":{"urn":"urn:li:assertion:vol-native-total","info":{"type":"VOLUME","source":{"type":"NATIVE"},"volumeAssertion":{"type":"ROW_COUNT_TOTAL"}}}},
   {"entity":{"urn":"urn:li:assertion:vol-native-change","info":{"type":"VOLUME","source":{"type":"NATIVE"},"volumeAssertion":{"type":"ROW_COUNT_CHANGE"}}}},
   {"entity":{"urn":"urn:li:assertion:vol-external-total","info":{"type":"VOLUME","source":{"type":"EXTERNAL"},"volumeAssertion":{"type":"ROW_COUNT_TOTAL"}}}},
   {"entity":{"urn":"urn:li:assertion:fresh-native-fixed","info":{"type":"FRESHNESS","source":{"type":"NATIVE"},"freshnessAssertion":{"schedule":{"type":"FIXED_INTERVAL"}}}}},
   {"entity":{"urn":"urn:li:assertion:fresh-native-sincelast","info":{"type":"FRESHNESS","source":{"type":"NATIVE"},"freshnessAssertion":{"schedule":{"type":"SINCE_THE_LAST_CHECK"}}}}},
   {"entity":{"urn":"urn:li:assertion:sql-native-metric","info":{"type":"SQL","source":{"type":"NATIVE"},"sqlAssertion":{"type":"METRIC"}}}},
+  {"entity":{"urn":"urn:li:assertion:sql-native-change","info":{"type":"SQL","source":{"type":"NATIVE"},"sqlAssertion":{"type":"METRIC_CHANGE"}}}},
   {"entity":{"urn":"urn:li:assertion:dataset-external","info":{"type":"DATASET","source":{"type":"EXTERNAL"}}}},
   {"entity":{"urn":"urn:li:assertion:custom-external","info":{"type":"CUSTOM","source":{"type":"EXTERNAL"}}}}
 ]}}}`
@@ -68,14 +69,18 @@ func TestListFreshnessAssertionURNs_NativeSupportedScheduleOnly(t *testing.T) {
 	assertEqualURNs(t, got, []string{"urn:li:assertion:fresh-native-fixed"})
 }
 
-func TestListSQLAssertionURNs_NativeMetricOnly(t *testing.T) {
+func TestListSQLAssertionURNs_NativeMetricAndChange(t *testing.T) {
 	server := assertionFixtureServer(t)
 	defer server.Close()
 	got, err := newTestClient(t, server).ListSQLAssertionURNs(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEqualURNs(t, got, []string{"urn:li:assertion:sql-native-metric"})
+	// NATIVE sql assertions of either modeled sub-shape (METRIC and METRIC_CHANGE).
+	assertEqualURNs(t, got, []string{
+		"urn:li:assertion:sql-native-metric",
+		"urn:li:assertion:sql-native-change",
+	})
 }
 
 func TestListCustomAssertionURNs_TypeOnlyNotSourceFiltered(t *testing.T) {

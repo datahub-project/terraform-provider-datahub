@@ -34,12 +34,13 @@ DataHub generates a server-side UUID for each assertion. The `urn` and `id` attr
 - `evaluation_timezone` (String) Timezone for the evaluation cron schedule (e.g. `"UTC"`).
 - `mode` (String) Monitoring mode. `ACTIVE` enables scheduled evaluation. `PASSIVE` records results without scheduling.
 - `operator` (String) Comparison operator. One of `EQUAL_TO`, `NOT_EQUAL_TO`, `GREATER_THAN`, `GREATER_THAN_OR_EQUAL_TO`, `LESS_THAN`, `LESS_THAN_OR_EQUAL_TO`.
-- `sql_type` (String) SQL assertion sub-type. Currently `METRIC` is supported (the query returns a single numeric metric).
+- `sql_type` (String) SQL assertion sub-type. One of `METRIC` (assert on the absolute value the query returns) or `METRIC_CHANGE` (assert on the change in that value between evaluations). `METRIC_CHANGE` requires `change_type` and a non-empty `description`.
 - `statement` (String) SQL SELECT statement that returns a single numeric value to compare against `value`.
 - `value` (String) Expected numeric result of the SQL statement (as a string, e.g. `"0"`).
 
 ### Optional
 
+- `change_type` (String) How the metric change is measured: `ABSOLUTE` (a raw delta) or `PERCENTAGE` (a percentage change). Required when `sql_type = "METRIC_CHANGE"`; must be omitted otherwise.
 - `description` (String) Human-readable description of what this SQL assertion checks.
 - `executor_id` (String) ID of the remote executor pool to use for evaluation. Omit to use the default executor.
 - `on_failure_actions` (List of String) Actions to take when the assertion fails (e.g. `["RAISE_INCIDENT"]`).

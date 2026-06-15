@@ -74,6 +74,55 @@ func TestGetAssertionByURN_VolumeRowCountChange(t *testing.T) {
 	}
 }
 
+// TestGetAssertionByURN_SQLMetricChange verifies the read parse of a NATIVE
+// METRIC_CHANGE sql assertion. The body matches the shape verified live against
+// DataHub Cloud: sqlAssertion carries a changeType sibling (ABSOLUTE/PERCENTAGE)
+// alongside type/statement/operator, with the description at the top level.
+func TestGetAssertionByURN_SQLMetricChange(t *testing.T) {
+	const urn = "urn:li:assertion:sql-change"
+	body := `{
+	  "urn": "` + urn + `",
+	  "assertionInfo": { "value": {
+	    "type": "SQL",
+	    "source": { "type": "NATIVE" },
+	    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,db.t,PROD)",
+	    "description": "metric must not drop",
+	    "sqlAssertion": {
+	      "type": "METRIC_CHANGE",
+	      "changeType": "ABSOLUTE",
+	      "statement": "SELECT COUNT(*) FROM t",
+	      "operator": "GREATER_THAN",
+	      "parameters": { "value": { "type": "NUMBER", "value": "5" } }
+	    }
+	  } }
+	}`
+	server := assertionEntityServer(t, body)
+	defer server.Close()
+
+	ai, err := newTestClient(t, server).GetAssertionByURN(t.Context(), urn)
+	if err != nil {
+		t.Fatalf("GetAssertionByURN() error = %v", err)
+	}
+	if ai == nil || ai.SQL == nil {
+		t.Fatal("GetAssertionByURN() returned no sql assertion")
+	}
+	if ai.SQL.SQLType != "METRIC_CHANGE" {
+		t.Errorf("SQLType = %q, want METRIC_CHANGE", ai.SQL.SQLType)
+	}
+	if ai.SQL.ChangeType != "ABSOLUTE" {
+		t.Errorf("ChangeType = %q, want ABSOLUTE", ai.SQL.ChangeType)
+	}
+	if ai.SQL.Operator != "GREATER_THAN" {
+		t.Errorf("Operator = %q, want GREATER_THAN", ai.SQL.Operator)
+	}
+	if ai.SQL.Value != "5" {
+		t.Errorf("Value = %q, want 5", ai.SQL.Value)
+	}
+	if ai.SQL.Description != "metric must not drop" {
+		t.Errorf("Description = %q, want %q", ai.SQL.Description, "metric must not drop")
+	}
+}
+
 // TestGetAssertionByURN_VolumeRowCountChangeBetween verifies the BETWEEN variant
 // of a ROW_COUNT_CHANGE assertion parses into min/max rather than a single value.
 func TestGetAssertionByURN_VolumeRowCountChangeBetween(t *testing.T) {

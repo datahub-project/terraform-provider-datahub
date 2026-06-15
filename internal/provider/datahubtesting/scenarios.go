@@ -3815,6 +3815,126 @@ func SQLAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_sql_assertion")
 }
 
+// SQLAssertionChangeLifecycleSteps returns test steps for the METRIC_CHANGE sql
+// assertion sub-type: create an ABSOLUTE change assertion, update the change type
+// to PERCENTAGE, then import and verify.
+func SQLAssertionChangeLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_sql_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  change_type         = "ABSOLUTE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  value               = "10"
+  description         = "row count must keep growing"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("sql_type"), knownvalue.StringExact("METRIC_CHANGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("ABSOLUTE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value"), knownvalue.StringExact("10")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  change_type         = "PERCENTAGE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "LESS_THAN"
+  value               = "50"
+  description         = "row count must not balloon"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("PERCENTAGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("LESS_THAN")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "mode", "executor_id"},
+		},
+	}
+}
+
+// SQLAssertionChangeTypeValidationSteps returns config-only steps asserting the
+// METRIC_CHANGE pairing rules: change_type required for METRIC_CHANGE, rejected
+// for METRIC, and description required for METRIC_CHANGE.
+func SQLAssertionChangeTypeValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "GREATER_THAN"
+  value               = "10"
+  description         = "needs change_type"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is required`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC"
+  change_type         = "ABSOLUTE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "EQUAL_TO"
+  value               = "0"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is only valid`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  change_type         = "ABSOLUTE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "GREATER_THAN"
+  value               = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`description is required`),
+			PlanOnly:    true,
+		},
+	}
+}
+
 // assertionCheckDestroy is a shared helper for assertion CheckDestroy functions.
 func assertionCheckDestroy(s *terraform.State, resourceType string) error {
 	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))

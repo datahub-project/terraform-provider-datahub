@@ -86,7 +86,8 @@ type VolumeAssertionInfo struct {
 }
 
 type SQLAssertionInfo struct {
-	SQLType     string // METRIC
+	SQLType     string // METRIC or METRIC_CHANGE
+	ChangeType  string // ABSOLUTE or PERCENTAGE (METRIC_CHANGE only; empty otherwise)
 	Statement   string
 	Operator    string
 	Value       string
@@ -189,6 +190,7 @@ type assertionInfoValue struct {
 	// SQL
 	SQLAssertion *struct {
 		Type        string `json:"type"`
+		ChangeType  string `json:"changeType"` // ABSOLUTE or PERCENTAGE (METRIC_CHANGE only)
 		Statement   string `json:"statement"`
 		Operator    string `json:"operator"`
 		Description string `json:"description"`
@@ -304,6 +306,7 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 		if v.SQLAssertion != nil {
 			si := &SQLAssertionInfo{
 				SQLType:     v.SQLAssertion.Type,
+				ChangeType:  v.SQLAssertion.ChangeType,
 				Statement:   v.SQLAssertion.Statement,
 				Operator:    v.SQLAssertion.Operator,
 				Description: v.Description, // top-level field in real API, same as custom assertions
@@ -800,7 +803,8 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 type SQLAssertionInput struct {
 	AssertionURN       string
 	EntityURN          string
-	SQLType            string // METRIC
+	SQLType            string // METRIC or METRIC_CHANGE
+	ChangeType         string // ABSOLUTE or PERCENTAGE (required for METRIC_CHANGE)
 	Statement          string
 	Operator           string
 	Value              string // single result value to compare against
@@ -841,6 +845,11 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 			"timezone": in.EvaluationTimezone,
 		},
 		"mode": in.Mode,
+	}
+	// METRIC_CHANGE carries an additional change type (ABSOLUTE/PERCENTAGE) as a
+	// top-level sibling of statement/operator/parameters.
+	if in.ChangeType != "" {
+		input["changeType"] = in.ChangeType
 	}
 	if in.Description != "" {
 		input["description"] = in.Description
