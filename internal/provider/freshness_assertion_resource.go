@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
@@ -21,9 +22,10 @@ import (
 )
 
 var (
-	_ resource.Resource                = &freshnessAssertionResource{}
-	_ resource.ResourceWithConfigure   = &freshnessAssertionResource{}
-	_ resource.ResourceWithImportState = &freshnessAssertionResource{}
+	_ resource.Resource                   = &freshnessAssertionResource{}
+	_ resource.ResourceWithConfigure      = &freshnessAssertionResource{}
+	_ resource.ResourceWithImportState    = &freshnessAssertionResource{}
+	_ resource.ResourceWithValidateConfig = &freshnessAssertionResource{}
 )
 
 type freshnessAssertionResource struct {
@@ -83,7 +85,9 @@ func (r *freshnessAssertionResource) Schema(_ context.Context, _ resource.Schema
 			"Set `schedule_type` to `FIXED_INTERVAL` and supply `fixed_interval_unit` / " +
 			"`fixed_interval_multiple` for a rolling window (e.g. data must arrive every 1 day). " +
 			"Set `schedule_type` to `CRON` and supply `cron_schedule` / `cron_timezone` for " +
-			"a calendar-based window.\n\n" +
+			"a calendar-based window. Set `schedule_type` to `SINCE_THE_LAST_CHECK` to require " +
+			"that the dataset changed at all between consecutive evaluations; this type takes " +
+			"no window sub-configuration.\n\n" +
 			"## URN\n\n" +
 			"DataHub generates a server-side UUID for each assertion. The `urn` and `id` " +
 			"attributes are populated after creation and are stable across updates. " +
@@ -109,8 +113,10 @@ func (r *freshnessAssertionResource) Schema(_ context.Context, _ resource.Schema
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
 			},
 			"schedule_type": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "Freshness window type: `FIXED_INTERVAL` (rolling window) or `CRON` (calendar window).",
+				Required: true,
+				MarkdownDescription: "Freshness window type: `FIXED_INTERVAL` (rolling window), " +
+					"`CRON` (calendar window), or `SINCE_THE_LAST_CHECK` (any change since the " +
+					"previous evaluation; no window sub-configuration).",
 			},
 			"fixed_interval_unit": schema.StringAttribute{
 				Optional:            true,
@@ -168,6 +174,74 @@ func (r *freshnessAssertionResource) Schema(_ context.Context, _ resource.Schema
 				MarkdownDescription: "ID of the remote executor pool to use for evaluation. Omit to use the default executor.",
 			},
 		},
+	}
+}
+
+// ValidateConfig enforces that the window sub-fields match schedule_type:
+// FIXED_INTERVAL needs fixed_interval_unit/multiple and rejects the cron fields;
+// CRON needs cron_schedule/cron_timezone and rejects the fixed-interval fields;
+// SINCE_THE_LAST_CHECK takes no window sub-configuration. Skipped while
+// schedule_type is unknown at plan time.
+func (r *freshnessAssertionResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg freshnessAssertionResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() || cfg.ScheduleType.IsUnknown() {
+		return
+	}
+
+	hasUnit := !cfg.FixedIntervalUnit.IsNull() && cfg.FixedIntervalUnit.ValueString() != ""
+	hasMultiple := !cfg.FixedIntervalMultiple.IsNull()
+	hasCron := !cfg.CronSchedule.IsNull() && cfg.CronSchedule.ValueString() != ""
+	hasCronTZ := !cfg.CronTimezone.IsNull() && cfg.CronTimezone.ValueString() != ""
+
+	reject := func(p string, msg string) {
+		resp.Diagnostics.AddAttributeError(path.Root(p), "Unexpected attribute", msg)
+	}
+
+	switch cfg.ScheduleType.ValueString() {
+	case "FIXED_INTERVAL":
+		if !hasUnit {
+			resp.Diagnostics.AddAttributeError(path.Root("fixed_interval_unit"), "Missing fixed_interval_unit",
+				"fixed_interval_unit is required when schedule_type = \"FIXED_INTERVAL\".")
+		}
+		if !hasMultiple {
+			resp.Diagnostics.AddAttributeError(path.Root("fixed_interval_multiple"), "Missing fixed_interval_multiple",
+				"fixed_interval_multiple is required when schedule_type = \"FIXED_INTERVAL\".")
+		}
+		if hasCron {
+			reject("cron_schedule", "cron_schedule is only valid when schedule_type = \"CRON\".")
+		}
+		if hasCronTZ {
+			reject("cron_timezone", "cron_timezone is only valid when schedule_type = \"CRON\".")
+		}
+	case "CRON":
+		if !hasCron {
+			resp.Diagnostics.AddAttributeError(path.Root("cron_schedule"), "Missing cron_schedule",
+				"cron_schedule is required when schedule_type = \"CRON\".")
+		}
+		if !hasCronTZ {
+			resp.Diagnostics.AddAttributeError(path.Root("cron_timezone"), "Missing cron_timezone",
+				"cron_timezone is required when schedule_type = \"CRON\".")
+		}
+		if hasUnit {
+			reject("fixed_interval_unit", "fixed_interval_unit is only valid when schedule_type = \"FIXED_INTERVAL\".")
+		}
+		if hasMultiple {
+			reject("fixed_interval_multiple", "fixed_interval_multiple is only valid when schedule_type = \"FIXED_INTERVAL\".")
+		}
+	case "SINCE_THE_LAST_CHECK":
+		if hasUnit {
+			reject("fixed_interval_unit", "fixed_interval_unit is not valid for schedule_type = \"SINCE_THE_LAST_CHECK\".")
+		}
+		if hasMultiple {
+			reject("fixed_interval_multiple", "fixed_interval_multiple is not valid for schedule_type = \"SINCE_THE_LAST_CHECK\".")
+		}
+		if hasCron {
+			reject("cron_schedule", "cron_schedule is not valid for schedule_type = \"SINCE_THE_LAST_CHECK\".")
+		}
+		if hasCronTZ {
+			reject("cron_timezone", "cron_timezone is not valid for schedule_type = \"SINCE_THE_LAST_CHECK\".")
+		}
 	}
 }
 
@@ -429,10 +503,17 @@ func (r *freshnessAssertionResource) ImportState(ctx context.Context, req resour
 	}
 	if ai.Freshness != nil {
 		state.ScheduleType = types.StringValue(ai.Freshness.ScheduleType)
-		state.FixedIntervalUnit = nullIfEmpty(ai.Freshness.FixedIntervalUnit)
-		state.FixedIntervalMultiple = types.Int64Value(ai.Freshness.FixedIntervalMultiple)
-		state.CronSchedule = nullIfEmpty(ai.Freshness.CronSchedule)
-		state.CronTimezone = nullIfEmpty(ai.Freshness.CronTimezone)
+		// Only set the window sub-fields belonging to the schedule type; the others
+		// stay null so SINCE_THE_LAST_CHECK (and the unused side of FIXED_INTERVAL /
+		// CRON) imports without a spurious diff against config.
+		switch ai.Freshness.ScheduleType {
+		case "FIXED_INTERVAL":
+			state.FixedIntervalUnit = nullIfEmpty(ai.Freshness.FixedIntervalUnit)
+			state.FixedIntervalMultiple = types.Int64Value(ai.Freshness.FixedIntervalMultiple)
+		case "CRON":
+			state.CronSchedule = nullIfEmpty(ai.Freshness.CronSchedule)
+			state.CronTimezone = nullIfEmpty(ai.Freshness.CronTimezone)
+		}
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

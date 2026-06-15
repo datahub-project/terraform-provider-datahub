@@ -3773,6 +3773,84 @@ func FreshnessAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_freshness_assertion")
 }
 
+// FreshnessAssertionSinceLastCheckLifecycleSteps returns test steps for the
+// SINCE_THE_LAST_CHECK freshness schedule (no window sub-config): create, then
+// import and verify. SINCE_THE_LAST_CHECK requires source_type DATAHUB_OPERATION
+// for the sqlite platform used here.
+func FreshnessAssertionSinceLastCheckLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_freshness_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  schedule_type       = "SINCE_THE_LAST_CHECK"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_OPERATION"
+  mode                = "ACTIVE"
+  on_success_actions  = ["RESOLVE_INCIDENT"]
+  on_failure_actions  = ["RAISE_INCIDENT"]
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("SINCE_THE_LAST_CHECK")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cron_schedule"), knownvalue.Null()),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FreshnessAssertionScheduleValidationSteps returns config-only steps asserting
+// the schedule_type/window pairing rules: SINCE_THE_LAST_CHECK rejects window
+// sub-fields, and FIXED_INTERVAL requires fixed_interval_unit.
+func FreshnessAssertionScheduleValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:hive,freshness.table,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn              = "` + entity + `"
+  schedule_type           = "SINCE_THE_LAST_CHECK"
+  fixed_interval_unit     = "HOUR"
+  fixed_interval_multiple = 24
+  evaluation_cron         = "0 */8 * * *"
+  evaluation_timezone     = "UTC"
+  source_type             = "DATAHUB_OPERATION"
+  mode                    = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`not valid for schedule_type = "SINCE_THE_LAST_CHECK"`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  schedule_type       = "FIXED_INTERVAL"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_OPERATION"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`fixed_interval_unit is required`),
+			PlanOnly:    true,
+		},
+	}
+}
+
 // SQLAssertionLifecycleSteps returns test steps for datahub_sql_assertion.
 func SQLAssertionLifecycleSteps() []resource.TestStep {
 	const addr = "datahub_sql_assertion.test"

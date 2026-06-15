@@ -58,15 +58,19 @@ func TestListVolumeAssertionURNs_NativeTotalAndChange(t *testing.T) {
 	})
 }
 
-func TestListFreshnessAssertionURNs_NativeSupportedScheduleOnly(t *testing.T) {
+func TestListFreshnessAssertionURNs_NativeSupportedSchedules(t *testing.T) {
 	server := assertionFixtureServer(t)
 	defer server.Close()
 	got, err := newTestClient(t, server).ListFreshnessAssertionURNs(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Excludes SINCE_THE_LAST_CHECK (unsupported schedule).
-	assertEqualURNs(t, got, []string{"urn:li:assertion:fresh-native-fixed"})
+	// NATIVE freshness of any modeled schedule type, now including
+	// SINCE_THE_LAST_CHECK.
+	assertEqualURNs(t, got, []string{
+		"urn:li:assertion:fresh-native-fixed",
+		"urn:li:assertion:fresh-native-sincelast",
+	})
 }
 
 func TestListSQLAssertionURNs_NativeMetricAndChange(t *testing.T) {

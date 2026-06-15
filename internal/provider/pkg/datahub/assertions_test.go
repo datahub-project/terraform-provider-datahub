@@ -123,6 +123,45 @@ func TestGetAssertionByURN_SQLMetricChange(t *testing.T) {
 	}
 }
 
+// TestGetAssertionByURN_FreshnessSinceLastCheck verifies the read parse of a
+// NATIVE SINCE_THE_LAST_CHECK freshness assertion: the schedule carries only a
+// type with no fixedInterval or cron sub-object (verified live against DataHub
+// Cloud), so the fixed-interval and cron fields stay empty.
+func TestGetAssertionByURN_FreshnessSinceLastCheck(t *testing.T) {
+	const urn = "urn:li:assertion:fresh-stlc"
+	body := `{
+	  "urn": "` + urn + `",
+	  "assertionInfo": { "value": {
+	    "type": "FRESHNESS",
+	    "source": { "type": "NATIVE" },
+	    "entityUrn": "urn:li:dataset:(urn:li:dataPlatform:sqlite,db.t,PROD)",
+	    "freshnessAssertion": {
+	      "type": "DATASET_CHANGE",
+	      "schedule": { "type": "SINCE_THE_LAST_CHECK" }
+	    }
+	  } }
+	}`
+	server := assertionEntityServer(t, body)
+	defer server.Close()
+
+	ai, err := newTestClient(t, server).GetAssertionByURN(t.Context(), urn)
+	if err != nil {
+		t.Fatalf("GetAssertionByURN() error = %v", err)
+	}
+	if ai == nil || ai.Freshness == nil {
+		t.Fatal("GetAssertionByURN() returned no freshness assertion")
+	}
+	if ai.Freshness.ScheduleType != "SINCE_THE_LAST_CHECK" {
+		t.Errorf("ScheduleType = %q, want SINCE_THE_LAST_CHECK", ai.Freshness.ScheduleType)
+	}
+	if ai.Freshness.FixedIntervalUnit != "" || ai.Freshness.FixedIntervalMultiple != 0 {
+		t.Errorf("fixed-interval fields = %q/%d, want empty", ai.Freshness.FixedIntervalUnit, ai.Freshness.FixedIntervalMultiple)
+	}
+	if ai.Freshness.CronSchedule != "" || ai.Freshness.CronTimezone != "" {
+		t.Errorf("cron fields = %q/%q, want empty", ai.Freshness.CronSchedule, ai.Freshness.CronTimezone)
+	}
+}
+
 // TestGetAssertionByURN_VolumeRowCountChangeBetween verifies the BETWEEN variant
 // of a ROW_COUNT_CHANGE assertion parses into min/max rather than a single value.
 func TestGetAssertionByURN_VolumeRowCountChangeBetween(t *testing.T) {

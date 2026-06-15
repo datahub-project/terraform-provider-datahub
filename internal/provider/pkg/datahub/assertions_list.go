@@ -192,11 +192,12 @@ func (c *Client) ListCustomAssertionURNs(ctx context.Context) ([]string, error) 
 // ListFreshnessAssertionURNs returns the URNs of freshness assertions that
 // datahub_freshness_assertion can manage: NATIVE source (DataHub-run monitors,
 // not ingested/auto assertions) with a schedule type the resource models
-// (CRON or FIXED_INTERVAL; SINCE_THE_LAST_CHECK is excluded).
+// (CRON, FIXED_INTERVAL, or SINCE_THE_LAST_CHECK).
 func (c *Client) ListFreshnessAssertionURNs(ctx context.Context) ([]string, error) {
 	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
 		return e.Type == "FRESHNESS" && e.Source == "NATIVE" &&
-			(e.FreshnessScheduleType == "CRON" || e.FreshnessScheduleType == "FIXED_INTERVAL")
+			(e.FreshnessScheduleType == "CRON" || e.FreshnessScheduleType == "FIXED_INTERVAL" ||
+				e.FreshnessScheduleType == "SINCE_THE_LAST_CHECK")
 	})
 }
 
