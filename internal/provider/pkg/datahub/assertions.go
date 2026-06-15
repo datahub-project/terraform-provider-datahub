@@ -59,6 +59,7 @@ type AssertionInfo struct {
 	Source      string // NATIVE, EXTERNAL, INFERRED (empty if absent)
 	EntityURN   string
 	Description string // top-level assertionInfo.description (all monitor types)
+	FilterSQL   string // row-level SQL filter (volume and freshness; empty if none)
 	// Type-specific sub-structs; only one is non-nil depending on Type.
 	Freshness *FreshnessAssertionInfo
 	Volume    *VolumeAssertionInfo
@@ -136,6 +137,14 @@ type assertionEntity struct {
 	} `json:"dataPlatformInstance,omitempty"`
 }
 
+// assertionFilter is the read shape of a DatasetFilter: a row-level filter
+// applied before the assertion evaluates. DatasetFilterType currently has only
+// SQL, so only the sql clause is meaningful. Shared by volume and freshness.
+type assertionFilter struct {
+	Type string `json:"type"`
+	SQL  string `json:"sql"`
+}
+
 // assertionStdParameters is the read shape of AssertionStdParameters: a single
 // value (most operators) or a min/max pair (BETWEEN). Shared by the volume
 // rowCountTotal and rowCountChange variants.
@@ -174,6 +183,7 @@ type assertionInfoValue struct {
 				Timezone string `json:"timezone"`
 			} `json:"cron,omitempty"`
 		} `json:"schedule,omitempty"`
+		Filter *assertionFilter `json:"filter,omitempty"`
 	} `json:"freshnessAssertion,omitempty"`
 	// Volume
 	VolumeAssertion *struct {
@@ -187,6 +197,7 @@ type assertionInfoValue struct {
 			Operator   string                  `json:"operator"`
 			Parameters *assertionStdParameters `json:"parameters,omitempty"`
 		} `json:"rowCountChange,omitempty"`
+		Filter *assertionFilter `json:"filter,omitempty"`
 	} `json:"volumeAssertion,omitempty"`
 	// SQL
 	SQLAssertion *struct {
@@ -289,6 +300,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 				fi.CronTimezone = v.FreshnessAssertion.Schedule.Cron.Timezone
 			}
 			ai.Freshness = fi
+			if v.FreshnessAssertion.Filter != nil {
+				ai.FilterSQL = v.FreshnessAssertion.Filter.SQL
+			}
 		}
 
 		if v.VolumeAssertion != nil {
@@ -303,6 +317,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 				applyStdParameters(vi, v.VolumeAssertion.RowCountChange.Parameters)
 			}
 			ai.Volume = vi
+			if v.VolumeAssertion.Filter != nil {
+				ai.FilterSQL = v.VolumeAssertion.Filter.SQL
+			}
 		}
 
 		if v.SQLAssertion != nil {
@@ -600,6 +617,7 @@ type FreshnessAssertionInput struct {
 	AssertionURN          string // empty on create
 	EntityURN             string
 	Description           string // optional
+	FilterSQL             string // optional row-level SQL filter
 	ScheduleType          string // FIXED_INTERVAL or CRON
 	FixedIntervalUnit     string // HOUR, DAY, WEEK, MONTH, YEAR
 	FixedIntervalMultiple int64
@@ -655,6 +673,9 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 	if in.Description != "" {
 		input["description"] = in.Description
 	}
+	if in.FilterSQL != "" {
+		input["filter"] = map[string]any{"type": "SQL", "sql": in.FilterSQL}
+	}
 	// Always send actions -- even empty lists -- so that previously-set actions
 	// are cleared when the user removes them from config.
 	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
@@ -705,6 +726,7 @@ type VolumeAssertionInput struct {
 	AssertionURN       string
 	EntityURN          string
 	Description        string // optional
+	FilterSQL          string // optional row-level SQL filter
 	VolumeType         string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
 	ChangeType         string // ABSOLUTE or PERCENTAGE (required for ROW_COUNT_CHANGE)
 	Operator           string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
@@ -748,6 +770,9 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 	}
 	if in.Description != "" {
 		input["description"] = in.Description
+	}
+	if in.FilterSQL != "" {
+		input["filter"] = map[string]any{"type": "SQL", "sql": in.FilterSQL}
 	}
 	// Route the threshold to the sub-type the user selected. ROW_COUNT_CHANGE
 	// carries an extra change type (ABSOLUTE/PERCENTAGE); both variants reuse the

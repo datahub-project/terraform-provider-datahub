@@ -36,6 +36,7 @@ type volumeAssertionResourceModel struct {
 	URN                types.String `tfsdk:"urn"`
 	EntityURN          types.String `tfsdk:"entity_urn"`
 	Description        types.String `tfsdk:"description"`
+	FilterSQL          types.String `tfsdk:"filter_sql"`
 	VolumeType         types.String `tfsdk:"volume_type"`
 	ChangeType         types.String `tfsdk:"change_type"`
 	Operator           types.String `tfsdk:"operator"`
@@ -113,6 +114,13 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 			"description": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Human-readable description of what this volume assertion checks.",
+			},
+			"filter_sql": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Optional SQL `WHERE` clause (without the `WHERE` keyword) " +
+					"restricting which rows the assertion counts, e.g. `\"country = 'US'\"`. " +
+					"Requires a `source_type` that queries the source system rather than a " +
+					"pre-computed profile.",
 			},
 			"volume_type": schema.StringAttribute{
 				Required: true,
@@ -242,6 +250,7 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 	urn, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
 		EntityURN:          plan.EntityURN.ValueString(),
 		Description:        strVal(plan.Description),
+		FilterSQL:          strVal(plan.FilterSQL),
 		VolumeType:         plan.VolumeType.ValueString(),
 		ChangeType:         strVal(plan.ChangeType),
 		Operator:           plan.Operator.ValueString(),
@@ -316,6 +325,7 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 		state.SingleValue = nullIfEmpty(ai.Volume.Value)
 	}
 	state.Description = nullIfEmpty(ai.Description)
+	state.FilterSQL = nullIfEmpty(ai.FilterSQL)
 	state.EntityURN = types.StringValue(ai.EntityURN)
 	state.URN = types.StringValue(ai.URN)
 	state.ID = types.StringValue(ai.URN)
@@ -371,6 +381,7 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 		AssertionURN:       state.URN.ValueString(),
 		EntityURN:          plan.EntityURN.ValueString(),
 		Description:        strVal(plan.Description),
+		FilterSQL:          strVal(plan.FilterSQL),
 		VolumeType:         plan.VolumeType.ValueString(),
 		ChangeType:         strVal(plan.ChangeType),
 		Operator:           plan.Operator.ValueString(),
@@ -472,6 +483,7 @@ func (r *volumeAssertionResource) ImportState(ctx context.Context, req resource.
 		URN:              types.StringValue(ai.URN),
 		EntityURN:        types.StringValue(ai.EntityURN),
 		Description:      nullIfEmpty(ai.Description),
+		FilterSQL:        nullIfEmpty(ai.FilterSQL),
 		OnSuccessActions: onSuccess,
 		OnFailureActions: onFailure,
 		// Monitor-only fields cannot be read from assertionInfo; use empty defaults.

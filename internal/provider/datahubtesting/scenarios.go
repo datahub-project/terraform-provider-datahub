@@ -3647,6 +3647,7 @@ resource "datahub_volume_assertion" "test" {
   change_type         = "ABSOLUTE"
   operator            = "GREATER_THAN_OR_EQUAL_TO"
   single_value        = "10"
+  filter_sql          = "is_active = true"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   source_type         = "DATAHUB_DATASET_PROFILE"
@@ -3659,6 +3660,7 @@ resource "datahub_volume_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("ABSOLUTE")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("single_value"), knownvalue.StringExact("10")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("is_active = true")),
 			},
 		},
 		{
@@ -3670,6 +3672,7 @@ resource "datahub_volume_assertion" "test" {
   operator            = "BETWEEN"
   min_value           = "5"
   max_value           = "25"
+  filter_sql          = "is_active = true"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   source_type         = "DATAHUB_DATASET_PROFILE"
@@ -3681,6 +3684,7 @@ resource "datahub_volume_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("BETWEEN")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("min_value"), knownvalue.StringExact("5")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("max_value"), knownvalue.StringExact("25")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("is_active = true")),
 			},
 		},
 		{
@@ -3791,6 +3795,7 @@ func FreshnessAssertionSinceLastCheckLifecycleSteps() []resource.TestStep {
 resource "datahub_freshness_assertion" "test" {
   entity_urn          = "` + entity + `"
   schedule_type       = "SINCE_THE_LAST_CHECK"
+  filter_sql          = "region = 'EU'"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   source_type         = "DATAHUB_OPERATION"
@@ -3802,6 +3807,7 @@ resource "datahub_freshness_assertion" "test" {
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("SINCE_THE_LAST_CHECK")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("region = 'EU'")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.Null()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cron_schedule"), knownvalue.Null()),
 			},

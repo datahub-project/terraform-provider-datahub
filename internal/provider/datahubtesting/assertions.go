@@ -133,6 +133,9 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 	if rc, ok := input["rowCountTotal"]; ok {
 		volumeParams["rowCountTotal"] = rc
 	}
+	if f, ok := input["filter"]; ok {
+		volumeParams["filter"] = f
+	}
 
 	s.assertions[urn] = mockAssertion{
 		URN:             urn,
@@ -176,6 +179,9 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 
 	freshnessParams := map[string]any{
 		"schedule": input["schedule"],
+	}
+	if f, ok := input["filter"]; ok {
+		freshnessParams["filter"] = f
 	}
 
 	s.assertions[urn] = mockAssertion{
@@ -368,14 +374,19 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 			if rc, ok := va["rowCountTotal"]; ok {
 				vol["rowCountTotal"] = rc
 			}
+			if f, ok := va["filter"]; ok {
+				vol["filter"] = f
+			}
 			infoValue["volumeAssertion"] = vol
 		}
 	case "FRESHNESS":
 		if a.FreshnessAssert != nil {
 			fa := *a.FreshnessAssert
-			infoValue["freshnessAssertion"] = map[string]any{
-				"schedule": fa["schedule"],
+			fresh := map[string]any{"schedule": fa["schedule"]}
+			if f, ok := fa["filter"]; ok {
+				fresh["filter"] = f
 			}
+			infoValue["freshnessAssertion"] = fresh
 		}
 	case "SQL":
 		if a.SQLAssertion != nil {

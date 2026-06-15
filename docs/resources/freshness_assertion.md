@@ -48,6 +48,7 @@ DataHub generates a server-side UUID for each assertion. The `urn` and `id` attr
 - `cron_timezone` (String) Timezone for the cron window schedule (e.g. `"UTC"`).
 - `description` (String) Human-readable description of what this freshness assertion checks.
 - `executor_id` (String) ID of the remote executor pool to use for evaluation. Omit to use the default executor.
+- `filter_sql` (String) Optional SQL `WHERE` clause (without the `WHERE` keyword) restricting which rows the freshness check considers, e.g. `"region = 'EU'"`.
 - `fixed_interval_multiple` (Number) Number of units in the fixed interval (e.g. `24` for 24 hours). Required when `schedule_type = "FIXED_INTERVAL"`.
 - `fixed_interval_unit` (String) Time unit for a fixed-interval schedule: `HOUR`, `DAY`, `WEEK`, `MONTH`, or `YEAR`. Required when `schedule_type = "FIXED_INTERVAL"`.
 - `on_failure_actions` (List of String) Actions to take when the assertion fails (e.g. `["RAISE_INCIDENT"]`).
