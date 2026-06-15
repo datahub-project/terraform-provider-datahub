@@ -201,11 +201,12 @@ func (c *Client) ListFreshnessAssertionURNs(ctx context.Context) ([]string, erro
 }
 
 // ListVolumeAssertionURNs returns the URNs of volume assertions that
-// datahub_volume_assertion can manage: NATIVE source with sub-type
-// ROW_COUNT_TOTAL (ROW_COUNT_CHANGE is excluded).
+// datahub_volume_assertion can manage: NATIVE source with a sub-type the
+// resource models (ROW_COUNT_TOTAL or ROW_COUNT_CHANGE).
 func (c *Client) ListVolumeAssertionURNs(ctx context.Context) ([]string, error) {
 	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
-		return e.Type == "VOLUME" && e.Source == "NATIVE" && e.VolumeSubType == "ROW_COUNT_TOTAL"
+		return e.Type == "VOLUME" && e.Source == "NATIVE" &&
+			(e.VolumeSubType == "ROW_COUNT_TOTAL" || e.VolumeSubType == "ROW_COUNT_CHANGE")
 	})
 }
 

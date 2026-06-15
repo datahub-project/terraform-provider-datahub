@@ -3629,6 +3629,110 @@ func VolumeAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_volume_assertion")
 }
 
+// VolumeAssertionChangeLifecycleSteps returns test steps for the ROW_COUNT_CHANGE
+// (growth) volume assertion sub-type: create an ABSOLUTE single-value change
+// assertion, update it to a PERCENTAGE BETWEEN range, then import and verify.
+func VolumeAssertionChangeLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_volume_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_CHANGE"
+  change_type         = "ABSOLUTE"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume_type"), knownvalue.StringExact("ROW_COUNT_CHANGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("ABSOLUTE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("single_value"), knownvalue.StringExact("10")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_CHANGE"
+  change_type         = "PERCENTAGE"
+  operator            = "BETWEEN"
+  min_value           = "5"
+  max_value           = "25"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("PERCENTAGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("BETWEEN")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("min_value"), knownvalue.StringExact("5")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("max_value"), knownvalue.StringExact("25")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// VolumeAssertionChangeTypeValidationSteps returns config-only steps that assert
+// the change_type/volume_type pairing rules are enforced at plan time:
+// ROW_COUNT_CHANGE requires change_type, and ROW_COUNT_TOTAL rejects it.
+func VolumeAssertionChangeTypeValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_CHANGE"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is required`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_TOTAL"
+  change_type         = "ABSOLUTE"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is only valid`),
+			PlanOnly:    true,
+		},
+	}
+}
+
 // FreshnessAssertionLifecycleSteps returns test steps for datahub_freshness_assertion.
 func FreshnessAssertionLifecycleSteps() []resource.TestStep {
 	const addr = "datahub_freshness_assertion.test"

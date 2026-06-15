@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -20,9 +21,10 @@ import (
 )
 
 var (
-	_ resource.Resource                = &volumeAssertionResource{}
-	_ resource.ResourceWithConfigure   = &volumeAssertionResource{}
-	_ resource.ResourceWithImportState = &volumeAssertionResource{}
+	_ resource.Resource                   = &volumeAssertionResource{}
+	_ resource.ResourceWithConfigure      = &volumeAssertionResource{}
+	_ resource.ResourceWithImportState    = &volumeAssertionResource{}
+	_ resource.ResourceWithValidateConfig = &volumeAssertionResource{}
 )
 
 type volumeAssertionResource struct {
@@ -34,6 +36,7 @@ type volumeAssertionResourceModel struct {
 	URN                types.String `tfsdk:"urn"`
 	EntityURN          types.String `tfsdk:"entity_urn"`
 	VolumeType         types.String `tfsdk:"volume_type"`
+	ChangeType         types.String `tfsdk:"change_type"`
 	Operator           types.String `tfsdk:"operator"`
 	MinValue           types.String `tfsdk:"min_value"`
 	MaxValue           types.String `tfsdk:"max_value"`
@@ -107,8 +110,17 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
 			},
 			"volume_type": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "Volume assertion sub-type. Currently `ROW_COUNT_TOTAL` is supported.",
+				Required: true,
+				MarkdownDescription: "Volume assertion sub-type. One of `ROW_COUNT_TOTAL` " +
+					"(assert on the absolute row count) or `ROW_COUNT_CHANGE` (assert on " +
+					"the change in row count between evaluations -- the UI's \"row count is " +
+					"growing by ...\"). `ROW_COUNT_CHANGE` requires `change_type`.",
+			},
+			"change_type": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "How the row-count change is measured: `ABSOLUTE` (a raw " +
+					"row delta) or `PERCENTAGE` (a percentage change). Required when " +
+					"`volume_type = \"ROW_COUNT_CHANGE\"`; must be omitted otherwise.",
 			},
 			"operator": schema.StringAttribute{
 				Required:            true,
@@ -168,6 +180,40 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 	}
 }
 
+// ValidateConfig enforces the change_type/volume_type pairing: change_type is
+// required for ROW_COUNT_CHANGE and must be absent otherwise. Skipped while
+// either attribute is unknown (e.g. derived from another resource at plan time).
+func (r *volumeAssertionResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg volumeAssertionResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if cfg.VolumeType.IsUnknown() || cfg.ChangeType.IsUnknown() {
+		return
+	}
+
+	isChange := cfg.VolumeType.ValueString() == "ROW_COUNT_CHANGE"
+	hasChangeType := !cfg.ChangeType.IsNull() && cfg.ChangeType.ValueString() != ""
+
+	if isChange && !hasChangeType {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("change_type"),
+			"Missing change_type",
+			"change_type is required when volume_type = \"ROW_COUNT_CHANGE\" "+
+				"(set it to \"ABSOLUTE\" or \"PERCENTAGE\").",
+		)
+	}
+	if !isChange && hasChangeType {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("change_type"),
+			"Unexpected change_type",
+			"change_type is only valid when volume_type = \"ROW_COUNT_CHANGE\"; "+
+				"remove it for ROW_COUNT_TOTAL assertions.",
+		)
+	}
+}
+
 func (r *volumeAssertionResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration is set.")
@@ -191,6 +237,7 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 	urn, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
 		EntityURN:          plan.EntityURN.ValueString(),
 		VolumeType:         plan.VolumeType.ValueString(),
+		ChangeType:         strVal(plan.ChangeType),
 		Operator:           plan.Operator.ValueString(),
 		MinValue:           strVal(plan.MinValue),
 		MaxValue:           strVal(plan.MaxValue),
@@ -256,6 +303,7 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 	// entity below.
 	if ai.Volume != nil {
 		state.VolumeType = types.StringValue(ai.Volume.VolumeType)
+		state.ChangeType = nullIfEmpty(ai.Volume.ChangeType)
 		state.Operator = types.StringValue(ai.Volume.Operator)
 		state.MinValue = nullIfEmpty(ai.Volume.MinValue)
 		state.MaxValue = nullIfEmpty(ai.Volume.MaxValue)
@@ -316,6 +364,7 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 		AssertionURN:       state.URN.ValueString(),
 		EntityURN:          plan.EntityURN.ValueString(),
 		VolumeType:         plan.VolumeType.ValueString(),
+		ChangeType:         strVal(plan.ChangeType),
 		Operator:           plan.Operator.ValueString(),
 		MinValue:           strVal(plan.MinValue),
 		MaxValue:           strVal(plan.MaxValue),
@@ -424,6 +473,7 @@ func (r *volumeAssertionResource) ImportState(ctx context.Context, req resource.
 	}
 	if ai.Volume != nil {
 		state.VolumeType = types.StringValue(ai.Volume.VolumeType)
+		state.ChangeType = nullIfEmpty(ai.Volume.ChangeType)
 		state.Operator = types.StringValue(ai.Volume.Operator)
 		state.MinValue = nullIfEmpty(ai.Volume.MinValue)
 		state.MaxValue = nullIfEmpty(ai.Volume.MaxValue)

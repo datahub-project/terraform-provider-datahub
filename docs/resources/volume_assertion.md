@@ -41,10 +41,11 @@ For `BETWEEN` operator: supply `min_value` and `max_value`. For all other operat
 - `mode` (String) Monitoring mode. `ACTIVE` enables scheduled evaluation. `PASSIVE` records results without scheduling.
 - `operator` (String) Comparison operator. One of `BETWEEN`, `GREATER_THAN`, `GREATER_THAN_OR_EQUAL_TO`, `LESS_THAN`, `LESS_THAN_OR_EQUAL_TO`, `EQUAL_TO`.
 - `source_type` (String) How DataHub obtains the row count. `DATAHUB_DATASET_PROFILE` uses a previously ingested DatasetProfile aspect (no live DB query needed). `INFORMATION_SCHEMA` or `QUERY` queries the source system directly.
-- `volume_type` (String) Volume assertion sub-type. Currently `ROW_COUNT_TOTAL` is supported.
+- `volume_type` (String) Volume assertion sub-type. One of `ROW_COUNT_TOTAL` (assert on the absolute row count) or `ROW_COUNT_CHANGE` (assert on the change in row count between evaluations -- the UI's "row count is growing by ..."). `ROW_COUNT_CHANGE` requires `change_type`.
 
 ### Optional
 
+- `change_type` (String) How the row-count change is measured: `ABSOLUTE` (a raw row delta) or `PERCENTAGE` (a percentage change). Required when `volume_type = "ROW_COUNT_CHANGE"`; must be omitted otherwise.
 - `executor_id` (String) ID of the remote executor pool to use for evaluation. Omit to use the default executor.
 - `max_value` (String) Maximum row count (used with `operator = "BETWEEN"`).
 - `min_value` (String) Minimum row count (used with `operator = "BETWEEN"`).

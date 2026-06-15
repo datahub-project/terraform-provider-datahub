@@ -255,11 +255,11 @@ See [datahub_remote_executor_pool resource docs](../resources/remote_executor_po
 
 ### Assertions (datahub_custom_assertion, datahub_freshness/volume/sql_assertion)
 
-The CLI enumerates `datahub_custom_assertion` (CUSTOM-type assertions) and the Cloud-only monitor assertions `datahub_freshness_assertion`, `datahub_volume_assertion`, and `datahub_sql_assertion`. The monitor enumerators are scoped to `source == NATIVE` (author-as-code monitors) and to the sub-shape each resource models -- `FIXED_INTERVAL`/`CRON` freshness, `ROW_COUNT_TOTAL` volume, `METRIC` sql. Ingested `EXTERNAL` assertions (dbt, Great Expectations) and `INFERRED` smart/AI assertions are never enumerated, and a direct `terraform import` of a non-NATIVE assertion into one of these resources is refused with a clear diagnostic -- those assertions are owned by the system that produces them, like ingested lineage and profiles.
+The CLI enumerates `datahub_custom_assertion` (CUSTOM-type assertions) and the Cloud-only monitor assertions `datahub_freshness_assertion`, `datahub_volume_assertion`, and `datahub_sql_assertion`. The monitor enumerators are scoped to `source == NATIVE` (author-as-code monitors) and to the sub-shape each resource models -- `FIXED_INTERVAL`/`CRON` freshness, `ROW_COUNT_TOTAL`/`ROW_COUNT_CHANGE` volume, `METRIC` sql. Ingested `EXTERNAL` assertions (dbt, Great Expectations) and `INFERRED` smart/AI assertions are never enumerated, and a direct `terraform import` of a non-NATIVE assertion into one of these resources is refused with a clear diagnostic -- those assertions are owned by the system that produces them, like ingested lineage and profiles.
 
 The monitor assertions' evaluation schedule, source type, and mode live in a separate Monitor entity; the provider reads that entity on import, so those fields are recovered automatically and an imported resource plans clean (supply the dataset-side assertion fields in config as usual).
 
-Not auto-enumerated, even when NATIVE: assertion sub-shapes the typed resources cannot model (e.g. `ROW_COUNT_CHANGE`, `METRIC_CHANGE`, `SINCE_THE_LAST_CHECK`) and the FIELD / SCHEMA assertion types. Import those by URN if you need them.
+Not auto-enumerated, even when NATIVE: assertion sub-shapes the typed resources cannot model (e.g. `METRIC_CHANGE`, `SINCE_THE_LAST_CHECK`) and the FIELD / SCHEMA assertion types. Import those by URN if you need them.
 
 See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_freshness_assertion](../resources/freshness_assertion.md), [datahub_volume_assertion](../resources/volume_assertion.md), and [datahub_sql_assertion](../resources/sql_assertion.md) resource docs.
 
@@ -287,7 +287,7 @@ See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_f
 | `datahub_custom_assertion` | Yes (CUSTOM-type assertions only) | `datahub_assertions` |
 | `datahub_remote_executor_pool` | No (Cloud only; supply pool IDs) | `datahub_remote_executor_pool` |
 | `datahub_freshness_assertion` | Yes (Cloud only; NATIVE, CRON/FIXED_INTERVAL) | `datahub_assertions` |
-| `datahub_volume_assertion` | Yes (Cloud only; NATIVE, ROW_COUNT_TOTAL) | `datahub_assertions` |
+| `datahub_volume_assertion` | Yes (Cloud only; NATIVE, ROW_COUNT_TOTAL/ROW_COUNT_CHANGE) | `datahub_assertions` |
 | `datahub_sql_assertion` | Yes (Cloud only; NATIVE, METRIC) | `datahub_assertions` |
 | `datahub_corp_group_member` | No (relationship; import by composite ID) | -- |
 | `datahub_role_assignment` | No (relationship; import by composite ID) | -- |

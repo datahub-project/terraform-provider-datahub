@@ -78,6 +78,7 @@ type FreshnessAssertionInfo struct {
 
 type VolumeAssertionInfo struct {
 	VolumeType string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	ChangeType string // ABSOLUTE or PERCENTAGE (ROW_COUNT_CHANGE only; empty otherwise)
 	Operator   string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
 	MinValue   string
 	MaxValue   string
@@ -133,6 +134,21 @@ type assertionEntity struct {
 	} `json:"dataPlatformInstance,omitempty"`
 }
 
+// assertionStdParameters is the read shape of AssertionStdParameters: a single
+// value (most operators) or a min/max pair (BETWEEN). Shared by the volume
+// rowCountTotal and rowCountChange variants.
+type assertionStdParameters struct {
+	Value *struct {
+		Value string `json:"value"`
+	} `json:"value,omitempty"`
+	MinValue *struct {
+		Value string `json:"value"`
+	} `json:"minValue,omitempty"`
+	MaxValue *struct {
+		Value string `json:"value"`
+	} `json:"maxValue,omitempty"`
+}
+
 type assertionInfoValue struct {
 	Type   string `json:"type"`
 	Source *struct {
@@ -161,19 +177,14 @@ type assertionInfoValue struct {
 	VolumeAssertion *struct {
 		Type          string `json:"type"`
 		RowCountTotal *struct {
-			Operator   string `json:"operator"`
-			Parameters *struct {
-				Value *struct {
-					Value string `json:"value"`
-				} `json:"value,omitempty"`
-				MinValue *struct {
-					Value string `json:"value"`
-				} `json:"minValue,omitempty"`
-				MaxValue *struct {
-					Value string `json:"value"`
-				} `json:"maxValue,omitempty"`
-			} `json:"parameters,omitempty"`
+			Operator   string                  `json:"operator"`
+			Parameters *assertionStdParameters `json:"parameters,omitempty"`
 		} `json:"rowCountTotal,omitempty"`
+		RowCountChange *struct {
+			Type       string                  `json:"type"` // ABSOLUTE or PERCENTAGE
+			Operator   string                  `json:"operator"`
+			Parameters *assertionStdParameters `json:"parameters,omitempty"`
+		} `json:"rowCountChange,omitempty"`
 	} `json:"volumeAssertion,omitempty"`
 	// SQL
 	SQLAssertion *struct {
@@ -278,19 +289,14 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 
 		if v.VolumeAssertion != nil {
 			vi := &VolumeAssertionInfo{VolumeType: v.VolumeAssertion.Type}
-			if v.VolumeAssertion.RowCountTotal != nil {
+			switch {
+			case v.VolumeAssertion.RowCountTotal != nil:
 				vi.Operator = v.VolumeAssertion.RowCountTotal.Operator
-				if p := v.VolumeAssertion.RowCountTotal.Parameters; p != nil {
-					if p.Value != nil {
-						vi.Value = p.Value.Value
-					}
-					if p.MinValue != nil {
-						vi.MinValue = p.MinValue.Value
-					}
-					if p.MaxValue != nil {
-						vi.MaxValue = p.MaxValue.Value
-					}
-				}
+				applyStdParameters(vi, v.VolumeAssertion.RowCountTotal.Parameters)
+			case v.VolumeAssertion.RowCountChange != nil:
+				vi.ChangeType = v.VolumeAssertion.RowCountChange.Type
+				vi.Operator = v.VolumeAssertion.RowCountChange.Operator
+				applyStdParameters(vi, v.VolumeAssertion.RowCountChange.Parameters)
 			}
 			ai.Volume = vi
 		}
@@ -690,6 +696,7 @@ type VolumeAssertionInput struct {
 	AssertionURN       string
 	EntityURN          string
 	VolumeType         string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	ChangeType         string // ABSOLUTE or PERCENTAGE (required for ROW_COUNT_CHANGE)
 	Operator           string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
 	MinValue           string // for BETWEEN
 	MaxValue           string // for BETWEEN
@@ -716,15 +723,10 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 }`
 
 	params := buildAssertionParams(in.Operator, in.MinValue, in.MaxValue, in.SingleValue)
-	rowCountTotal := map[string]any{
-		"operator":   in.Operator,
-		"parameters": params,
-	}
 
 	input := map[string]any{
-		"entityUrn":     in.EntityURN,
-		"type":          in.VolumeType,
-		"rowCountTotal": rowCountTotal,
+		"entityUrn": in.EntityURN,
+		"type":      in.VolumeType,
 		"evaluationSchedule": map[string]any{
 			"cron":     in.EvaluationCron,
 			"timezone": in.EvaluationTimezone,
@@ -733,6 +735,21 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 			"sourceType": in.SourceType,
 		},
 		"mode": in.Mode,
+	}
+	// Route the threshold to the sub-type the user selected. ROW_COUNT_CHANGE
+	// carries an extra change type (ABSOLUTE/PERCENTAGE); both variants reuse the
+	// same AssertionStdParameters shape (single value, or min/max for BETWEEN).
+	if in.VolumeType == "ROW_COUNT_CHANGE" {
+		input["rowCountChange"] = map[string]any{
+			"type":       in.ChangeType,
+			"operator":   in.Operator,
+			"parameters": params,
+		}
+	} else {
+		input["rowCountTotal"] = map[string]any{
+			"operator":   in.Operator,
+			"parameters": params,
+		}
 	}
 	// Always send actions -- even empty lists -- so that previously-set actions
 	// are cleared when the user removes them from config.
@@ -886,6 +903,24 @@ func buildActionsInput(onSuccess, onFailure []string) map[string]any {
 	return map[string]any{
 		"onSuccess": success,
 		"onFailure": failure,
+	}
+}
+
+// applyStdParameters copies the read-shape AssertionStdParameters (single value
+// or min/max pair) onto a VolumeAssertionInfo. Shared by the rowCountTotal and
+// rowCountChange read paths.
+func applyStdParameters(vi *VolumeAssertionInfo, p *assertionStdParameters) {
+	if p == nil {
+		return
+	}
+	if p.Value != nil {
+		vi.Value = p.Value.Value
+	}
+	if p.MinValue != nil {
+		vi.MinValue = p.MinValue.Value
+	}
+	if p.MaxValue != nil {
+		vi.MaxValue = p.MaxValue.Value
 	}
 }
 

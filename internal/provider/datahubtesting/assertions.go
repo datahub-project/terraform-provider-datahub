@@ -122,9 +122,14 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 		urn = "urn:li:assertion:" + nextAssertionID()
 	}
 
-	volumeParams := map[string]any{
-		"type":          volumeType,
-		"rowCountTotal": input["rowCountTotal"],
+	volumeParams := map[string]any{"type": volumeType}
+	// Store whichever threshold variant the client sent (rowCountTotal for
+	// ROW_COUNT_TOTAL, rowCountChange for ROW_COUNT_CHANGE).
+	if rc, ok := input["rowCountChange"]; ok {
+		volumeParams["rowCountChange"] = rc
+	}
+	if rc, ok := input["rowCountTotal"]; ok {
+		volumeParams["rowCountTotal"] = rc
 	}
 
 	s.assertions[urn] = mockAssertion{
@@ -343,10 +348,14 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 	case "VOLUME":
 		if a.VolumeAssertion != nil {
 			va := *a.VolumeAssertion
-			infoValue["volumeAssertion"] = map[string]any{
-				"type":          va["type"],
-				"rowCountTotal": va["rowCountTotal"],
+			vol := map[string]any{"type": va["type"]}
+			if rc, ok := va["rowCountChange"]; ok {
+				vol["rowCountChange"] = rc
 			}
+			if rc, ok := va["rowCountTotal"]; ok {
+				vol["rowCountTotal"] = rc
+			}
+			infoValue["volumeAssertion"] = vol
 		}
 	case "FRESHNESS":
 		if a.FreshnessAssert != nil {

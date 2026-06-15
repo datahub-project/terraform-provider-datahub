@@ -42,16 +42,19 @@ func assertEqualURNs(t *testing.T, got, want []string) {
 	}
 }
 
-func TestListVolumeAssertionURNs_NativeRowCountTotalOnly(t *testing.T) {
+func TestListVolumeAssertionURNs_NativeTotalAndChange(t *testing.T) {
 	server := assertionFixtureServer(t)
 	defer server.Close()
 	got, err := newTestClient(t, server).ListVolumeAssertionURNs(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// NATIVE + ROW_COUNT_TOTAL only: excludes the EXTERNAL one (source) and the
-	// ROW_COUNT_CHANGE one (sub-shape).
-	assertEqualURNs(t, got, []string{"urn:li:assertion:vol-native-total"})
+	// NATIVE volume assertions of either modeled sub-shape (ROW_COUNT_TOTAL and
+	// ROW_COUNT_CHANGE); the EXTERNAL one is still excluded by source.
+	assertEqualURNs(t, got, []string{
+		"urn:li:assertion:vol-native-total",
+		"urn:li:assertion:vol-native-change",
+	})
 }
 
 func TestListFreshnessAssertionURNs_NativeSupportedScheduleOnly(t *testing.T) {
