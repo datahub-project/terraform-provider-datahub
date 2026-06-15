@@ -3796,6 +3796,7 @@ resource "datahub_freshness_assertion" "test" {
   entity_urn          = "` + entity + `"
   schedule_type       = "SINCE_THE_LAST_CHECK"
   filter_sql          = "region = 'EU'"
+  failure_severity    = "HIGH"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   source_type         = "DATAHUB_OPERATION"
@@ -3808,6 +3809,7 @@ resource "datahub_freshness_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("SINCE_THE_LAST_CHECK")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("region = 'EU'")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("HIGH")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.Null()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cron_schedule"), knownvalue.Null()),
 			},
@@ -3921,6 +3923,7 @@ resource "datahub_sql_assertion" "test" {
   operator            = "GREATER_THAN_OR_EQUAL_TO"
   value               = "10"
   description         = "row count must keep growing"
+  failure_severity    = "MEDIUM"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   mode                = "ACTIVE"
@@ -3931,6 +3934,7 @@ resource "datahub_sql_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("sql_type"), knownvalue.StringExact("METRIC_CHANGE")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("ABSOLUTE")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value"), knownvalue.StringExact("10")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("MEDIUM")),
 			},
 		},
 		{
@@ -3943,6 +3947,7 @@ resource "datahub_sql_assertion" "test" {
   operator            = "LESS_THAN"
   value               = "50"
   description         = "row count must not balloon"
+  failure_severity    = "HIGH"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   mode                = "ACTIVE"
@@ -3951,6 +3956,7 @@ resource "datahub_sql_assertion" "test" {
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("PERCENTAGE")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("LESS_THAN")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("HIGH")),
 			},
 		},
 		{

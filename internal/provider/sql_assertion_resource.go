@@ -41,6 +41,7 @@ type sqlAssertionResourceModel struct {
 	Operator           types.String `tfsdk:"operator"`
 	Value              types.String `tfsdk:"value"`
 	Description        types.String `tfsdk:"description"`
+	FailureSeverity    types.String `tfsdk:"failure_severity"`
 	EvaluationCron     types.String `tfsdk:"evaluation_cron"`
 	EvaluationTimezone types.String `tfsdk:"evaluation_timezone"`
 	OnSuccessActions   types.List   `tfsdk:"on_success_actions"`
@@ -133,6 +134,12 @@ func (r *sqlAssertionResource) Schema(_ context.Context, _ resource.SchemaReques
 			"description": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Human-readable description of what this SQL assertion checks.",
+			},
+			"failure_severity": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Severity raised when this assertion fails: `LOW`, `MEDIUM`, or " +
+					"`HIGH`. Omit to use the DataHub default. (Conditional per-result severity " +
+					"rules are not modeled.)",
 			},
 			"evaluation_cron": schema.StringAttribute{
 				Required:            true,
@@ -242,6 +249,7 @@ func (r *sqlAssertionResource) Create(ctx context.Context, req resource.CreateRe
 		Operator:           plan.Operator.ValueString(),
 		Value:              plan.Value.ValueString(),
 		Description:        strVal(plan.Description),
+		FailureSeverity:    strVal(plan.FailureSeverity),
 		EvaluationCron:     plan.EvaluationCron.ValueString(),
 		EvaluationTimezone: plan.EvaluationTimezone.ValueString(),
 		OnSuccessActions:   onSuccess,
@@ -304,6 +312,7 @@ func (r *sqlAssertionResource) Read(ctx context.Context, req resource.ReadReques
 		state.Operator = types.StringValue(ai.SQL.Operator)
 		state.Value = types.StringValue(ai.SQL.Value)
 		state.Description = nullIfEmpty(ai.SQL.Description)
+		state.FailureSeverity = nullIfEmpty(ai.FailureSeverity)
 	}
 	state.EntityURN = types.StringValue(ai.EntityURN)
 	state.URN = types.StringValue(ai.URN)
@@ -365,6 +374,7 @@ func (r *sqlAssertionResource) Update(ctx context.Context, req resource.UpdateRe
 		Operator:           plan.Operator.ValueString(),
 		Value:              plan.Value.ValueString(),
 		Description:        strVal(plan.Description),
+		FailureSeverity:    strVal(plan.FailureSeverity),
 		EvaluationCron:     plan.EvaluationCron.ValueString(),
 		EvaluationTimezone: plan.EvaluationTimezone.ValueString(),
 		OnSuccessActions:   onSuccess,
@@ -471,6 +481,7 @@ func (r *sqlAssertionResource) ImportState(ctx context.Context, req resource.Imp
 		state.Operator = types.StringValue(ai.SQL.Operator)
 		state.Value = types.StringValue(ai.SQL.Value)
 		state.Description = nullIfEmpty(ai.SQL.Description)
+		state.FailureSeverity = nullIfEmpty(ai.FailureSeverity)
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

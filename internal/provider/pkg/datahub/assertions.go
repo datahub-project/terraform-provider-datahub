@@ -54,12 +54,13 @@ func isAssertionCloudOnlyError(msg string) bool {
 
 // AssertionInfo is the read-shape common to all assertion types.
 type AssertionInfo struct {
-	URN         string
-	Type        string // FRESHNESS, VOLUME, SQL, CUSTOM
-	Source      string // NATIVE, EXTERNAL, INFERRED (empty if absent)
-	EntityURN   string
-	Description string // top-level assertionInfo.description (all monitor types)
-	FilterSQL   string // row-level SQL filter (volume and freshness; empty if none)
+	URN             string
+	Type            string // FRESHNESS, VOLUME, SQL, CUSTOM
+	Source          string // NATIVE, EXTERNAL, INFERRED (empty if absent)
+	EntityURN       string
+	Description     string // top-level assertionInfo.description (all monitor types)
+	FilterSQL       string // row-level SQL filter (volume and freshness; empty if none)
+	FailureSeverity string // defaultSeverity LOW/MEDIUM/HIGH (freshness and sql; empty if none)
 	// Type-specific sub-structs; only one is non-nil depending on Type.
 	Freshness *FreshnessAssertionInfo
 	Volume    *VolumeAssertionInfo
@@ -137,6 +138,13 @@ type assertionEntity struct {
 	} `json:"dataPlatformInstance,omitempty"`
 }
 
+// assertionSeverityConfig is the read shape of AssertionFailureSeverityConfig.
+// Only defaultSeverity is modeled; the conditional rules list is read but not
+// surfaced. Nested inside the freshness and sql type objects.
+type assertionSeverityConfig struct {
+	DefaultSeverity string `json:"defaultSeverity"`
+}
+
 // assertionFilter is the read shape of a DatasetFilter: a row-level filter
 // applied before the assertion evaluates. DatasetFilterType currently has only
 // SQL, so only the sql clause is meaningful. Shared by volume and freshness.
@@ -183,7 +191,8 @@ type assertionInfoValue struct {
 				Timezone string `json:"timezone"`
 			} `json:"cron,omitempty"`
 		} `json:"schedule,omitempty"`
-		Filter *assertionFilter `json:"filter,omitempty"`
+		Filter                *assertionFilter         `json:"filter,omitempty"`
+		FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
 	} `json:"freshnessAssertion,omitempty"`
 	// Volume
 	VolumeAssertion *struct {
@@ -211,6 +220,7 @@ type assertionInfoValue struct {
 				Value string `json:"value"`
 			} `json:"value,omitempty"`
 		} `json:"parameters,omitempty"`
+		FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
 	} `json:"sqlAssertion,omitempty"`
 	// Custom
 	// Note: Description and ExternalURL are at the assertionInfoValue top level (above),
@@ -303,6 +313,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 			if v.FreshnessAssertion.Filter != nil {
 				ai.FilterSQL = v.FreshnessAssertion.Filter.SQL
 			}
+			if v.FreshnessAssertion.FailureSeverityConfig != nil {
+				ai.FailureSeverity = v.FreshnessAssertion.FailureSeverityConfig.DefaultSeverity
+			}
 		}
 
 		if v.VolumeAssertion != nil {
@@ -332,6 +345,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 			}
 			if v.SQLAssertion.Parameters != nil && v.SQLAssertion.Parameters.Value != nil {
 				si.Value = v.SQLAssertion.Parameters.Value.Value
+			}
+			if v.SQLAssertion.FailureSeverityConfig != nil {
+				ai.FailureSeverity = v.SQLAssertion.FailureSeverityConfig.DefaultSeverity
 			}
 			ai.SQL = si
 		}
@@ -618,6 +634,7 @@ type FreshnessAssertionInput struct {
 	EntityURN             string
 	Description           string // optional
 	FilterSQL             string // optional row-level SQL filter
+	FailureSeverity       string // optional defaultSeverity LOW/MEDIUM/HIGH
 	ScheduleType          string // FIXED_INTERVAL or CRON
 	FixedIntervalUnit     string // HOUR, DAY, WEEK, MONTH, YEAR
 	FixedIntervalMultiple int64
@@ -675,6 +692,9 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 	}
 	if in.FilterSQL != "" {
 		input["filter"] = map[string]any{"type": "SQL", "sql": in.FilterSQL}
+	}
+	if in.FailureSeverity != "" {
+		input["failureSeverityConfig"] = map[string]any{"defaultSeverity": in.FailureSeverity}
 	}
 	// Always send actions -- even empty lists -- so that previously-set actions
 	// are cleared when the user removes them from config.
@@ -840,6 +860,7 @@ type SQLAssertionInput struct {
 	EntityURN          string
 	SQLType            string // METRIC or METRIC_CHANGE
 	ChangeType         string // ABSOLUTE or PERCENTAGE (required for METRIC_CHANGE)
+	FailureSeverity    string // optional defaultSeverity LOW/MEDIUM/HIGH
 	Statement          string
 	Operator           string
 	Value              string // single result value to compare against
@@ -885,6 +906,9 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 	// top-level sibling of statement/operator/parameters.
 	if in.ChangeType != "" {
 		input["changeType"] = in.ChangeType
+	}
+	if in.FailureSeverity != "" {
+		input["failureSeverityConfig"] = map[string]any{"defaultSeverity": in.FailureSeverity}
 	}
 	if in.Description != "" {
 		input["description"] = in.Description

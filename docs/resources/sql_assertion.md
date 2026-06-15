@@ -43,6 +43,7 @@ DataHub generates a server-side UUID for each assertion. The `urn` and `id` attr
 - `change_type` (String) How the metric change is measured: `ABSOLUTE` (a raw delta) or `PERCENTAGE` (a percentage change). Required when `sql_type = "METRIC_CHANGE"`; must be omitted otherwise.
 - `description` (String) Human-readable description of what this SQL assertion checks.
 - `executor_id` (String) ID of the remote executor pool to use for evaluation. Omit to use the default executor.
+- `failure_severity` (String) Severity raised when this assertion fails: `LOW`, `MEDIUM`, or `HIGH`. Omit to use the DataHub default. (Conditional per-result severity rules are not modeled.)
 - `on_failure_actions` (List of String) Actions to take when the assertion fails (e.g. `["RAISE_INCIDENT"]`).
 - `on_success_actions` (List of String) Actions to take when the assertion passes (e.g. `["RESOLVE_INCIDENT"]`).
 

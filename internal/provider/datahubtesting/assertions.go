@@ -183,6 +183,9 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 	if f, ok := input["filter"]; ok {
 		freshnessParams["filter"] = f
 	}
+	if sev, ok := input["failureSeverityConfig"]; ok {
+		freshnessParams["failureSeverityConfig"] = sev
+	}
 
 	s.assertions[urn] = mockAssertion{
 		URN:             urn,
@@ -235,6 +238,9 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 		"operator":    operator,
 		"description": description,
 		"parameters":  input["parameters"],
+	}
+	if sev, ok := input["failureSeverityConfig"]; ok {
+		sqlParams["failureSeverityConfig"] = sev
 	}
 
 	s.assertions[urn] = mockAssertion{
@@ -386,6 +392,9 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 			if f, ok := fa["filter"]; ok {
 				fresh["filter"] = f
 			}
+			if sev, ok := fa["failureSeverityConfig"]; ok {
+				fresh["failureSeverityConfig"] = sev
+			}
 			infoValue["freshnessAssertion"] = fresh
 		}
 	case "SQL":
@@ -404,6 +413,9 @@ func buildAssertionEntityJSON(a mockAssertion) map[string]any {
 			}
 			if ct, _ := sa["changeType"].(string); ct != "" {
 				sqlObj["changeType"] = ct
+			}
+			if sev, ok := sa["failureSeverityConfig"]; ok {
+				sqlObj["failureSeverityConfig"] = sev
 			}
 			infoValue["sqlAssertion"] = sqlObj
 		}

@@ -38,6 +38,7 @@ type freshnessAssertionResourceModel struct {
 	EntityURN             types.String `tfsdk:"entity_urn"`
 	Description           types.String `tfsdk:"description"`
 	FilterSQL             types.String `tfsdk:"filter_sql"`
+	FailureSeverity       types.String `tfsdk:"failure_severity"`
 	ScheduleType          types.String `tfsdk:"schedule_type"`
 	FixedIntervalUnit     types.String `tfsdk:"fixed_interval_unit"`
 	FixedIntervalMultiple types.Int64  `tfsdk:"fixed_interval_multiple"`
@@ -122,6 +123,12 @@ func (r *freshnessAssertionResource) Schema(_ context.Context, _ resource.Schema
 				Optional: true,
 				MarkdownDescription: "Optional SQL `WHERE` clause (without the `WHERE` keyword) " +
 					"restricting which rows the freshness check considers, e.g. `\"region = 'EU'\"`.",
+			},
+			"failure_severity": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Severity raised when this assertion fails: `LOW`, `MEDIUM`, or " +
+					"`HIGH`. Omit to use the DataHub default. (Conditional per-result severity " +
+					"rules are not modeled.)",
 			},
 			"schedule_type": schema.StringAttribute{
 				Required: true,
@@ -280,6 +287,7 @@ func (r *freshnessAssertionResource) Create(ctx context.Context, req resource.Cr
 		EntityURN:             plan.EntityURN.ValueString(),
 		Description:           strVal(plan.Description),
 		FilterSQL:             strVal(plan.FilterSQL),
+		FailureSeverity:       strVal(plan.FailureSeverity),
 		ScheduleType:          plan.ScheduleType.ValueString(),
 		FixedIntervalUnit:     strVal(plan.FixedIntervalUnit),
 		FixedIntervalMultiple: plan.FixedIntervalMultiple.ValueInt64(),
@@ -355,6 +363,7 @@ func (r *freshnessAssertionResource) Read(ctx context.Context, req resource.Read
 	}
 	state.Description = nullIfEmpty(ai.Description)
 	state.FilterSQL = nullIfEmpty(ai.FilterSQL)
+	state.FailureSeverity = nullIfEmpty(ai.FailureSeverity)
 	state.EntityURN = types.StringValue(ai.EntityURN)
 	state.URN = types.StringValue(ai.URN)
 	state.ID = types.StringValue(ai.URN)
@@ -412,6 +421,7 @@ func (r *freshnessAssertionResource) Update(ctx context.Context, req resource.Up
 		EntityURN:             plan.EntityURN.ValueString(),
 		Description:           strVal(plan.Description),
 		FilterSQL:             strVal(plan.FilterSQL),
+		FailureSeverity:       strVal(plan.FailureSeverity),
 		ScheduleType:          plan.ScheduleType.ValueString(),
 		FixedIntervalUnit:     strVal(plan.FixedIntervalUnit),
 		FixedIntervalMultiple: plan.FixedIntervalMultiple.ValueInt64(),
@@ -513,6 +523,7 @@ func (r *freshnessAssertionResource) ImportState(ctx context.Context, req resour
 		EntityURN:          types.StringValue(ai.EntityURN),
 		Description:        nullIfEmpty(ai.Description),
 		FilterSQL:          nullIfEmpty(ai.FilterSQL),
+		FailureSeverity:    nullIfEmpty(ai.FailureSeverity),
 		OnSuccessActions:   onSuccess,
 		OnFailureActions:   onFailure,
 		EvaluationCron:     types.StringValue(""),
