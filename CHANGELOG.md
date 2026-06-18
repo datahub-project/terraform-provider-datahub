@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_action_pipeline` resource: create and manage a DataHub Cloud action pipeline (automation) -- a packaged action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) back to a platform such as BigQuery or Dataplex. The resource manages the pipeline definition (`name`, `type`, `recipe`, `category`, `description`, `executor_id`, `version`, `debug_mode`); the `recipe` is a JSON string compared by semantic equality (like `datahub_ingestion_source`), and `${SECRET_NAME}` placeholders are stored verbatim and resolved at execution time. The URN is deterministic: `action_id` (a URN suffix, derived from `name` when omitted) produces `urn:li:dataHubAction:<action_id>`, written via `upsertActionPipeline`. Requires DataHub Cloud; returns a clear diagnostic on OSS DataHub. This is an experimental, Cloud-internal API with no external stability guarantee -- pin the provider version.
+- `datahub_action_pipelines` data source: return the URNs of all DataHub Cloud action pipelines for bulk import via `for_each` into `import {}` blocks. Backed by the `listActionPipelines` GraphQL query. Requires DataHub Cloud.
+
 ## [0.10.0] - 2026-06-18
 
 ### Added

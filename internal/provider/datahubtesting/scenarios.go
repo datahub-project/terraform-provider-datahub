@@ -3968,6 +3968,94 @@ func SchemaAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_schema_assertion")
 }
 
+// ActionPipelineLifecycleSteps returns test steps for datahub_action_pipeline:
+// create (deterministic action_id + recipe with a ${SECRET} placeholder), update
+// the recipe + description, then import and verify. The `$${...}` escapes HCL
+// interpolation so the JSON carries a literal `${SECRET_TOKEN}` placeholder.
+func ActionPipelineLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_action_pipeline.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_action_pipeline" "test" {
+  action_id   = "tf-example-dataplex-sync"
+  name        = "TF Example - Dataplex Glossary Sync"
+  type        = "dataplex_metadata_sync"
+  category    = "Data Discovery"
+  description = "Sync glossary terms to Dataplex"
+  executor_id = "default"
+  recipe = jsonencode({
+    action = {
+      type   = "dataplex_metadata_sync"
+      config = { project = "tf-example", token = "$${SECRET_TOKEN}" }
+    }
+  })
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact("urn:li:dataHubAction:tf-example-dataplex-sync")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("action_id"), knownvalue.StringExact("tf-example-dataplex-sync")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("type"), knownvalue.StringExact("dataplex_metadata_sync")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("category"), knownvalue.StringExact("Data Discovery")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("executor_id"), knownvalue.StringExact("default")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_action_pipeline" "test" {
+  action_id   = "tf-example-dataplex-sync"
+  name        = "TF Example - Dataplex Glossary Sync"
+  type        = "dataplex_metadata_sync"
+  category    = "Data Discovery"
+  description = "Sync glossary terms and descriptions to Dataplex"
+  executor_id = "default"
+  recipe = jsonencode({
+    action = {
+      type   = "dataplex_metadata_sync"
+      config = { project = "tf-example", token = "$${SECRET_TOKEN}", sync_descriptions = true }
+    }
+  })
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Sync glossary terms and descriptions to Dataplex")),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// ActionPipelineCheckDestroy verifies every datahub_action_pipeline is removed.
+func ActionPipelineCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_action_pipeline" {
+			continue
+		}
+		id := rs.Primary.Attributes["action_id"]
+		if id == "" {
+			id = rs.Primary.ID
+		}
+		info, getErr := client.GetActionPipelineByID(ctx, id)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking action pipeline %q: %w", id, getErr)
+		}
+		if info != nil {
+			return fmt.Errorf("action pipeline %q still exists after destroy", id)
+		}
+	}
+	return nil
+}
+
 // FieldAssertionMetricLifecycleSteps returns test steps for a FIELD_METRIC
 // (aggregate column metric) field assertion: create, update the metric, then
 // import and verify. FIELD_METRIC works against a DatasetProfile source, so it

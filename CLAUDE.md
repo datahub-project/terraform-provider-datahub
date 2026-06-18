@@ -44,6 +44,7 @@ Some resources and data sources target DataHub Cloud exclusively and will fail w
 | `datahub_sql_assertion` (resource) | The `upsertDatasetSqlAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
 | `datahub_field_assertion` (resource) | The `upsertDatasetFieldAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
 | `datahub_schema_assertion` (resource) | The `upsertDatasetSchemaAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
+| `datahub_action_pipeline` (resource) + `datahub_action_pipelines` (data source) | The `dataHubAction` entity type and the `upsertActionPipeline`/`deleteActionPipeline`/`listActionPipelines` mutations/queries do not exist in OSS DataHub. The feature is also experimental and Cloud-internal -- the mutations carry no external API stability guarantee and may change between Cloud releases. |
 
 ## When to mention OSS vs Cloud
 
