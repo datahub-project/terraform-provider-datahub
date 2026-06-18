@@ -76,7 +76,7 @@ quickstart-up:
 		echo "Quickstart already healthy; reusing"; \
 	else \
 		echo "Starting Quickstart (first pull can take 5-10 min)"; \
-		datahub docker quickstart --version $(QUICKSTART_VERSION); \
+		datahub docker quickstart --accept-version-default --version $(QUICKSTART_VERSION); \
 	fi
 	@echo "Polling GMS until ready..."
 	@end=$$(( $$(date +%s) + $(QUICKSTART_HEALTH_TIMEOUT) )); \
