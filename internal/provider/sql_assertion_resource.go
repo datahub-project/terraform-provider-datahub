@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
@@ -20,9 +21,10 @@ import (
 )
 
 var (
-	_ resource.Resource                = &sqlAssertionResource{}
-	_ resource.ResourceWithConfigure   = &sqlAssertionResource{}
-	_ resource.ResourceWithImportState = &sqlAssertionResource{}
+	_ resource.Resource                   = &sqlAssertionResource{}
+	_ resource.ResourceWithConfigure      = &sqlAssertionResource{}
+	_ resource.ResourceWithImportState    = &sqlAssertionResource{}
+	_ resource.ResourceWithValidateConfig = &sqlAssertionResource{}
 )
 
 type sqlAssertionResource struct {
@@ -34,10 +36,12 @@ type sqlAssertionResourceModel struct {
 	URN                types.String `tfsdk:"urn"`
 	EntityURN          types.String `tfsdk:"entity_urn"`
 	SQLType            types.String `tfsdk:"sql_type"`
+	ChangeType         types.String `tfsdk:"change_type"`
 	Statement          types.String `tfsdk:"statement"`
 	Operator           types.String `tfsdk:"operator"`
 	Value              types.String `tfsdk:"value"`
 	Description        types.String `tfsdk:"description"`
+	FailureSeverity    types.String `tfsdk:"failure_severity"`
 	EvaluationCron     types.String `tfsdk:"evaluation_cron"`
 	EvaluationTimezone types.String `tfsdk:"evaluation_timezone"`
 	OnSuccessActions   types.List   `tfsdk:"on_success_actions"`
@@ -103,8 +107,17 @@ func (r *sqlAssertionResource) Schema(_ context.Context, _ resource.SchemaReques
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
 			},
 			"sql_type": schema.StringAttribute{
-				Required:            true,
-				MarkdownDescription: "SQL assertion sub-type. Currently `METRIC` is supported (the query returns a single numeric metric).",
+				Required: true,
+				MarkdownDescription: "SQL assertion sub-type. One of `METRIC` (assert on the " +
+					"absolute value the query returns) or `METRIC_CHANGE` (assert on the " +
+					"change in that value between evaluations). `METRIC_CHANGE` requires " +
+					"`change_type` and a non-empty `description`.",
+			},
+			"change_type": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "How the metric change is measured: `ABSOLUTE` (a raw delta) " +
+					"or `PERCENTAGE` (a percentage change). Required when " +
+					"`sql_type = \"METRIC_CHANGE\"`; must be omitted otherwise.",
 			},
 			"statement": schema.StringAttribute{
 				Required:            true,
@@ -121,6 +134,12 @@ func (r *sqlAssertionResource) Schema(_ context.Context, _ resource.SchemaReques
 			"description": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Human-readable description of what this SQL assertion checks.",
+			},
+			"failure_severity": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Severity raised when this assertion fails: `LOW`, `MEDIUM`, or " +
+					"`HIGH`. Omit to use the DataHub default. (Conditional per-result severity " +
+					"rules are not modeled.)",
 			},
 			"evaluation_cron": schema.StringAttribute{
 				Required:            true,
@@ -158,6 +177,50 @@ func (r *sqlAssertionResource) Schema(_ context.Context, _ resource.SchemaReques
 	}
 }
 
+// ValidateConfig enforces the change_type/sql_type pairing: change_type is
+// required for METRIC_CHANGE and rejected otherwise. METRIC_CHANGE also requires
+// a non-empty description (DataHub rejects the mutation without one). Skipped
+// while a relevant attribute is unknown at plan time.
+func (r *sqlAssertionResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg sqlAssertionResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if cfg.SQLType.IsUnknown() || cfg.ChangeType.IsUnknown() {
+		return
+	}
+
+	isChange := cfg.SQLType.ValueString() == "METRIC_CHANGE"
+	hasChangeType := !cfg.ChangeType.IsNull() && cfg.ChangeType.ValueString() != ""
+
+	if isChange && !hasChangeType {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("change_type"),
+			"Missing change_type",
+			"change_type is required when sql_type = \"METRIC_CHANGE\" "+
+				"(set it to \"ABSOLUTE\" or \"PERCENTAGE\").",
+		)
+	}
+	if !isChange && hasChangeType {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("change_type"),
+			"Unexpected change_type",
+			"change_type is only valid when sql_type = \"METRIC_CHANGE\"; "+
+				"remove it for METRIC assertions.",
+		)
+	}
+	if isChange && !cfg.Description.IsUnknown() &&
+		(cfg.Description.IsNull() || cfg.Description.ValueString() == "") {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("description"),
+			"Missing description",
+			"description is required when sql_type = \"METRIC_CHANGE\"; "+
+				"DataHub rejects a metric-change assertion without one.",
+		)
+	}
+}
+
 func (r *sqlAssertionResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration is set.")
@@ -181,10 +244,12 @@ func (r *sqlAssertionResource) Create(ctx context.Context, req resource.CreateRe
 	urn, err := r.client.UpsertSQLAssertion(ctx, datahub.SQLAssertionInput{
 		EntityURN:          plan.EntityURN.ValueString(),
 		SQLType:            plan.SQLType.ValueString(),
+		ChangeType:         strVal(plan.ChangeType),
 		Statement:          plan.Statement.ValueString(),
 		Operator:           plan.Operator.ValueString(),
 		Value:              plan.Value.ValueString(),
 		Description:        strVal(plan.Description),
+		FailureSeverity:    strVal(plan.FailureSeverity),
 		EvaluationCron:     plan.EvaluationCron.ValueString(),
 		EvaluationTimezone: plan.EvaluationTimezone.ValueString(),
 		OnSuccessActions:   onSuccess,
@@ -242,10 +307,12 @@ func (r *sqlAssertionResource) Read(ctx context.Context, req resource.ReadReques
 
 	if ai.SQL != nil {
 		state.SQLType = types.StringValue(ai.SQL.SQLType)
+		state.ChangeType = nullIfEmpty(ai.SQL.ChangeType)
 		state.Statement = types.StringValue(ai.SQL.Statement)
 		state.Operator = types.StringValue(ai.SQL.Operator)
 		state.Value = types.StringValue(ai.SQL.Value)
 		state.Description = nullIfEmpty(ai.SQL.Description)
+		state.FailureSeverity = nullIfEmpty(ai.FailureSeverity)
 	}
 	state.EntityURN = types.StringValue(ai.EntityURN)
 	state.URN = types.StringValue(ai.URN)
@@ -302,10 +369,12 @@ func (r *sqlAssertionResource) Update(ctx context.Context, req resource.UpdateRe
 		AssertionURN:       state.URN.ValueString(),
 		EntityURN:          plan.EntityURN.ValueString(),
 		SQLType:            plan.SQLType.ValueString(),
+		ChangeType:         strVal(plan.ChangeType),
 		Statement:          plan.Statement.ValueString(),
 		Operator:           plan.Operator.ValueString(),
 		Value:              plan.Value.ValueString(),
 		Description:        strVal(plan.Description),
+		FailureSeverity:    strVal(plan.FailureSeverity),
 		EvaluationCron:     plan.EvaluationCron.ValueString(),
 		EvaluationTimezone: plan.EvaluationTimezone.ValueString(),
 		OnSuccessActions:   onSuccess,
@@ -407,10 +476,12 @@ func (r *sqlAssertionResource) ImportState(ctx context.Context, req resource.Imp
 	}
 	if ai.SQL != nil {
 		state.SQLType = types.StringValue(ai.SQL.SQLType)
+		state.ChangeType = nullIfEmpty(ai.SQL.ChangeType)
 		state.Statement = types.StringValue(ai.SQL.Statement)
 		state.Operator = types.StringValue(ai.SQL.Operator)
 		state.Value = types.StringValue(ai.SQL.Value)
 		state.Description = nullIfEmpty(ai.SQL.Description)
+		state.FailureSeverity = nullIfEmpty(ai.FailureSeverity)
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)

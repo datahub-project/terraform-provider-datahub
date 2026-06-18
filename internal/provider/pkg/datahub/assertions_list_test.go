@@ -13,13 +13,17 @@ import (
 
 // assertion search fixture covering the filtering dimensions: source
 // (NATIVE/EXTERNAL/INFERRED), type, and sub-shape.
-const assertionSearchFixture = `{"data":{"searchAcrossEntities":{"total":8,"searchResults":[
+const assertionSearchFixture = `{"data":{"searchAcrossEntities":{"total":12,"searchResults":[
   {"entity":{"urn":"urn:li:assertion:vol-native-total","info":{"type":"VOLUME","source":{"type":"NATIVE"},"volumeAssertion":{"type":"ROW_COUNT_TOTAL"}}}},
   {"entity":{"urn":"urn:li:assertion:vol-native-change","info":{"type":"VOLUME","source":{"type":"NATIVE"},"volumeAssertion":{"type":"ROW_COUNT_CHANGE"}}}},
   {"entity":{"urn":"urn:li:assertion:vol-external-total","info":{"type":"VOLUME","source":{"type":"EXTERNAL"},"volumeAssertion":{"type":"ROW_COUNT_TOTAL"}}}},
   {"entity":{"urn":"urn:li:assertion:fresh-native-fixed","info":{"type":"FRESHNESS","source":{"type":"NATIVE"},"freshnessAssertion":{"schedule":{"type":"FIXED_INTERVAL"}}}}},
   {"entity":{"urn":"urn:li:assertion:fresh-native-sincelast","info":{"type":"FRESHNESS","source":{"type":"NATIVE"},"freshnessAssertion":{"schedule":{"type":"SINCE_THE_LAST_CHECK"}}}}},
   {"entity":{"urn":"urn:li:assertion:sql-native-metric","info":{"type":"SQL","source":{"type":"NATIVE"},"sqlAssertion":{"type":"METRIC"}}}},
+  {"entity":{"urn":"urn:li:assertion:sql-native-change","info":{"type":"SQL","source":{"type":"NATIVE"},"sqlAssertion":{"type":"METRIC_CHANGE"}}}},
+  {"entity":{"urn":"urn:li:assertion:field-native","info":{"type":"FIELD","source":{"type":"NATIVE"}}}},
+  {"entity":{"urn":"urn:li:assertion:field-inferred","info":{"type":"FIELD","source":{"type":"INFERRED"}}}},
+  {"entity":{"urn":"urn:li:assertion:schema-native","info":{"type":"DATA_SCHEMA","source":{"type":"NATIVE"}}}},
   {"entity":{"urn":"urn:li:assertion:dataset-external","info":{"type":"DATASET","source":{"type":"EXTERNAL"}}}},
   {"entity":{"urn":"urn:li:assertion:custom-external","info":{"type":"CUSTOM","source":{"type":"EXTERNAL"}}}}
 ]}}}`
@@ -42,37 +46,69 @@ func assertEqualURNs(t *testing.T, got, want []string) {
 	}
 }
 
-func TestListVolumeAssertionURNs_NativeRowCountTotalOnly(t *testing.T) {
+func TestListVolumeAssertionURNs_NativeTotalAndChange(t *testing.T) {
 	server := assertionFixtureServer(t)
 	defer server.Close()
 	got, err := newTestClient(t, server).ListVolumeAssertionURNs(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// NATIVE + ROW_COUNT_TOTAL only: excludes the EXTERNAL one (source) and the
-	// ROW_COUNT_CHANGE one (sub-shape).
-	assertEqualURNs(t, got, []string{"urn:li:assertion:vol-native-total"})
+	// NATIVE volume assertions of either modeled sub-shape (ROW_COUNT_TOTAL and
+	// ROW_COUNT_CHANGE); the EXTERNAL one is still excluded by source.
+	assertEqualURNs(t, got, []string{
+		"urn:li:assertion:vol-native-total",
+		"urn:li:assertion:vol-native-change",
+	})
 }
 
-func TestListFreshnessAssertionURNs_NativeSupportedScheduleOnly(t *testing.T) {
+func TestListFreshnessAssertionURNs_NativeSupportedSchedules(t *testing.T) {
 	server := assertionFixtureServer(t)
 	defer server.Close()
 	got, err := newTestClient(t, server).ListFreshnessAssertionURNs(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Excludes SINCE_THE_LAST_CHECK (unsupported schedule).
-	assertEqualURNs(t, got, []string{"urn:li:assertion:fresh-native-fixed"})
+	// NATIVE freshness of any modeled schedule type, now including
+	// SINCE_THE_LAST_CHECK.
+	assertEqualURNs(t, got, []string{
+		"urn:li:assertion:fresh-native-fixed",
+		"urn:li:assertion:fresh-native-sincelast",
+	})
 }
 
-func TestListSQLAssertionURNs_NativeMetricOnly(t *testing.T) {
+func TestListSQLAssertionURNs_NativeMetricAndChange(t *testing.T) {
 	server := assertionFixtureServer(t)
 	defer server.Close()
 	got, err := newTestClient(t, server).ListSQLAssertionURNs(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEqualURNs(t, got, []string{"urn:li:assertion:sql-native-metric"})
+	// NATIVE sql assertions of either modeled sub-shape (METRIC and METRIC_CHANGE).
+	assertEqualURNs(t, got, []string{
+		"urn:li:assertion:sql-native-metric",
+		"urn:li:assertion:sql-native-change",
+	})
+}
+
+func TestListFieldAssertionURNs_NativeOnly(t *testing.T) {
+	server := assertionFixtureServer(t)
+	defer server.Close()
+	got, err := newTestClient(t, server).ListFieldAssertionURNs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// NATIVE FIELD only; the INFERRED (smart) one is excluded by source.
+	assertEqualURNs(t, got, []string{"urn:li:assertion:field-native"})
+}
+
+func TestListSchemaAssertionURNs_NativeOnly(t *testing.T) {
+	server := assertionFixtureServer(t)
+	defer server.Close()
+	got, err := newTestClient(t, server).ListSchemaAssertionURNs(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqualURNs(t, got, []string{"urn:li:assertion:schema-native"})
 }
 
 func TestListCustomAssertionURNs_TypeOnlyNotSourceFiltered(t *testing.T) {

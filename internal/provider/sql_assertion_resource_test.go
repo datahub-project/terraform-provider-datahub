@@ -24,6 +24,42 @@ func TestSQLAssertionResource_lifecycle_mock(t *testing.T) {
 	})
 }
 
+func TestSQLAssertionChange_lifecycle_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.SQLAssertionCheckDestroy,
+		Steps:                    datahubtesting.SQLAssertionChangeLifecycleSteps(),
+	})
+}
+
+func TestSQLAssertionChangeType_validation_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.SQLAssertionChangeTypeValidationSteps(),
+	})
+}
+
+func TestAcc_SQLAssertionChange_Lifecycle(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets
+	tg.CleanupOrphanedMonitors(t, "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)")
+	tg.EnsureDatasetEntity(t, "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.SQLAssertionCheckDestroy,
+		Steps:                    datahubtesting.SQLAssertionChangeLifecycleSteps(),
+	})
+}
+
 func TestAcc_SQLAssertion_Lifecycle(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets

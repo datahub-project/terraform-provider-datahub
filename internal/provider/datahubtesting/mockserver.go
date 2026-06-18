@@ -266,6 +266,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpsertFreshnessAssertion(w, req.Variables)
 	case strings.Contains(q, "upsertDatasetSqlAssertionMonitor"):
 		s.handleUpsertSQLAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertDatasetSchemaAssertionMonitor"):
+		s.handleUpsertSchemaAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertDatasetFieldAssertionMonitor"):
+		s.handleUpsertFieldAssertion(w, req.Variables)
 	case strings.Contains(q, "getAssertionMonitor"):
 		s.handleGetAssertionMonitor(w, req.Variables)
 	case strings.Contains(q, "deleteAssertion"):

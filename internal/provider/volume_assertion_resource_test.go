@@ -24,6 +24,42 @@ func TestVolumeAssertionResource_lifecycle_mock(t *testing.T) {
 	})
 }
 
+func TestVolumeAssertionChange_lifecycle_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.VolumeAssertionCheckDestroy,
+		Steps:                    datahubtesting.VolumeAssertionChangeLifecycleSteps(),
+	})
+}
+
+func TestVolumeAssertionChangeType_validation_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.VolumeAssertionChangeTypeValidationSteps(),
+	})
+}
+
+func TestAcc_VolumeAssertionChange_Lifecycle(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets
+	tg.CleanupOrphanedMonitors(t, "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)")
+	tg.EnsureDatasetEntity(t, "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.VolumeAssertionCheckDestroy,
+		Steps:                    datahubtesting.VolumeAssertionChangeLifecycleSteps(),
+	})
+}
+
 func TestAcc_VolumeAssertion_Lifecycle(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets

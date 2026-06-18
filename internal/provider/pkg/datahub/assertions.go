@@ -54,14 +54,19 @@ func isAssertionCloudOnlyError(msg string) bool {
 
 // AssertionInfo is the read-shape common to all assertion types.
 type AssertionInfo struct {
-	URN       string
-	Type      string // FRESHNESS, VOLUME, SQL, CUSTOM
-	Source    string // NATIVE, EXTERNAL, INFERRED (empty if absent)
-	EntityURN string
+	URN             string
+	Type            string // FRESHNESS, VOLUME, SQL, CUSTOM
+	Source          string // NATIVE, EXTERNAL, INFERRED (empty if absent)
+	EntityURN       string
+	Description     string // top-level assertionInfo.description (all monitor types)
+	FilterSQL       string // row-level SQL filter (volume and freshness; empty if none)
+	FailureSeverity string // defaultSeverity LOW/MEDIUM/HIGH (freshness and sql; field uses Field.FailureSeverity)
 	// Type-specific sub-structs; only one is non-nil depending on Type.
 	Freshness *FreshnessAssertionInfo
 	Volume    *VolumeAssertionInfo
 	SQL       *SQLAssertionInfo
+	Field     *FieldAssertionInfo
+	Schema    *SchemaAssertionInfo
 	Custom    *CustomAssertionInfo
 	// Actions
 	OnSuccessActions []string
@@ -78,6 +83,7 @@ type FreshnessAssertionInfo struct {
 
 type VolumeAssertionInfo struct {
 	VolumeType string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	ChangeType string // ABSOLUTE or PERCENTAGE (ROW_COUNT_CHANGE only; empty otherwise)
 	Operator   string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
 	MinValue   string
 	MaxValue   string
@@ -85,11 +91,43 @@ type VolumeAssertionInfo struct {
 }
 
 type SQLAssertionInfo struct {
-	SQLType     string // METRIC
+	SQLType     string // METRIC or METRIC_CHANGE
+	ChangeType  string // ABSOLUTE or PERCENTAGE (METRIC_CHANGE only; empty otherwise)
 	Statement   string
 	Operator    string
 	Value       string
 	Description string
+}
+
+type FieldAssertionInfo struct {
+	FieldType       string // FIELD_VALUES or FIELD_METRIC
+	FieldPath       string // column path
+	StdType         string // SchemaFieldSpec std type, e.g. NUMBER, STRING
+	NativeType      string // platform-native column type
+	Operator        string
+	MinValue        string
+	MaxValue        string
+	Value           string
+	FailureSeverity string // defaultSeverity LOW/MEDIUM/HIGH (empty if none)
+	// FIELD_VALUES only
+	TransformType  string // e.g. LENGTH (empty if no transform)
+	FailThreshold  string // COUNT or PERCENTAGE (empty if unset)
+	FailThresholdN int64  // threshold value
+	ExcludeNulls   bool
+	HasExcludeNull bool // whether excludeNulls was present in the read
+	// FIELD_METRIC only
+	Metric string // UNIQUE_COUNT, NULL_COUNT, MIN, MAX, ...
+}
+
+type SchemaAssertionField struct {
+	Path       string
+	StdType    string // NUMBER, STRING, BOOLEAN, ...
+	NativeType string
+}
+
+type SchemaAssertionInfo struct {
+	Compatibility string // EXACT_MATCH, SUPERSET, SUBSET
+	Fields        []SchemaAssertionField
 }
 
 type CustomAssertionInfo struct {
@@ -133,6 +171,45 @@ type assertionEntity struct {
 	} `json:"dataPlatformInstance,omitempty"`
 }
 
+// assertionSeverityConfig is the read shape of AssertionFailureSeverityConfig.
+// Only defaultSeverity is modeled; the conditional rules list is read but not
+// surfaced. Nested inside the freshness and sql type objects.
+type assertionSeverityConfig struct {
+	DefaultSeverity string `json:"defaultSeverity"`
+}
+
+// assertionFilter is the read shape of a DatasetFilter: a row-level filter
+// applied before the assertion evaluates. DatasetFilterType currently has only
+// SQL, so only the sql clause is meaningful. Shared by volume and freshness.
+type assertionFilter struct {
+	Type string `json:"type"`
+	SQL  string `json:"sql"`
+}
+
+// fieldSpec is the read shape of a SchemaFieldSpec as it appears inside a field
+// assertion (fieldValuesAssertion.field / fieldMetricAssertion.field). Unlike the
+// schema-assertion field list, here the std type round-trips as a plain string.
+type fieldSpec struct {
+	Path       string `json:"path"`
+	Type       string `json:"type"`
+	NativeType string `json:"nativeType"`
+}
+
+// assertionStdParameters is the read shape of AssertionStdParameters: a single
+// value (most operators) or a min/max pair (BETWEEN). Shared by the volume
+// rowCountTotal and rowCountChange variants.
+type assertionStdParameters struct {
+	Value *struct {
+		Value string `json:"value"`
+	} `json:"value,omitempty"`
+	MinValue *struct {
+		Value string `json:"value"`
+	} `json:"minValue,omitempty"`
+	MaxValue *struct {
+		Value string `json:"value"`
+	} `json:"maxValue,omitempty"`
+}
+
 type assertionInfoValue struct {
 	Type   string `json:"type"`
 	Source *struct {
@@ -156,28 +233,27 @@ type assertionInfoValue struct {
 				Timezone string `json:"timezone"`
 			} `json:"cron,omitempty"`
 		} `json:"schedule,omitempty"`
+		Filter                *assertionFilter         `json:"filter,omitempty"`
+		FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
 	} `json:"freshnessAssertion,omitempty"`
 	// Volume
 	VolumeAssertion *struct {
 		Type          string `json:"type"`
 		RowCountTotal *struct {
-			Operator   string `json:"operator"`
-			Parameters *struct {
-				Value *struct {
-					Value string `json:"value"`
-				} `json:"value,omitempty"`
-				MinValue *struct {
-					Value string `json:"value"`
-				} `json:"minValue,omitempty"`
-				MaxValue *struct {
-					Value string `json:"value"`
-				} `json:"maxValue,omitempty"`
-			} `json:"parameters,omitempty"`
+			Operator   string                  `json:"operator"`
+			Parameters *assertionStdParameters `json:"parameters,omitempty"`
 		} `json:"rowCountTotal,omitempty"`
+		RowCountChange *struct {
+			Type       string                  `json:"type"` // ABSOLUTE or PERCENTAGE
+			Operator   string                  `json:"operator"`
+			Parameters *assertionStdParameters `json:"parameters,omitempty"`
+		} `json:"rowCountChange,omitempty"`
+		Filter *assertionFilter `json:"filter,omitempty"`
 	} `json:"volumeAssertion,omitempty"`
 	// SQL
 	SQLAssertion *struct {
 		Type        string `json:"type"`
+		ChangeType  string `json:"changeType"` // ABSOLUTE or PERCENTAGE (METRIC_CHANGE only)
 		Statement   string `json:"statement"`
 		Operator    string `json:"operator"`
 		Description string `json:"description"`
@@ -186,7 +262,48 @@ type assertionInfoValue struct {
 				Value string `json:"value"`
 			} `json:"value,omitempty"`
 		} `json:"parameters,omitempty"`
+		FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
 	} `json:"sqlAssertion,omitempty"`
+	// Field (column) assertions
+	FieldAssertion *struct {
+		Type                 string `json:"type"` // FIELD_VALUES or FIELD_METRIC
+		FieldValuesAssertion *struct {
+			Field     *fieldSpec `json:"field"`
+			Transform *struct {
+				Type string `json:"type"`
+			} `json:"transform,omitempty"`
+			Operator      string                  `json:"operator"`
+			Parameters    *assertionStdParameters `json:"parameters,omitempty"`
+			FailThreshold *struct {
+				Type  string `json:"type"`
+				Value int64  `json:"value"`
+			} `json:"failThreshold,omitempty"`
+			ExcludeNulls          *bool                    `json:"excludeNulls,omitempty"`
+			FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
+		} `json:"fieldValuesAssertion,omitempty"`
+		FieldMetricAssertion *struct {
+			Field                 *fieldSpec               `json:"field"`
+			Metric                string                   `json:"metric"`
+			Operator              string                   `json:"operator"`
+			Parameters            *assertionStdParameters  `json:"parameters,omitempty"`
+			FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
+		} `json:"fieldMetricAssertion,omitempty"`
+	} `json:"fieldAssertion,omitempty"`
+	// Schema assertions. On read the field std type comes back as a nested
+	// SchemaFieldDataType class object (type.type.{"com.linkedin.schema.XType":{}}),
+	// not the plain std string sent on write, so it needs class->std mapping.
+	SchemaAssertion *struct {
+		Compatibility string `json:"compatibility"`
+		Schema        *struct {
+			Fields []struct {
+				FieldPath      string `json:"fieldPath"`
+				NativeDataType string `json:"nativeDataType"`
+				Type           struct {
+					Type map[string]json.RawMessage `json:"type"`
+				} `json:"type"`
+			} `json:"fields"`
+		} `json:"schema,omitempty"`
+	} `json:"schemaAssertion,omitempty"`
 	// Custom
 	// Note: Description and ExternalURL are at the assertionInfoValue top level (above),
 	// not inside customAssertion. Platform is in the dataPlatformInstance aspect.
@@ -255,6 +372,7 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 			ai.Source = v.Source.Type
 		}
 		ai.EntityURN = v.EntityURN
+		ai.Description = v.Description // top-level field, shared by all monitor types
 		// OSS assertionInfo schema v3 stores the entity URN inside customAssertion.entity
 		// rather than at the top-level entityUrn field. Fall back when entityUrn is absent.
 		if ai.EntityURN == "" && v.CustomAssertion != nil {
@@ -274,30 +392,35 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 				fi.CronTimezone = v.FreshnessAssertion.Schedule.Cron.Timezone
 			}
 			ai.Freshness = fi
+			if v.FreshnessAssertion.Filter != nil {
+				ai.FilterSQL = v.FreshnessAssertion.Filter.SQL
+			}
+			if v.FreshnessAssertion.FailureSeverityConfig != nil {
+				ai.FailureSeverity = v.FreshnessAssertion.FailureSeverityConfig.DefaultSeverity
+			}
 		}
 
 		if v.VolumeAssertion != nil {
 			vi := &VolumeAssertionInfo{VolumeType: v.VolumeAssertion.Type}
-			if v.VolumeAssertion.RowCountTotal != nil {
+			switch {
+			case v.VolumeAssertion.RowCountTotal != nil:
 				vi.Operator = v.VolumeAssertion.RowCountTotal.Operator
-				if p := v.VolumeAssertion.RowCountTotal.Parameters; p != nil {
-					if p.Value != nil {
-						vi.Value = p.Value.Value
-					}
-					if p.MinValue != nil {
-						vi.MinValue = p.MinValue.Value
-					}
-					if p.MaxValue != nil {
-						vi.MaxValue = p.MaxValue.Value
-					}
-				}
+				applyStdParameters(vi, v.VolumeAssertion.RowCountTotal.Parameters)
+			case v.VolumeAssertion.RowCountChange != nil:
+				vi.ChangeType = v.VolumeAssertion.RowCountChange.Type
+				vi.Operator = v.VolumeAssertion.RowCountChange.Operator
+				applyStdParameters(vi, v.VolumeAssertion.RowCountChange.Parameters)
 			}
 			ai.Volume = vi
+			if v.VolumeAssertion.Filter != nil {
+				ai.FilterSQL = v.VolumeAssertion.Filter.SQL
+			}
 		}
 
 		if v.SQLAssertion != nil {
 			si := &SQLAssertionInfo{
 				SQLType:     v.SQLAssertion.Type,
+				ChangeType:  v.SQLAssertion.ChangeType,
 				Statement:   v.SQLAssertion.Statement,
 				Operator:    v.SQLAssertion.Operator,
 				Description: v.Description, // top-level field in real API, same as custom assertions
@@ -305,7 +428,65 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 			if v.SQLAssertion.Parameters != nil && v.SQLAssertion.Parameters.Value != nil {
 				si.Value = v.SQLAssertion.Parameters.Value.Value
 			}
+			if v.SQLAssertion.FailureSeverityConfig != nil {
+				ai.FailureSeverity = v.SQLAssertion.FailureSeverityConfig.DefaultSeverity
+			}
 			ai.SQL = si
+		}
+
+		if v.FieldAssertion != nil {
+			fi := &FieldAssertionInfo{FieldType: v.FieldAssertion.Type}
+			if fv := v.FieldAssertion.FieldValuesAssertion; fv != nil {
+				if fv.Field != nil {
+					fi.FieldPath = fv.Field.Path
+					fi.StdType = fv.Field.Type
+					fi.NativeType = fv.Field.NativeType
+				}
+				fi.Operator = fv.Operator
+				applyStdParametersField(fi, fv.Parameters)
+				if fv.Transform != nil {
+					fi.TransformType = fv.Transform.Type
+				}
+				if fv.FailThreshold != nil {
+					fi.FailThreshold = fv.FailThreshold.Type
+					fi.FailThresholdN = fv.FailThreshold.Value
+				}
+				if fv.ExcludeNulls != nil {
+					fi.ExcludeNulls = *fv.ExcludeNulls
+					fi.HasExcludeNull = true
+				}
+				if fv.FailureSeverityConfig != nil {
+					fi.FailureSeverity = fv.FailureSeverityConfig.DefaultSeverity
+				}
+			}
+			if fm := v.FieldAssertion.FieldMetricAssertion; fm != nil {
+				if fm.Field != nil {
+					fi.FieldPath = fm.Field.Path
+					fi.StdType = fm.Field.Type
+					fi.NativeType = fm.Field.NativeType
+				}
+				fi.Metric = fm.Metric
+				fi.Operator = fm.Operator
+				applyStdParametersField(fi, fm.Parameters)
+				if fm.FailureSeverityConfig != nil {
+					fi.FailureSeverity = fm.FailureSeverityConfig.DefaultSeverity
+				}
+			}
+			ai.Field = fi
+		}
+
+		if v.SchemaAssertion != nil {
+			si := &SchemaAssertionInfo{Compatibility: v.SchemaAssertion.Compatibility}
+			if v.SchemaAssertion.Schema != nil {
+				for _, f := range v.SchemaAssertion.Schema.Fields {
+					si.Fields = append(si.Fields, SchemaAssertionField{
+						Path:       f.FieldPath,
+						StdType:    stdTypeFromSchemaClass(f.Type.Type),
+						NativeType: f.NativeDataType,
+					})
+				}
+			}
+			ai.Schema = si
 		}
 
 		if v.CustomAssertion != nil {
@@ -588,6 +769,9 @@ mutation upsertCustomAssertion($urn: String, $input: UpsertCustomAssertionInput!
 type FreshnessAssertionInput struct {
 	AssertionURN          string // empty on create
 	EntityURN             string
+	Description           string // optional
+	FilterSQL             string // optional row-level SQL filter
+	FailureSeverity       string // optional defaultSeverity LOW/MEDIUM/HIGH
 	ScheduleType          string // FIXED_INTERVAL or CRON
 	FixedIntervalUnit     string // HOUR, DAY, WEEK, MONTH, YEAR
 	FixedIntervalMultiple int64
@@ -640,6 +824,15 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 		},
 		"mode": in.Mode,
 	}
+	if in.Description != "" {
+		input["description"] = in.Description
+	}
+	if in.FilterSQL != "" {
+		input["filter"] = map[string]any{"type": "SQL", "sql": in.FilterSQL}
+	}
+	if in.FailureSeverity != "" {
+		input["failureSeverityConfig"] = map[string]any{"defaultSeverity": in.FailureSeverity}
+	}
 	// Always send actions -- even empty lists -- so that previously-set actions
 	// are cleared when the user removes them from config.
 	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
@@ -689,7 +882,10 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 type VolumeAssertionInput struct {
 	AssertionURN       string
 	EntityURN          string
+	Description        string // optional
+	FilterSQL          string // optional row-level SQL filter
 	VolumeType         string // ROW_COUNT_TOTAL, ROW_COUNT_CHANGE
+	ChangeType         string // ABSOLUTE or PERCENTAGE (required for ROW_COUNT_CHANGE)
 	Operator           string // BETWEEN, GREATER_THAN, LESS_THAN, EQUAL_TO, etc.
 	MinValue           string // for BETWEEN
 	MaxValue           string // for BETWEEN
@@ -716,15 +912,10 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 }`
 
 	params := buildAssertionParams(in.Operator, in.MinValue, in.MaxValue, in.SingleValue)
-	rowCountTotal := map[string]any{
-		"operator":   in.Operator,
-		"parameters": params,
-	}
 
 	input := map[string]any{
-		"entityUrn":     in.EntityURN,
-		"type":          in.VolumeType,
-		"rowCountTotal": rowCountTotal,
+		"entityUrn": in.EntityURN,
+		"type":      in.VolumeType,
 		"evaluationSchedule": map[string]any{
 			"cron":     in.EvaluationCron,
 			"timezone": in.EvaluationTimezone,
@@ -733,6 +924,27 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 			"sourceType": in.SourceType,
 		},
 		"mode": in.Mode,
+	}
+	if in.Description != "" {
+		input["description"] = in.Description
+	}
+	if in.FilterSQL != "" {
+		input["filter"] = map[string]any{"type": "SQL", "sql": in.FilterSQL}
+	}
+	// Route the threshold to the sub-type the user selected. ROW_COUNT_CHANGE
+	// carries an extra change type (ABSOLUTE/PERCENTAGE); both variants reuse the
+	// same AssertionStdParameters shape (single value, or min/max for BETWEEN).
+	if in.VolumeType == "ROW_COUNT_CHANGE" {
+		input["rowCountChange"] = map[string]any{
+			"type":       in.ChangeType,
+			"operator":   in.Operator,
+			"parameters": params,
+		}
+	} else {
+		input["rowCountTotal"] = map[string]any{
+			"operator":   in.Operator,
+			"parameters": params,
+		}
 	}
 	// Always send actions -- even empty lists -- so that previously-set actions
 	// are cleared when the user removes them from config.
@@ -783,7 +995,9 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 type SQLAssertionInput struct {
 	AssertionURN       string
 	EntityURN          string
-	SQLType            string // METRIC
+	SQLType            string // METRIC or METRIC_CHANGE
+	ChangeType         string // ABSOLUTE or PERCENTAGE (required for METRIC_CHANGE)
+	FailureSeverity    string // optional defaultSeverity LOW/MEDIUM/HIGH
 	Statement          string
 	Operator           string
 	Value              string // single result value to compare against
@@ -824,6 +1038,14 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 			"timezone": in.EvaluationTimezone,
 		},
 		"mode": in.Mode,
+	}
+	// METRIC_CHANGE carries an additional change type (ABSOLUTE/PERCENTAGE) as a
+	// top-level sibling of statement/operator/parameters.
+	if in.ChangeType != "" {
+		input["changeType"] = in.ChangeType
+	}
+	if in.FailureSeverity != "" {
+		input["failureSeverityConfig"] = map[string]any{"defaultSeverity": in.FailureSeverity}
 	}
 	if in.Description != "" {
 		input["description"] = in.Description
@@ -873,6 +1095,245 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 	return assertionURN, nil
 }
 
+// SchemaFieldInput is one expected column in a schema assertion's field list.
+type SchemaFieldInput struct {
+	Path       string
+	StdType    string // DataHub standard type, e.g. NUMBER, STRING, BOOLEAN
+	NativeType string // platform-native type (optional)
+}
+
+// SchemaAssertionInput groups inputs for upsertDatasetSchemaAssertionMonitor.
+type SchemaAssertionInput struct {
+	AssertionURN       string
+	EntityURN          string
+	Description        string
+	Compatibility      string // EXACT_MATCH, SUPERSET, SUBSET
+	Fields             []SchemaFieldInput
+	EvaluationCron     string
+	EvaluationTimezone string
+	OnSuccessActions   []string
+	OnFailureActions   []string
+	Mode               string
+	ExecutorID         string
+}
+
+// UpsertSchemaAssertion creates or updates a schema assertion monitor.
+// Requires DataHub Cloud; returns ErrAssertionCloudOnly on OSS.
+func (c *Client) UpsertSchemaAssertion(ctx context.Context, in SchemaAssertionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	const q = `
+mutation upsertDatasetSchemaAssertionMonitor($assertionUrn: String, $input: UpsertDatasetSchemaAssertionMonitorInput!) {
+  upsertDatasetSchemaAssertionMonitor(assertionUrn: $assertionUrn, input: $input) { urn }
+}`
+
+	fields := make([]map[string]any, len(in.Fields))
+	for i, f := range in.Fields {
+		m := map[string]any{"path": f.Path, "type": f.StdType}
+		if f.NativeType != "" {
+			m["nativeType"] = f.NativeType
+		}
+		fields[i] = m
+	}
+
+	input := map[string]any{
+		"entityUrn": in.EntityURN,
+		"assertion": map[string]any{
+			"compatibility": in.Compatibility,
+			"fields":        fields,
+		},
+		"evaluationSchedule": map[string]any{
+			"cron":     in.EvaluationCron,
+			"timezone": in.EvaluationTimezone,
+		},
+		"mode": in.Mode,
+	}
+	if in.Description != "" {
+		input["description"] = in.Description
+	}
+	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
+	if in.ExecutorID != "" {
+		input["executorId"] = in.ExecutorID
+	}
+
+	vars := map[string]any{"input": input}
+	if in.AssertionURN != "" {
+		vars["assertionUrn"] = in.AssertionURN
+	}
+	body := map[string]any{"query": q, "variables": vars}
+
+	var raw struct {
+		Data struct {
+			UpsertDatasetSchemaAssertionMonitor struct {
+				URN string `json:"urn"`
+			} `json:"upsertDatasetSchemaAssertionMonitor"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		msg := raw.Errors[0].Message
+		if isAssertionCloudOnlyError(msg) {
+			return "", ErrAssertionCloudOnly
+		}
+		return "", fmt.Errorf("DataHub API error: %s", msg)
+	}
+	assertionURN := raw.Data.UpsertDatasetSchemaAssertionMonitor.URN
+	if in.AssertionURN == "" {
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := c.waitForAssertionMonitor(waitCtx, assertionURN); err != nil {
+			return "", fmt.Errorf("schema assertion created but monitor not ready: %w", err)
+		}
+	}
+	return assertionURN, nil
+}
+
+// FieldAssertionInput groups inputs for upsertDatasetFieldAssertionMonitor.
+type FieldAssertionInput struct {
+	AssertionURN       string
+	EntityURN          string
+	Description        string
+	FieldType          string // FIELD_VALUES or FIELD_METRIC
+	FieldPath          string
+	StdType            string // SchemaFieldSpec std type (NUMBER, STRING, ...)
+	NativeType         string
+	Operator           string
+	MinValue           string
+	MaxValue           string
+	SingleValue        string
+	SourceType         string // DatasetFieldAssertionSourceType
+	FilterSQL          string
+	FailureSeverity    string
+	EvaluationCron     string
+	EvaluationTimezone string
+	OnSuccessActions   []string
+	OnFailureActions   []string
+	Mode               string
+	ExecutorID         string
+	// FIELD_VALUES only
+	TransformType  string // e.g. LENGTH
+	FailThreshold  string // COUNT or PERCENTAGE
+	FailThresholdN int64
+	ExcludeNulls   bool
+	// FIELD_METRIC only
+	Metric string
+}
+
+// UpsertFieldAssertion creates or updates a field (column) assertion monitor.
+// Requires DataHub Cloud; returns ErrAssertionCloudOnly on OSS.
+func (c *Client) UpsertFieldAssertion(ctx context.Context, in FieldAssertionInput) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	const q = `
+mutation upsertDatasetFieldAssertionMonitor($assertionUrn: String, $input: UpsertDatasetFieldAssertionMonitorInput!) {
+  upsertDatasetFieldAssertionMonitor(assertionUrn: $assertionUrn, input: $input) { urn }
+}`
+
+	field := map[string]any{"path": in.FieldPath, "type": in.StdType}
+	if in.NativeType != "" {
+		field["nativeType"] = in.NativeType
+	}
+	params := buildAssertionParams(in.Operator, in.MinValue, in.MaxValue, in.SingleValue)
+
+	input := map[string]any{
+		"entityUrn": in.EntityURN,
+		"type":      in.FieldType,
+		"evaluationSchedule": map[string]any{
+			"cron":     in.EvaluationCron,
+			"timezone": in.EvaluationTimezone,
+		},
+		"evaluationParameters": map[string]any{
+			"sourceType": in.SourceType,
+		},
+		"mode": in.Mode,
+	}
+	switch in.FieldType {
+	case "FIELD_VALUES":
+		fv := map[string]any{
+			"field":        field,
+			"operator":     in.Operator,
+			"parameters":   params,
+			"excludeNulls": in.ExcludeNulls,
+		}
+		if in.TransformType != "" {
+			fv["transform"] = map[string]any{"type": in.TransformType}
+		}
+		if in.FailThreshold != "" {
+			fv["failThreshold"] = map[string]any{"type": in.FailThreshold, "value": in.FailThresholdN}
+		}
+		if in.FailureSeverity != "" {
+			fv["failureSeverityConfig"] = map[string]any{"defaultSeverity": in.FailureSeverity}
+		}
+		input["fieldValuesAssertion"] = fv
+	case "FIELD_METRIC":
+		fm := map[string]any{
+			"field":      field,
+			"metric":     in.Metric,
+			"operator":   in.Operator,
+			"parameters": params,
+		}
+		if in.FailureSeverity != "" {
+			fm["failureSeverityConfig"] = map[string]any{"defaultSeverity": in.FailureSeverity}
+		}
+		input["fieldMetricAssertion"] = fm
+	}
+	if in.Description != "" {
+		input["description"] = in.Description
+	}
+	if in.FilterSQL != "" {
+		input["filter"] = map[string]any{"type": "SQL", "sql": in.FilterSQL}
+	}
+	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
+	if in.ExecutorID != "" {
+		input["executorId"] = in.ExecutorID
+	}
+
+	vars := map[string]any{"input": input}
+	if in.AssertionURN != "" {
+		vars["assertionUrn"] = in.AssertionURN
+	}
+	body := map[string]any{"query": q, "variables": vars}
+
+	var raw struct {
+		Data struct {
+			UpsertDatasetFieldAssertionMonitor struct {
+				URN string `json:"urn"`
+			} `json:"upsertDatasetFieldAssertionMonitor"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return "", err
+	}
+	if len(raw.Errors) > 0 {
+		msg := raw.Errors[0].Message
+		if isAssertionCloudOnlyError(msg) {
+			return "", ErrAssertionCloudOnly
+		}
+		return "", fmt.Errorf("DataHub API error: %s", msg)
+	}
+	assertionURN := raw.Data.UpsertDatasetFieldAssertionMonitor.URN
+	if in.AssertionURN == "" {
+		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := c.waitForAssertionMonitor(waitCtx, assertionURN); err != nil {
+			return "", fmt.Errorf("field assertion created but monitor not ready: %w", err)
+		}
+	}
+	return assertionURN, nil
+}
+
 // buildActionsInput converts string slices to the AssertionActionsInput shape.
 func buildActionsInput(onSuccess, onFailure []string) map[string]any {
 	success := make([]map[string]any, len(onSuccess))
@@ -887,6 +1348,64 @@ func buildActionsInput(onSuccess, onFailure []string) map[string]any {
 		"onSuccess": success,
 		"onFailure": failure,
 	}
+}
+
+// applyStdParameters copies the read-shape AssertionStdParameters (single value
+// or min/max pair) onto a VolumeAssertionInfo. Shared by the rowCountTotal and
+// rowCountChange read paths.
+func applyStdParameters(vi *VolumeAssertionInfo, p *assertionStdParameters) {
+	if p == nil {
+		return
+	}
+	if p.Value != nil {
+		vi.Value = p.Value.Value
+	}
+	if p.MinValue != nil {
+		vi.MinValue = p.MinValue.Value
+	}
+	if p.MaxValue != nil {
+		vi.MaxValue = p.MaxValue.Value
+	}
+}
+
+// applyStdParametersField copies the read-shape AssertionStdParameters onto a
+// FieldAssertionInfo (single value, or min/max for BETWEEN).
+func applyStdParametersField(fi *FieldAssertionInfo, p *assertionStdParameters) {
+	if p == nil {
+		return
+	}
+	if p.Value != nil {
+		fi.Value = p.Value.Value
+	}
+	if p.MinValue != nil {
+		fi.MinValue = p.MinValue.Value
+	}
+	if p.MaxValue != nil {
+		fi.MaxValue = p.MaxValue.Value
+	}
+}
+
+// schemaClassToStd maps the DataHub SchemaFieldDataType class (as it appears on
+// read, e.g. "com.linkedin.schema.NumberType") to the standard type string the
+// SchemaFieldSpecInput accepts on write (e.g. "NUMBER"). Covers the union
+// members whose std name is not just the stripped class name.
+var schemaClassToStd = map[string]string{
+	"RecordType": "STRUCT",
+}
+
+// stdTypeFromSchemaClass extracts the single SchemaFieldDataType class key from a
+// read-shape field type object and returns the matching write std type. For the
+// common scalar types (NumberType->NUMBER, StringType->STRING, ...) it strips the
+// "com.linkedin.schema." prefix and the "Type" suffix and uppercases.
+func stdTypeFromSchemaClass(m map[string]json.RawMessage) string {
+	for cls := range m {
+		short := strings.TrimPrefix(cls, "com.linkedin.schema.")
+		if std, ok := schemaClassToStd[short]; ok {
+			return std
+		}
+		return strings.ToUpper(strings.TrimSuffix(short, "Type"))
+	}
+	return ""
 }
 
 // buildAssertionParams converts operator + value strings to AssertionStdParametersInput.

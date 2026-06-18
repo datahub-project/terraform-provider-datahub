@@ -192,28 +192,48 @@ func (c *Client) ListCustomAssertionURNs(ctx context.Context) ([]string, error) 
 // ListFreshnessAssertionURNs returns the URNs of freshness assertions that
 // datahub_freshness_assertion can manage: NATIVE source (DataHub-run monitors,
 // not ingested/auto assertions) with a schedule type the resource models
-// (CRON or FIXED_INTERVAL; SINCE_THE_LAST_CHECK is excluded).
+// (CRON, FIXED_INTERVAL, or SINCE_THE_LAST_CHECK).
 func (c *Client) ListFreshnessAssertionURNs(ctx context.Context) ([]string, error) {
 	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
 		return e.Type == "FRESHNESS" && e.Source == "NATIVE" &&
-			(e.FreshnessScheduleType == "CRON" || e.FreshnessScheduleType == "FIXED_INTERVAL")
+			(e.FreshnessScheduleType == "CRON" || e.FreshnessScheduleType == "FIXED_INTERVAL" ||
+				e.FreshnessScheduleType == "SINCE_THE_LAST_CHECK")
 	})
 }
 
 // ListVolumeAssertionURNs returns the URNs of volume assertions that
-// datahub_volume_assertion can manage: NATIVE source with sub-type
-// ROW_COUNT_TOTAL (ROW_COUNT_CHANGE is excluded).
+// datahub_volume_assertion can manage: NATIVE source with a sub-type the
+// resource models (ROW_COUNT_TOTAL or ROW_COUNT_CHANGE).
 func (c *Client) ListVolumeAssertionURNs(ctx context.Context) ([]string, error) {
 	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
-		return e.Type == "VOLUME" && e.Source == "NATIVE" && e.VolumeSubType == "ROW_COUNT_TOTAL"
+		return e.Type == "VOLUME" && e.Source == "NATIVE" &&
+			(e.VolumeSubType == "ROW_COUNT_TOTAL" || e.VolumeSubType == "ROW_COUNT_CHANGE")
+	})
+}
+
+// ListFieldAssertionURNs returns the URNs of NATIVE field (column) assertions.
+// Both sub-shapes (FIELD_VALUES, FIELD_METRIC) are managed by the one
+// datahub_field_assertion resource, so no sub-shape discriminator is needed.
+func (c *Client) ListFieldAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "FIELD" && e.Source == "NATIVE"
+	})
+}
+
+// ListSchemaAssertionURNs returns the URNs of NATIVE schema assertions
+// (AssertionType DATA_SCHEMA).
+func (c *Client) ListSchemaAssertionURNs(ctx context.Context) ([]string, error) {
+	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
+		return e.Type == "DATA_SCHEMA" && e.Source == "NATIVE"
 	})
 }
 
 // ListSQLAssertionURNs returns the URNs of SQL assertions that
-// datahub_sql_assertion can manage: NATIVE source with sub-type METRIC
-// (METRIC_CHANGE is excluded).
+// datahub_sql_assertion can manage: NATIVE source with a sub-type the resource
+// models (METRIC or METRIC_CHANGE).
 func (c *Client) ListSQLAssertionURNs(ctx context.Context) ([]string, error) {
 	return c.scanAssertions(ctx, func(e assertionSearchEntity) bool {
-		return e.Type == "SQL" && e.Source == "NATIVE" && e.SQLSubType == "METRIC"
+		return e.Type == "SQL" && e.Source == "NATIVE" &&
+			(e.SQLSubType == "METRIC" || e.SQLSubType == "METRIC_CHANGE")
 	})
 }

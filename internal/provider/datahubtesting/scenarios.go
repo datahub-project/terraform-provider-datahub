@@ -3576,6 +3576,7 @@ resource "datahub_volume_assertion" "test" {
   volume_type         = "ROW_COUNT_TOTAL"
   operator            = "GREATER_THAN_OR_EQUAL_TO"
   single_value        = "100"
+  description         = "at least 100 rows"
   evaluation_cron     = "0 */8 * * *"
   evaluation_timezone = "UTC"
   source_type         = "DATAHUB_DATASET_PROFILE"
@@ -3588,6 +3589,7 @@ resource "datahub_volume_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume_type"), knownvalue.StringExact("ROW_COUNT_TOTAL")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("at least 100 rows")),
 			},
 		},
 		{
@@ -3629,6 +3631,114 @@ func VolumeAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_volume_assertion")
 }
 
+// VolumeAssertionChangeLifecycleSteps returns test steps for the ROW_COUNT_CHANGE
+// (growth) volume assertion sub-type: create an ABSOLUTE single-value change
+// assertion, update it to a PERCENTAGE BETWEEN range, then import and verify.
+func VolumeAssertionChangeLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_volume_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_CHANGE"
+  change_type         = "ABSOLUTE"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "10"
+  filter_sql          = "is_active = true"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume_type"), knownvalue.StringExact("ROW_COUNT_CHANGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("ABSOLUTE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("single_value"), knownvalue.StringExact("10")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("is_active = true")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_CHANGE"
+  change_type         = "PERCENTAGE"
+  operator            = "BETWEEN"
+  min_value           = "5"
+  max_value           = "25"
+  filter_sql          = "is_active = true"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("PERCENTAGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("BETWEEN")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("min_value"), knownvalue.StringExact("5")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("max_value"), knownvalue.StringExact("25")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("is_active = true")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// VolumeAssertionChangeTypeValidationSteps returns config-only steps that assert
+// the change_type/volume_type pairing rules are enforced at plan time:
+// ROW_COUNT_CHANGE requires change_type, and ROW_COUNT_TOTAL rejects it.
+func VolumeAssertionChangeTypeValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_CHANGE"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is required`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  volume_type         = "ROW_COUNT_TOTAL"
+  change_type         = "ABSOLUTE"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is only valid`),
+			PlanOnly:    true,
+		},
+	}
+}
+
 // FreshnessAssertionLifecycleSteps returns test steps for datahub_freshness_assertion.
 func FreshnessAssertionLifecycleSteps() []resource.TestStep {
 	const addr = "datahub_freshness_assertion.test"
@@ -3641,6 +3751,7 @@ resource "datahub_freshness_assertion" "test" {
   schedule_type           = "FIXED_INTERVAL"
   fixed_interval_unit     = "HOUR"
   fixed_interval_multiple = 24
+  description             = "data must land daily"
   evaluation_cron         = "0 */8 * * *"
   evaluation_timezone     = "UTC"
   source_type             = "DATAHUB_OPERATION"
@@ -3653,6 +3764,7 @@ resource "datahub_freshness_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("FIXED_INTERVAL")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.StringExact("HOUR")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("data must land daily")),
 			},
 		},
 		{
@@ -3667,6 +3779,88 @@ resource "datahub_freshness_assertion" "test" {
 // FreshnessAssertionCheckDestroy verifies every datahub_freshness_assertion has been removed.
 func FreshnessAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_freshness_assertion")
+}
+
+// FreshnessAssertionSinceLastCheckLifecycleSteps returns test steps for the
+// SINCE_THE_LAST_CHECK freshness schedule (no window sub-config): create, then
+// import and verify. SINCE_THE_LAST_CHECK requires source_type DATAHUB_OPERATION
+// for the sqlite platform used here.
+func FreshnessAssertionSinceLastCheckLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_freshness_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  schedule_type       = "SINCE_THE_LAST_CHECK"
+  filter_sql          = "region = 'EU'"
+  failure_severity    = "HIGH"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_OPERATION"
+  mode                = "ACTIVE"
+  on_success_actions  = ["RESOLVE_INCIDENT"]
+  on_failure_actions  = ["RAISE_INCIDENT"]
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("SINCE_THE_LAST_CHECK")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("filter_sql"), knownvalue.StringExact("region = 'EU'")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("HIGH")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cron_schedule"), knownvalue.Null()),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FreshnessAssertionScheduleValidationSteps returns config-only steps asserting
+// the schedule_type/window pairing rules: SINCE_THE_LAST_CHECK rejects window
+// sub-fields, and FIXED_INTERVAL requires fixed_interval_unit.
+func FreshnessAssertionScheduleValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:hive,freshness.table,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn              = "` + entity + `"
+  schedule_type           = "SINCE_THE_LAST_CHECK"
+  fixed_interval_unit     = "HOUR"
+  fixed_interval_multiple = 24
+  evaluation_cron         = "0 */8 * * *"
+  evaluation_timezone     = "UTC"
+  source_type             = "DATAHUB_OPERATION"
+  mode                    = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`not valid for schedule_type = "SINCE_THE_LAST_CHECK"`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  schedule_type       = "FIXED_INTERVAL"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_OPERATION"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`fixed_interval_unit is required`),
+			PlanOnly:    true,
+		},
+	}
 }
 
 // SQLAssertionLifecycleSteps returns test steps for datahub_sql_assertion.
@@ -3709,6 +3903,345 @@ resource "datahub_sql_assertion" "test" {
 // SQLAssertionCheckDestroy verifies every datahub_sql_assertion has been removed.
 func SQLAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_sql_assertion")
+}
+
+// SchemaAssertionLifecycleSteps returns test steps for datahub_schema_assertion:
+// create a SUPERSET assertion over two columns, tighten it to EXACT_MATCH, then
+// import and verify.
+func SchemaAssertionLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_schema_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_schema_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  compatibility       = "SUPERSET"
+  description         = "expected core columns"
+  fields = [
+    { path = "id",    type = "NUMBER", native_type = "INTEGER" },
+    { path = "email", type = "STRING", native_type = "VARCHAR" },
+  ]
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("compatibility"), knownvalue.StringExact("SUPERSET")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(0).AtMapKey("path"), knownvalue.StringExact("id")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(0).AtMapKey("type"), knownvalue.StringExact("NUMBER")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(1).AtMapKey("type"), knownvalue.StringExact("STRING")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_schema_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  compatibility       = "EXACT_MATCH"
+  fields = [
+    { path = "id",    type = "NUMBER", native_type = "INTEGER" },
+    { path = "email", type = "STRING", native_type = "VARCHAR" },
+  ]
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("compatibility"), knownvalue.StringExact("EXACT_MATCH")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "mode", "executor_id"},
+		},
+	}
+}
+
+// SchemaAssertionCheckDestroy verifies every datahub_schema_assertion is removed.
+func SchemaAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_schema_assertion")
+}
+
+// FieldAssertionMetricLifecycleSteps returns test steps for a FIELD_METRIC
+// (aggregate column metric) field assertion: create, update the metric, then
+// import and verify. FIELD_METRIC works against a DatasetProfile source, so it
+// runs on the sqlite test dataset.
+func FieldAssertionMetricLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_field_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_assertion_type = "FIELD_METRIC"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  metric               = "NULL_COUNT"
+  operator             = "EQUAL_TO"
+  single_value         = "0"
+  description          = "id has no nulls"
+  failure_severity     = "HIGH"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_assertion_type"), knownvalue.StringExact("FIELD_METRIC")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("metric"), knownvalue.StringExact("NULL_COUNT")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_path"), knownvalue.StringExact("id")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("HIGH")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_assertion_type = "FIELD_METRIC"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  metric               = "UNIQUE_COUNT"
+  operator             = "GREATER_THAN"
+  single_value         = "1"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("metric"), knownvalue.StringExact("UNIQUE_COUNT")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FieldAssertionValuesLifecycleSteps returns mock-only test steps for a
+// FIELD_VALUES (per-row value) field assertion, exercising transform-free value
+// checks with a fail threshold and exclude_nulls. FIELD_VALUES requires a
+// warehouse-backed platform on a live target, so this is used for mock coverage.
+func FieldAssertionValuesLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_field_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.events,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_assertion_type = "FIELD_VALUES"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  operator             = "GREATER_THAN_OR_EQUAL_TO"
+  single_value         = "0"
+  fail_threshold_type  = "COUNT"
+  fail_threshold_value = 0
+  exclude_nulls        = true
+  failure_severity     = "MEDIUM"
+  source_type          = "ALL_ROWS_QUERY"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_assertion_type"), knownvalue.StringExact("FIELD_VALUES")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fail_threshold_type"), knownvalue.StringExact("COUNT")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("exclude_nulls"), knownvalue.Bool(true)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("MEDIUM")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "source_type", "mode", "executor_id"},
+		},
+	}
+}
+
+// FieldAssertionValidationSteps returns config-only steps asserting the
+// FIELD_VALUES / FIELD_METRIC attribute split is enforced at plan time.
+func FieldAssertionValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+	base := func(body string) string {
+		return providerBlock + `
+resource "datahub_field_assertion" "test" {
+  entity_urn           = "` + entity + `"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  operator             = "EQUAL_TO"
+  single_value         = "0"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+` + body + `
+}
+`
+	}
+	return []resource.TestStep{
+		{
+			Config:      base(`  field_assertion_type = "FIELD_METRIC"`),
+			ExpectError: regexp.MustCompile(`metric is required`),
+			PlanOnly:    true,
+		},
+		{
+			Config:      base("  field_assertion_type = \"FIELD_VALUES\"\n  metric = \"NULL_COUNT\""),
+			ExpectError: regexp.MustCompile(`metric is only valid for FIELD_METRIC`),
+			PlanOnly:    true,
+		},
+	}
+}
+
+// FieldAssertionCheckDestroy verifies every datahub_field_assertion is removed.
+func FieldAssertionCheckDestroy(s *terraform.State) error {
+	return assertionCheckDestroy(s, "datahub_field_assertion")
+}
+
+// SQLAssertionChangeLifecycleSteps returns test steps for the METRIC_CHANGE sql
+// assertion sub-type: create an ABSOLUTE change assertion, update the change type
+// to PERCENTAGE, then import and verify.
+func SQLAssertionChangeLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_sql_assertion.test"
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  change_type         = "ABSOLUTE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  value               = "10"
+  description         = "row count must keep growing"
+  failure_severity    = "MEDIUM"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("sql_type"), knownvalue.StringExact("METRIC_CHANGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("ABSOLUTE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value"), knownvalue.StringExact("10")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("MEDIUM")),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  change_type         = "PERCENTAGE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "LESS_THAN"
+  value               = "50"
+  description         = "row count must not balloon"
+  failure_severity    = "HIGH"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("change_type"), knownvalue.StringExact("PERCENTAGE")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("LESS_THAN")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("HIGH")),
+			},
+		},
+		{
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"evaluation_cron", "evaluation_timezone", "mode", "executor_id"},
+		},
+	}
+}
+
+// SQLAssertionChangeTypeValidationSteps returns config-only steps asserting the
+// METRIC_CHANGE pairing rules: change_type required for METRIC_CHANGE, rejected
+// for METRIC, and description required for METRIC_CHANGE.
+func SQLAssertionChangeTypeValidationSteps() []resource.TestStep {
+	const entity = "urn:li:dataset:(urn:li:dataPlatform:bigquery,project.dataset.table,PROD)"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "GREATER_THAN"
+  value               = "10"
+  description         = "needs change_type"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is required`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC"
+  change_type         = "ABSOLUTE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "EQUAL_TO"
+  value               = "0"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`change_type is only valid`),
+			PlanOnly:    true,
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = "` + entity + `"
+  sql_type            = "METRIC_CHANGE"
+  change_type         = "ABSOLUTE"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table"
+  operator            = "GREATER_THAN"
+  value               = "10"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`,
+			ExpectError: regexp.MustCompile(`description is required`),
+			PlanOnly:    true,
+		},
+	}
 }
 
 // assertionCheckDestroy is a shared helper for assertion CheckDestroy functions.

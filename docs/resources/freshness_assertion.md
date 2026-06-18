@@ -7,7 +7,7 @@ description: |-
   Creates and manages a DataHub freshness assertion monitor on a dataset.
   Freshness assertions check that a dataset has been updated within an expected window (e.g. within the last 24 hours). DataHub evaluates whether a new batch of data arrived within the configured schedule window.
   Schedule types
-  Set schedule_type to FIXED_INTERVAL and supply fixed_interval_unit / fixed_interval_multiple for a rolling window (e.g. data must arrive every 1 day). Set schedule_type to CRON and supply cron_schedule / cron_timezone for a calendar-based window.
+  Set schedule_type to FIXED_INTERVAL and supply fixed_interval_unit / fixed_interval_multiple for a rolling window (e.g. data must arrive every 1 day). Set schedule_type to CRON and supply cron_schedule / cron_timezone for a calendar-based window. Set schedule_type to SINCE_THE_LAST_CHECK to require that the dataset changed at all between consecutive evaluations; this type takes no window sub-configuration.
   URN
   DataHub generates a server-side UUID for each assertion. The urn and id attributes are populated after creation and are stable across updates. ImportState requires the full assertion URN (e.g. urn:li:assertion:<uuid>). Only NATIVE (author-as-code) assertions can be imported; ingested EXTERNAL (e.g. dbt) or smart/AI INFERRED assertions are refused.
 ---
@@ -22,7 +22,7 @@ Freshness assertions check that a dataset has been updated within an expected wi
 
 ## Schedule types
 
-Set `schedule_type` to `FIXED_INTERVAL` and supply `fixed_interval_unit` / `fixed_interval_multiple` for a rolling window (e.g. data must arrive every 1 day). Set `schedule_type` to `CRON` and supply `cron_schedule` / `cron_timezone` for a calendar-based window.
+Set `schedule_type` to `FIXED_INTERVAL` and supply `fixed_interval_unit` / `fixed_interval_multiple` for a rolling window (e.g. data must arrive every 1 day). Set `schedule_type` to `CRON` and supply `cron_schedule` / `cron_timezone` for a calendar-based window. Set `schedule_type` to `SINCE_THE_LAST_CHECK` to require that the dataset changed at all between consecutive evaluations; this type takes no window sub-configuration.
 
 ## URN
 
@@ -39,14 +39,17 @@ DataHub generates a server-side UUID for each assertion. The `urn` and `id` attr
 - `evaluation_cron` (String) Cron expression defining when DataHub evaluates this assertion.
 - `evaluation_timezone` (String) Timezone for the evaluation cron schedule (e.g. `"UTC"`).
 - `mode` (String) Monitoring mode. `ACTIVE` enables scheduled evaluation. `PASSIVE` records results without scheduling.
-- `schedule_type` (String) Freshness window type: `FIXED_INTERVAL` (rolling window) or `CRON` (calendar window).
+- `schedule_type` (String) Freshness window type: `FIXED_INTERVAL` (rolling window), `CRON` (calendar window), or `SINCE_THE_LAST_CHECK` (any change since the previous evaluation; no window sub-configuration).
 - `source_type` (String) How DataHub determines freshness. `AUDIT_LOG` uses the platform audit log. `INFORMATION_SCHEMA` queries the source catalog.
 
 ### Optional
 
 - `cron_schedule` (String) Cron expression defining the freshness window (for `schedule_type = "CRON"`).
 - `cron_timezone` (String) Timezone for the cron window schedule (e.g. `"UTC"`).
+- `description` (String) Human-readable description of what this freshness assertion checks.
 - `executor_id` (String) ID of the remote executor pool to use for evaluation. Omit to use the default executor.
+- `failure_severity` (String) Severity raised when this assertion fails: `LOW`, `MEDIUM`, or `HIGH`. Omit to use the DataHub default. (Conditional per-result severity rules are not modeled.)
+- `filter_sql` (String) Optional SQL `WHERE` clause (without the `WHERE` keyword) restricting which rows the freshness check considers, e.g. `"region = 'EU'"`.
 - `fixed_interval_multiple` (Number) Number of units in the fixed interval (e.g. `24` for 24 hours). Required when `schedule_type = "FIXED_INTERVAL"`.
 - `fixed_interval_unit` (String) Time unit for a fixed-interval schedule: `HOUR`, `DAY`, `WEEK`, `MONTH`, or `YEAR`. Required when `schedule_type = "FIXED_INTERVAL"`.
 - `on_failure_actions` (List of String) Actions to take when the assertion fails (e.g. `["RAISE_INCIDENT"]`).

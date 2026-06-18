@@ -173,6 +173,72 @@ func (tg *Target) EnsureDatasetEntity(t *testing.T, entityURN string) {
 	})
 }
 
+// EnsureDatasetEntityWithSchema is like EnsureDatasetEntity but also attaches a
+// schemaMetadata aspect with two columns (id NUMBER/INTEGER, email STRING/VARCHAR)
+// so that schema and field (column) assertion acceptance tests have a schema to
+// target. No-op on the mock target. The dataset is hard-deleted on cleanup.
+func (tg *Target) EnsureDatasetEntityWithSchema(t *testing.T, entityURN string) {
+	t.Helper()
+	if tg.Kind == TargetMock {
+		return
+	}
+
+	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
+	token := os.Getenv("DATAHUB_GMS_TOKEN")
+
+	body, err := json.Marshal([]map[string]any{
+		{
+			"urn":               entityURN,
+			"datasetProperties": map[string]any{"value": map[string]any{"name": "TF Provider Test Dataset"}},
+			"schemaMetadata": map[string]any{"value": map[string]any{
+				"schemaName":     "tf_test",
+				"platform":       "urn:li:dataPlatform:sqlite",
+				"version":        0,
+				"hash":           "",
+				"platformSchema": map[string]any{"com.linkedin.schema.OtherSchema": map[string]any{"rawSchema": ""}},
+				"fields": []map[string]any{
+					{"fieldPath": "id", "nativeDataType": "INTEGER", "type": map[string]any{"type": map[string]any{"com.linkedin.schema.NumberType": map[string]any{}}}},
+					{"fieldPath": "email", "nativeDataType": "VARCHAR", "type": map[string]any{"type": map[string]any{"com.linkedin.schema.StringType": map[string]any{}}}},
+				},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnsureDatasetEntityWithSchema: marshal: %v", err)
+	}
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		gmsURL+"/openapi/v3/entity/dataset", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("EnsureDatasetEntityWithSchema: build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("EnsureDatasetEntityWithSchema: POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		t.Fatalf("EnsureDatasetEntityWithSchema: POST returned HTTP %d for URN %q", resp.StatusCode, entityURN)
+	}
+	t.Logf("EnsureDatasetEntityWithSchema: created dataset %q (HTTP %d)", entityURN, resp.StatusCode)
+
+	t.Cleanup(func() {
+		deleteURL := gmsURL + "/openapi/v3/entity/dataset/" + url.PathEscape(entityURN)
+		delReq, delErr := http.NewRequestWithContext(context.Background(), http.MethodDelete, deleteURL, nil)
+		if delErr != nil {
+			return
+		}
+		delReq.Header.Set("Authorization", "Bearer "+token)
+		if delResp, e := httpClient.Do(delReq); e == nil {
+			delResp.Body.Close()
+		}
+	})
+}
+
 // CleanupOrphanedMonitors searches for and deletes any DataHub monitor entities
 // whose URN references the given dataset URN. Orphaned monitors (left behind
 // when a previous test run's Delete failed to locate the monitor URN via the
