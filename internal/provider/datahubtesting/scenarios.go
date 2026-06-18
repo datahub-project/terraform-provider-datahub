@@ -3989,6 +3989,7 @@ resource "datahub_field_assertion" "test" {
   operator             = "EQUAL_TO"
   single_value         = "0"
   description          = "id has no nulls"
+  failure_severity     = "HIGH"
   source_type          = "DATAHUB_DATASET_PROFILE"
   evaluation_cron      = "0 */8 * * *"
   evaluation_timezone  = "UTC"
@@ -4000,6 +4001,7 @@ resource "datahub_field_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_assertion_type"), knownvalue.StringExact("FIELD_METRIC")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("metric"), knownvalue.StringExact("NULL_COUNT")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_path"), knownvalue.StringExact("id")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("HIGH")),
 			},
 		},
 		{
@@ -4055,6 +4057,7 @@ resource "datahub_field_assertion" "test" {
   fail_threshold_type  = "COUNT"
   fail_threshold_value = 0
   exclude_nulls        = true
+  failure_severity     = "MEDIUM"
   source_type          = "ALL_ROWS_QUERY"
   evaluation_cron      = "0 */8 * * *"
   evaluation_timezone  = "UTC"
@@ -4066,6 +4069,7 @@ resource "datahub_field_assertion" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fail_threshold_type"), knownvalue.StringExact("COUNT")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("exclude_nulls"), knownvalue.Bool(true)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("failure_severity"), knownvalue.StringExact("MEDIUM")),
 			},
 		},
 		{

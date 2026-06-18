@@ -60,7 +60,7 @@ type AssertionInfo struct {
 	EntityURN       string
 	Description     string // top-level assertionInfo.description (all monitor types)
 	FilterSQL       string // row-level SQL filter (volume and freshness; empty if none)
-	FailureSeverity string // defaultSeverity LOW/MEDIUM/HIGH (freshness and sql; empty if none)
+	FailureSeverity string // defaultSeverity LOW/MEDIUM/HIGH (freshness and sql; field uses Field.FailureSeverity)
 	// Type-specific sub-structs; only one is non-nil depending on Type.
 	Freshness *FreshnessAssertionInfo
 	Volume    *VolumeAssertionInfo
@@ -100,14 +100,15 @@ type SQLAssertionInfo struct {
 }
 
 type FieldAssertionInfo struct {
-	FieldType  string // FIELD_VALUES or FIELD_METRIC
-	FieldPath  string // column path
-	StdType    string // SchemaFieldSpec std type, e.g. NUMBER, STRING
-	NativeType string // platform-native column type
-	Operator   string
-	MinValue   string
-	MaxValue   string
-	Value      string
+	FieldType       string // FIELD_VALUES or FIELD_METRIC
+	FieldPath       string // column path
+	StdType         string // SchemaFieldSpec std type, e.g. NUMBER, STRING
+	NativeType      string // platform-native column type
+	Operator        string
+	MinValue        string
+	MaxValue        string
+	Value           string
+	FailureSeverity string // defaultSeverity LOW/MEDIUM/HIGH (empty if none)
 	// FIELD_VALUES only
 	TransformType  string // e.g. LENGTH (empty if no transform)
 	FailThreshold  string // COUNT or PERCENTAGE (empty if unset)
@@ -277,13 +278,15 @@ type assertionInfoValue struct {
 				Type  string `json:"type"`
 				Value int64  `json:"value"`
 			} `json:"failThreshold,omitempty"`
-			ExcludeNulls *bool `json:"excludeNulls,omitempty"`
+			ExcludeNulls          *bool                    `json:"excludeNulls,omitempty"`
+			FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
 		} `json:"fieldValuesAssertion,omitempty"`
 		FieldMetricAssertion *struct {
-			Field      *fieldSpec              `json:"field"`
-			Metric     string                  `json:"metric"`
-			Operator   string                  `json:"operator"`
-			Parameters *assertionStdParameters `json:"parameters,omitempty"`
+			Field                 *fieldSpec               `json:"field"`
+			Metric                string                   `json:"metric"`
+			Operator              string                   `json:"operator"`
+			Parameters            *assertionStdParameters  `json:"parameters,omitempty"`
+			FailureSeverityConfig *assertionSeverityConfig `json:"failureSeverityConfig,omitempty"`
 		} `json:"fieldMetricAssertion,omitempty"`
 	} `json:"fieldAssertion,omitempty"`
 	// Schema assertions. On read the field std type comes back as a nested
@@ -452,6 +455,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 					fi.ExcludeNulls = *fv.ExcludeNulls
 					fi.HasExcludeNull = true
 				}
+				if fv.FailureSeverityConfig != nil {
+					fi.FailureSeverity = fv.FailureSeverityConfig.DefaultSeverity
+				}
 			}
 			if fm := v.FieldAssertion.FieldMetricAssertion; fm != nil {
 				if fm.Field != nil {
@@ -462,6 +468,9 @@ func toAssertionInfo(e *assertionEntity) *AssertionInfo {
 				fi.Metric = fm.Metric
 				fi.Operator = fm.Operator
 				applyStdParametersField(fi, fm.Parameters)
+				if fm.FailureSeverityConfig != nil {
+					fi.FailureSeverity = fm.FailureSeverityConfig.DefaultSeverity
+				}
 			}
 			ai.Field = fi
 		}

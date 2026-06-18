@@ -491,6 +491,7 @@ func applyFieldInfo(state *fieldAssertionResourceModel, f *datahub.FieldAssertio
 	state.MaxValue = nullIfEmpty(f.MaxValue)
 	state.SingleValue = nullIfEmpty(f.Value)
 	state.Metric = nullIfEmpty(f.Metric)
+	state.FailureSeverity = nullIfEmpty(f.FailureSeverity)
 	state.TransformType = nullIfEmpty(f.TransformType)
 	state.FailThresholdType = nullIfEmpty(f.FailThreshold)
 	if f.FailThreshold != "" {

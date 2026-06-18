@@ -223,7 +223,8 @@ func TestGetAssertionByURN_FieldMetric(t *testing.T) {
 	        "field": { "path": "id", "type": "NUMBER", "nativeType": "INTEGER" },
 	        "metric": "NULL_COUNT",
 	        "operator": "EQUAL_TO",
-	        "parameters": { "value": { "type": "NUMBER", "value": "0" } }
+	        "parameters": { "value": { "type": "NUMBER", "value": "0" } },
+	        "failureSeverityConfig": { "rules": [], "defaultSeverity": "HIGH" }
 	      }
 	    }
 	  } }
@@ -244,6 +245,9 @@ func TestGetAssertionByURN_FieldMetric(t *testing.T) {
 	}
 	if f.Metric != "NULL_COUNT" || f.Operator != "EQUAL_TO" || f.Value != "0" {
 		t.Errorf("metric/op/value = %q/%q/%q, want NULL_COUNT/EQUAL_TO/0", f.Metric, f.Operator, f.Value)
+	}
+	if f.FailureSeverity != "HIGH" {
+		t.Errorf("FailureSeverity = %q, want HIGH (field failureSeverityConfig must round-trip)", f.FailureSeverity)
 	}
 }
 
