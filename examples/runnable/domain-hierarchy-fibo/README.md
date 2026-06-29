@@ -15,6 +15,8 @@ Financial Industry Business Ontology (FIBO)    <- optional root (domain + glossa
 
 **Scale (all domains, Release terms only):** ~103 leaf ontologies, ~147 domain nodes, ~147 matching glossary nodes, ~1500-2000 glossary terms. Start with a single domain (`-var 'domains_filter=["SEC"]'`) for a faster first run.
 
+> **Presenting this demo?** See [DEMO.md](DEMO.md) for a runbook of verified demo threads (FIBO/LEI search, column-level semantics, data-quality assertions, lineage) with exact search terms, navigation paths, and talk tracks.
+
 ## How it works
 
 A Python script shallow-clones the FIBO GitHub repository and reads the RDF files to extract two layers of content:
