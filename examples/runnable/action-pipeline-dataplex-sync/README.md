@@ -2,7 +2,7 @@
 
 Creates a DataHub Cloud **action pipeline** (automation) that propagates DataHub glossary terms back to the Google Dataplex catalog, and enumerates all action pipelines via the plural data source.
 
-Action pipelines are **DataHub Cloud only** and are an **experimental, Cloud-internal API** — the underlying mutations carry no external stability guarantee. Pin the provider version.
+Action pipelines are **DataHub Cloud only** and are a newer DataHub Cloud capability. Because DataHub Cloud upgrades on its own release cadence, a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
 
 ## Prerequisites
 

@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   DataHub ❌ | DataHub Cloud ✅
   Creates and manages a DataHub Cloud action pipeline (automation) -- a packaged action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) back to a platform such as BigQuery or Dataplex.
-  Experimental / Cloud-internal API. Action pipelines are a newer, Cloud-only feature; the underlying upsertActionPipeline / deleteActionPipeline mutations carry no external stability guarantee and may change between DataHub Cloud releases. Pin the provider version.
+  Action pipelines are a newer DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
   This resource manages the pipeline definition (name, type, recipe, executor). It does not model run state (running/stopped); a freshly created pipeline is started by DataHub.
   Argument Reference
   action_id (Optional) Unique id (URN suffix). If omitted, derived from name as <sanitized-name>-<hash>. Changing it forces a new resource.name (Required) Human-friendly name shown in the DataHub UI.type (Required) Action class string, e.g. dataplex_metadata_sync or datahub_integrations.propagation.bigquery.tag_propagator.BigqueryTagPropagatorAction. The set is open and Cloud-version-dependent; not validated against an enum.recipe (Required) Action recipe as a JSON string. Build it with jsonencode({...}).category (Optional) UI grouping category (e.g. Data Discovery).description (Optional) Human-readable description.executor_id (Optional) Executor that runs the action (e.g. default).version (Optional) Action package version.debug_mode (Optional) Enable verbose executor logging.
@@ -23,7 +23,7 @@ description: |-
 
 Creates and manages a DataHub Cloud **action pipeline** (automation) -- a packaged action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) back to a platform such as BigQuery or Dataplex.
 
-**Experimental / Cloud-internal API.** Action pipelines are a newer, Cloud-only feature; the underlying `upsertActionPipeline` / `deleteActionPipeline` mutations carry no external stability guarantee and may change between DataHub Cloud releases. Pin the provider version.
+Action pipelines are a newer DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
 
 This resource manages the pipeline **definition** (name, type, recipe, executor). It does not model run state (running/stopped); a freshly created pipeline is started by DataHub.
 

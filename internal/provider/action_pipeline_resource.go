@@ -77,9 +77,10 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"Creates and manages a DataHub Cloud **action pipeline** (automation) -- a packaged " +
 			"action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) " +
 			"back to a platform such as BigQuery or Dataplex.\n\n" +
-			"**Experimental / Cloud-internal API.** Action pipelines are a newer, Cloud-only feature; " +
-			"the underlying `upsertActionPipeline` / `deleteActionPipeline` mutations carry no external " +
-			"stability guarantee and may change between DataHub Cloud releases. Pin the provider version.\n\n" +
+			"Action pipelines are a newer DataHub Cloud capability. DataHub Cloud upgrades on its own " +
+			"release cadence, so a release may occasionally affect this resource; fixes are handled in the " +
+			"provider. Pin the provider version for client-side stability and upgrade it to pick up fixes " +
+			"(including any needed for backend changes), and please open an issue if you hit one.\n\n" +
 			"This resource manages the pipeline **definition** (name, type, recipe, executor). It does not " +
 			"model run state (running/stopped); a freshly created pipeline is started by DataHub.\n\n" +
 			"## Argument Reference\n\n" +
