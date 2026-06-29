@@ -454,6 +454,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LLM-based FIBO tagging of ISO 20022 entities.")
     parser.add_argument("--force", action="store_true", help="Re-tag even if cache exists.")
     parser.add_argument("--dry-run", action="store_true", help="Do not contact DataHub or Anthropic.")
-    parser.add_argument("--workers", type=int, default=10, help="Parallel worker threads (default: 10).")
+    parser.add_argument("--workers", type=int, default=20, help="Parallel worker threads (default: 20).")
     args = parser.parse_args()
     main(force=args.force, dry_run=args.dry_run, workers=args.workers)
