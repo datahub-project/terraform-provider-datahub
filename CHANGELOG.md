@@ -7,10 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-29
+
 ### Added
 
-- `datahub_action_pipeline` resource: create and manage a DataHub Cloud action pipeline (automation) -- a packaged action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) back to a platform such as BigQuery or Dataplex. The resource manages the pipeline definition (`name`, `type`, `recipe`, `category`, `description`, `executor_id`, `version`, `debug_mode`); the `recipe` is a JSON string compared by semantic equality (like `datahub_ingestion_source`), and `${SECRET_NAME}` placeholders are stored verbatim and resolved at execution time. The URN is deterministic: `action_id` (a URN suffix, derived from `name` when omitted) produces `urn:li:dataHubAction:<action_id>`, written via `upsertActionPipeline`. Requires DataHub Cloud; returns a clear diagnostic on OSS DataHub. This is an experimental, Cloud-internal API with no external stability guarantee -- pin the provider version.
+- `datahub_action_pipeline` resource: create and manage a DataHub Cloud action pipeline (automation) -- a packaged action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) back to a platform such as BigQuery or Dataplex. The resource manages the pipeline definition (`name`, `type`, `recipe`, `category`, `description`, `executor_id`, `version`, `debug_mode`); the `recipe` is a JSON string compared by semantic equality (like `datahub_ingestion_source`), and `${SECRET_NAME}` placeholders are stored verbatim and resolved at execution time. The URN is deterministic: `action_id` (a URN suffix, derived from `name` when omitted) produces `urn:li:dataHubAction:<action_id>`, written via `upsertActionPipeline`. Requires DataHub Cloud; returns a clear diagnostic on OSS DataHub.
 - `datahub_action_pipelines` data source: return the URNs of all DataHub Cloud action pipelines for bulk import via `for_each` into `import {}` blocks. Backed by the `listActionPipelines` GraphQL query. Requires DataHub Cloud.
+
+### Changed
+
+- `datahub-tf-extract`: fails fast when the `--output` directory already contains a `generated.tf` from a previous run -- a re-run previously left stale, partial config in place while still reporting success, because `terraform plan -generate-config-out` refuses to overwrite the file. A genuine validation-plan failure is now fatal rather than a swallowed warning.
+- Import guide (`docs/guides/import-existing.md`): corrected the write-only resource note (the first post-import apply plans a one-time replacement, not a no-op, because `*_wo_version` imports as null), noted that shared-instance narrowing bypasses the tool's post-processing, and added a "Migrating from another Terraform provider" section for provider-swap migrations.
 
 ## [0.10.0] - 2026-06-18
 
@@ -210,7 +217,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.7.0...v0.8.0
