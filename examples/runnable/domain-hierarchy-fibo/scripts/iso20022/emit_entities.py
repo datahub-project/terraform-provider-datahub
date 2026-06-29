@@ -30,7 +30,9 @@ import json
 import os
 import re
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from datahub.emitter.rest_emitter import DatahubRestEmitter
@@ -112,6 +114,17 @@ ISO20022_TAG_PREFIX = "iso20022"
 
 ACTOR_URN = "urn:li:corpuser:datahub"
 ENV = "PROD"
+EMIT_WORKERS = 12
+
+# DatahubRestEmitter uses requests.Session which is not thread-safe.
+# Each worker thread gets its own emitter via thread-local storage.
+_tl = threading.local()
+
+
+def _thread_emitter(gms_url: str, gms_token: str):
+    if not hasattr(_tl, "emitter"):
+        _tl.emitter = DatahubRestEmitter(gms_server=gms_url, token=gms_token or None)
+    return _tl.emitter
 
 
 def _audit_stamp() -> AuditStampClass:
@@ -263,9 +276,12 @@ def emit_iso20022_glossary(manifest: list, emitter, dry_run: bool) -> dict:
         print(f"  [dry-run] ISO 20022 glossary: 1 root + {n_areas} area nodes + {n_terms} message terms")
         return term_map
 
-    for mcp in mcps:
+    print(f"  Emitting 1 root + {n_areas} area nodes + {n_terms} message terms ({len(mcps)} MCPs)...")
+    for i, mcp in enumerate(mcps, 1):
         emitter.emit_mcp(mcp)
-    print(f"  Glossary: 1 root + {n_areas} area nodes + {n_terms} message terms emitted.")
+        if i % 50 == 0 or i == len(mcps):
+            print(f"  {i}/{len(mcps)} MCPs emitted")
+    print(f"  Glossary done.")
     return term_map
 
 
@@ -323,10 +339,16 @@ def emit_message(
     mcps = []
 
     # --- Kafka topic ---
+    # Some complex ISO 20022 schemas have duplicate Avro type names; the SDK
+    # prints a traceback internally before raising. Suppress stderr during the
+    # call so that noise doesn't swamp the progress output.
+    import io, contextlib
+    _stderr_buf = io.StringIO()
     try:
-        kafka_fields = avro_schema_to_mce_fields(
-            avro_schema=avro_schema, is_key_schema=False, default_nullable=True,
-        )
+        with contextlib.redirect_stderr(_stderr_buf):
+            kafka_fields = avro_schema_to_mce_fields(
+                avro_schema=avro_schema, is_key_schema=False, default_nullable=True,
+            )
     except Exception:
         kafka_fields = []
 
@@ -502,10 +524,9 @@ def main(dry_run: bool = False) -> None:
     print("\n--- ISO 20022 Tags ---")
     emit_iso20022_tags(manifest, emitter, dry_run)
 
-    # Step 2: emit dataset entities with lineage and associations
+    # Step 2: prepare work items (read files in main thread; emit in parallel)
     print("\n--- Dataset Entities ---")
-    ok = 0
-    failed = 0
+    work = []
     for entry in manifest:
         message_id = entry["id"]
         avsc_path = os.path.join(AVRO_DIR, f"{message_id}.avsc")
@@ -513,17 +534,11 @@ def main(dry_run: bool = False) -> None:
 
         if not os.path.exists(avsc_path):
             print(f"  SKIP    {message_id} (no .avsc -- run xsd_to_avro.py first)")
-            failed += 1
             continue
 
         with open(avsc_path) as fh:
             avro_schema_dict = json.load(fh)
-
-        try:
-            import avro.schema as avro_schema_mod
-            avro_parsed = avro_schema_mod.parse(json.dumps(avro_schema_dict))
-        except Exception:
-            avro_parsed = avro_schema_dict
+        avro_str = json.dumps(avro_schema_dict)
 
         flat_fields = []
         if os.path.exists(fields_path):
@@ -531,20 +546,35 @@ def main(dry_run: bool = False) -> None:
                 flat_fields = json.load(fh)
 
         iso22_term_urn = term_map.get(message_id, _iso22_term_urn(message_id))
-        action = "DRY-RUN" if dry_run else "EMIT"
-        print(f"  {action}    {message_id}")
-        try:
-            kafka_urn, pg_urn, looker_urn = emit_message(
-                entry, avro_parsed, flat_fields, iso22_term_urn, emitter, dry_run
-            )
-            ok += 1
-            if dry_run:
-                print(f"    kafka:    {kafka_urn}")
-                print(f"    postgres: {pg_urn}")
-                print(f"    looker:   {looker_urn}")
-        except Exception as exc:
-            print(f"    FAILED: {exc}")
-            failed += 1
+        work.append((entry, avro_str, flat_fields, iso22_term_urn))
+
+    total = len(work)
+    ok = 0
+    failed = 0
+    lock = threading.Lock()
+
+    def _emit_one(item):
+        entry, avro_str, flat_fields, iso22_term_urn = item
+        e = emitter if dry_run else _thread_emitter(gms_url, gms_token)
+        return emit_message(entry, avro_str, flat_fields, iso22_term_urn, e, dry_run)
+
+    workers = 1 if dry_run else EMIT_WORKERS
+    print(f"  {total} messages, {workers} worker(s)")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_emit_one, item): item[0] for item in work}
+        for i, future in enumerate(as_completed(futures), 1):
+            entry = futures[future]
+            message_id = entry["id"]
+            try:
+                future.result()
+                with lock:
+                    ok += 1
+                    if i % 50 == 0 or i == total:
+                        print(f"  {i}/{total} done (last: {message_id})")
+            except Exception as exc:
+                with lock:
+                    failed += 1
+                    print(f"  FAILED [{i}/{total}] {message_id}: {exc}")
 
     print(f"\nDone: {ok} messages emitted, {failed} failed.")
     if failed:
