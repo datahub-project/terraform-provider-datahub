@@ -4,7 +4,7 @@ A walkthrough script for demonstrating DataHub against the ISO 20022 financial-m
 
 Every navigation path and search term below was verified against the live `demo.gcp.acryl.io` instance. Counts are accurate as of the last tagging/emit run; treat them as approximate (they move with each re-run).
 
-> **Setup note.** The whole environment is built by `make iso-all` (emit entities, generate assertions config, LLM tagging) followed by `terraform apply` (FIBO domains/glossary + assertions). See the [README](README.md) for the build steps. This document is the *presenting* guide, not the build guide.
+> **Setup note.** The whole environment is built by `make iso-all` (emit entities, generate assertions config, LLM tagging), then `terraform apply` (FIBO domains/glossary + assertions), then `make iso-assertion-results` (synthetic assertion run history so DataHub Observe shows live pass/fail status). See the [README](README.md) for the build steps. This document is the *presenting* guide, not the build guide.
 
 ## Demo threads at a glance
 
@@ -13,7 +13,7 @@ Every navigation path and search term below was verified against the live `demo.
 | 1 | Glossary search **"Legal Entity Identifier"** -> term -> *Related Entities* | A second ISO standard (ISO 17442 / LEI) surfaces inside ISO 20022 messages; FIBO is the connective tissue. ~237 related datasets. | [Thread 1](#thread-1-the-lei-cross-standard-hero) |
 | 2 | Dataset search **"credit transfer"** -> `fito_ficustomer_credit_transfer` -> *Columns* | Column-level business semantics: `Dbtr` -> Debtor, `Cdtr` -> Creditor, agent chain -> Financial Institution / Account. | [Thread 2](#thread-2-column-level-semantics-on-a-payment) |
 | 3 | Glossary search **"Account"** / **"Financial Institution"** / **"Debtor"** -> *Related Entities* | Business-term-first discovery: a non-technical user finds every asset carrying a concept without knowing table names. | [Thread 3](#thread-3-business-term-driven-discovery) |
-| 4 | Dataset `fito_ficustomer_credit_transfer` -> *Quality* tab | DataHub Observe / governance-as-code: schema, volume, field, and SQL assertions across the table, all defined in Terraform. | [Thread 4](#thread-4-data-quality--datahub-observe) |
+| 4 | Dataset *Quality* tab (clean: `fito_ficustomer_credit_transfer`; failing: `bank_to_customer_statement`, `securities_settlement_transaction_instruction`, `customer_credit_transfer_initiation`) | DataHub Observe / governance-as-code: 5 assertion types across the estate, all defined in Terraform, with live pass/fail status and a deliberate trio of failures to talk through. | [Thread 4](#thread-4-data-quality--datahub-observe) |
 | 5 | Dataset `fito_ficustomer_credit_transfer` -> *Lineage* | End-to-end 3-tier lineage: Kafka topic -> PostgreSQL table -> Looker view, generated as code. | [Thread 5](#thread-5-end-to-end-lineage) |
 | 6 | Browse **Glossary** / **Domains** -> FIBO tree | Taxonomy-as-code: the entire FIBO ontology (113 domain nodes, ~1,440 terms) provisioned via Terraform. | [Thread 6](#thread-6-fibo-taxonomy-as-code) |
 
@@ -97,14 +97,14 @@ Base URL for all links below: `https://demo.gcp.acryl.io`.
 
 ## Thread 4: data quality / DataHub Observe
 
-**The moment.** Governance-as-code: data-quality rules defined in Terraform, visible and enforced in DataHub.
+**The moment.** Governance-as-code: data-quality rules defined in Terraform, evaluated and visible in DataHub - with most assertions green and a deliberate handful red to talk through incident detection.
 
-**Steps**
+**Steps - the clean table first**
 
 1. Open **`fito_ficustomer_credit_transfer`** (pacs.008 PostgreSQL table).
 2. Open the **Quality** tab (Validations / Assertions).
 
-**What you see** - 7 assertions on this one table, spanning all four types:
+**What you see** - 8 assertions on this one table, spanning all five types, all **passing**:
 
 | Type | Example rule |
 |---|---|
@@ -112,14 +112,27 @@ Base URL for all links below: `https://demo.gcp.acryl.io`.
 | **Volume** | Volume gate: table must hold >= 50,000 records (a drop signals a pipeline gap). |
 | **Field** | `Message ID`, `Number of Transactions`, and `Total Interbank Settlement Amount` must never be null. |
 | **SQL** | Zero tolerance for null message IDs; transaction count must always be present. |
+| **Freshness** | Data must refresh within 24 hours; a longer silence means the feed stalled. |
 
-**Scale.** Across the 26 representative tables there are **182** assertions total (26 schema + 26 volume + 78 field + 52 SQL), all generated from `assertions_config.json` and applied via `for_each` in `assertions.tf`.
+**Scale.** Across the 26 representative tables there are **208** assertions (26 schema + 26 volume + 78 field + 52 SQL + 26 freshness), all generated from `assertions_config.json` and applied via `for_each` in `assertions.tf`. Each carries an evaluation history so the Observe view shows a status trend, not just a definition.
 
-**Talk track.** "Every one of these rules is a Terraform resource. The data team reviews data-quality policy as a pull request, the same way they review infrastructure. Schema and volume assertions evaluate against ingested profiles; the SQL rules are defined and ready to evaluate the moment a live database connection is attached."
+**Then the failures - three different tables, three different types, three different stories.** Search each table, open its Quality tab:
 
-> **Note.** Schema/volume/field assertions are **DataHub Cloud only** (they use the Cloud monitor service). SQL assertions here are in PASSIVE mode - the rule is registered and visible, and evaluates when a database connection is wired up.
+| Dataset (search term) | Type | Status | Talk track |
+|---|---|---|---|
+| `bank_to_customer_statement` (camt.053) | **Volume** | FAIL | "Statement volume dropped to ~430 rows against a 1,000 floor - a partial feed; bank-statement reconciliation is at risk." |
+| `securities_settlement_transaction_instruction` (sese.023) | **Freshness** | FAIL | "Settlement instructions have not refreshed in over 24 hours - the upstream feed has stalled." |
+| `customer_credit_transfer_initiation` (pain.001) | **SQL** | FAIL | "37 payment initiations arrived with null message IDs - an integrity violation that breaks downstream matching." |
 
-**Direct link**
+Each failing assertion shows a recent **regression** (passing, then failing in the last couple of evaluations), so the story is "this was healthy and just broke," not "this was always red."
+
+**Talk track.** "Every one of these rules is a Terraform resource - the data team reviews data-quality policy as a pull request, the same way they review infrastructure. The pacs.008 backbone is clean across all five assertion types. But the platform has caught three real problems: a volume drop on bank statements, a stalled securities-settlement feed, and an integrity violation on customer payments - each one an incident a governance team would act on."
+
+> **Where to look.** The per-dataset **Quality** tab is the reliable surface and reads directly from the assertion results. The estate-wide **Observe -> Assertions** summary (`/observe/datasets/assertions`) aggregates the same data but depends on search indexing, which can lag a few minutes on a busy instance.
+
+> **How the results got there.** On these synthetic datasets the monitors have no profile/audit data to evaluate against, so the assertions would otherwise show "awaiting evaluation." `scripts/iso20022/emit_assertion_results.py` writes synthetic `assertionRunEvent` history (mostly SUCCESS, with the three failures above) so the demo shows live status. Schema/volume/field/freshness assertions are **DataHub Cloud only**; SQL assertions are PASSIVE (defined, and evaluate when a database connection is attached).
+
+**Direct link (clean hero)**
 
 ```
 /dataset/urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.fito_ficustomer_credit_transfer,PROD)/Quality

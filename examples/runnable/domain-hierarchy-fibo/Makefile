@@ -1,5 +1,6 @@
 .PHONY: fibo-deps fibo-data fibo-data-provisional fibo-update clean-fibo \
-        iso-deps iso-data iso-avro iso-emit iso-assertions-config iso-tag iso-all clean-iso \
+        iso-deps iso-data iso-avro iso-emit iso-assertions-config iso-tag \
+        iso-assertion-results iso-all clean-iso \
         .iso-cache/xsd .iso-cache/avro
 
 # Install Python dependencies required for glossary term extraction.
@@ -73,6 +74,13 @@ iso-assertions-config: iso-deps .iso-cache/avro
 # Run 'make fibo-data' first so FIBO context is available.
 iso-tag: iso-deps
 	python3 scripts/iso20022/auto_tag.py $(if $(FORCE),--force,)
+
+# Emit synthetic assertion run results so DataHub Observe shows evaluated
+# assertions (mostly passing, with a deliberate few failing). Run AFTER
+# 'terraform apply' has created the assertions. Requires DATAHUB_GMS_URL
+# and DATAHUB_GMS_TOKEN.
+iso-assertion-results: iso-deps
+	python3 scripts/iso20022/emit_assertion_results.py
 
 # Run the full ISO 20022 pipeline end-to-end.
 iso-all: iso-deps iso-data iso-avro iso-emit iso-assertions-config iso-tag
