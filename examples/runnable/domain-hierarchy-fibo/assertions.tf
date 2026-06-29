@@ -105,6 +105,7 @@ resource "datahub_field_assertion" "iso20022" {
   field_assertion_type = "FIELD_METRIC"
   field_path           = each.value.field_path
   field_type           = each.value.field_type
+  field_native_type    = "text"
   metric               = "NULL_COUNT"
   operator             = "EQUAL_TO"
   single_value         = "0"
