@@ -8,7 +8,7 @@ XSD files for each message family. The per-message endpoint
 (/message/{id}/download) requires a browser session; the business-area
 endpoint (/business-area/{id}/download) serves zips directly.
 
-Business area IDs were discovered by probing the catalogue at
+Business area IDs were discovered from the catalogue at
 https://www.iso20022.org/iso-20022-message-definitions.
 
 Schemas are cached to .iso-cache/xsd/ and reused if less than 30 days old.
@@ -26,10 +26,8 @@ import argparse
 import io
 import json
 import os
-import sys
 import time
 import urllib.request
-import urllib.error
 import zipfile
 from datetime import datetime, timezone
 
@@ -41,55 +39,199 @@ CACHE_MAX_AGE_DAYS = 30
 BASE_URL = "https://www.iso20022.org/business-area/{id}/download"
 USER_AGENT = "terraform-provider-datahub/iso20022-demo (github.com/datahub-project/terraform-provider-datahub)"
 
-# Business area numeric IDs from iso20022.org, mapped to message family info.
-# Each download returns a zip of all current XSD files for that family.
+# All 32 ISO 20022 business areas from the catalogue at
+# https://www.iso20022.org/iso-20022-message-definitions
+# Tuple: (area_id, family_code, business_area_slug, display_name)
 BUSINESS_AREAS = [
-    (76,  "pacs", "payments",     "Payment Clearing and Settlement"),
-    (81,  "pain", "payments",     "Payments Initiation"),
-    (51,  "camt", "cash_management", "Cash Management"),
-    (111, "sese", "securities",   "Securities Settlement"),
-    (106, "semt", "securities",   "Securities Management"),
-    (71,  "fxtr", "foreign_exchange", "Foreign Exchange Trade"),
-    (121, "tsin", "trade_finance","Trade Services Initiation"),
+    # Payments
+    (76,  "pacs", "payments",          "Payment Clearing and Settlement"),
+    (81,  "pain", "payments",          "Payments Initiation"),
+    (91,  "remt", "payments",          "Payments Remittance Advice"),
+    (407, "trck", "payments",          "Payment Tracker"),
+    # Cash Management
+    (51,  "camt", "cash_management",   "Cash Management"),
+    # Securities
+    (96,  "secl", "securities",        "Securities Clearing"),
+    (101, "seev", "securities",        "Securities Events"),
+    (106, "semt", "securities",        "Securities Management"),
+    (111, "sese", "securities",        "Securities Settlement"),
+    (116, "setr", "securities",        "Securities Trade"),
+    # Foreign Exchange
+    (71,  "fxtr", "foreign_exchange",  "Foreign Exchange Trade"),
+    # Trade Finance
+    (121, "tsin", "trade_finance",     "Trade Services Initiation"),
+    (126, "tsmt", "trade_finance",     "Trade Services Management"),
+    (131, "tsrv", "trade_finance",     "Trade Services"),
+    # Collateral
+    (66,  "colr", "collateral",        "Collateral Management"),
+    # Account Management
+    (26,  "acmt", "account_management","Account Management"),
+    # Reference Data
+    (86,  "reda", "reference_data",    "Reference Data"),
+    # Authorities / Regulatory
+    (36,  "auth", "authorities",       "Authorities"),
+    # Cards and ATM
+    (41,  "caaa", "cards",             "Acceptor to Acquirer Card Transactions"),
+    (46,  "caam", "cards",             "ATM Management"),
+    (56,  "catm", "cards",             "Terminal Management"),
+    (61,  "catp", "cards",             "ATM Card Transactions"),
+    (206, "casp", "cards",             "Sale to POI Card Transactions"),
+    (311, "cain", "cards",             "Acquirer to Issuer Card Transactions"),
+    (351, "caad", "cards",             "Card Administration"),
+    (356, "cafc", "cards",             "Fee Collection"),
+    (361, "cafm", "cards",             "File Management"),
+    (366, "cafr", "cards",             "Fraud Reporting and Disposition"),
+    (371, "canm", "cards",             "Network Management"),
+    (376, "casr", "cards",             "Card Settlement Reporting"),
+    # Administration
+    (31,  "admi", "administration",    "Administration"),
+    (136, "head", "administration",    "Business Application Header"),
 ]
 
-# Human descriptions for well-known message types (name, description).
-# Keyed by message ID prefix (e.g. "pacs.008"). Fallback is the raw filename stem.
+# Human-readable names and descriptions for well-known message type prefixes.
+# Keyed by message prefix (first two dotted components, e.g. "pacs.008").
+# Downstream scripts fall back to the raw ID when a prefix is not listed here.
 MESSAGE_META: dict[str, tuple[str, str]] = {
-    "pacs.002": ("FIToFIPaymentStatusReport", "Status report on a previously submitted payment instruction."),
-    "pacs.003": ("FIToFICustomerDirectDebit", "Direct debit instruction from one financial institution to another."),
-    "pacs.004": ("PaymentReturn", "Return of a previously executed payment transfer."),
-    "pacs.007": ("FIToFIPaymentReversal", "Reversal of a previously executed payment."),
-    "pacs.008": ("FIToFICustomerCreditTransfer", "Financial institution to financial institution customer credit transfer."),
-    "pacs.009": ("FinancialInstitutionCreditTransfer", "Credit transfer between financial institutions."),
-    "pacs.010": ("FinancialInstitutionDirectDebit", "Direct debit between financial institutions."),
-    "pacs.028": ("FIToFIPaymentStatusRequest", "Request for status on a previously submitted payment."),
-    "pacs.029": ("MultilateralSettlementRequest", "Request for multilateral settlement of net positions."),
-    "pain.001": ("CustomerCreditTransferInitiation", "Initiates a credit transfer from a customer to one or more creditors."),
-    "pain.002": ("CustomerPaymentStatusReport", "Status report on a previously submitted payment initiation."),
-    "pain.007": ("CustomerPaymentReversal", "Reversal of a previously submitted customer payment."),
-    "pain.008": ("CustomerDirectDebitInitiation", "Initiates a direct debit collection from a debtor."),
-    "pain.013": ("CreditorPaymentActivationRequest", "Request from a creditor to a debtor to initiate a payment."),
-    "pain.014": ("CreditorPaymentActivationRequestStatusReport", "Status of a creditor payment activation request."),
+    # pacs - Payments Clearing and Settlement
+    "pacs.002": ("FIToFIPaymentStatusReport",
+                 "Status report on a previously submitted payment instruction."),
+    "pacs.003": ("FIToFICustomerDirectDebit",
+                 "Direct debit instruction from one financial institution to another."),
+    "pacs.004": ("PaymentReturn",
+                 "Return of a previously executed payment transfer."),
+    "pacs.007": ("FIToFIPaymentReversal",
+                 "Reversal of a previously executed payment."),
+    "pacs.008": ("FIToFICustomerCreditTransfer",
+                 "Financial institution to financial institution customer credit transfer."),
+    "pacs.009": ("FinancialInstitutionCreditTransfer",
+                 "Credit transfer between financial institutions."),
+    "pacs.010": ("FinancialInstitutionDirectDebit",
+                 "Direct debit between financial institutions."),
+    "pacs.028": ("FIToFIPaymentStatusRequest",
+                 "Request for status on a previously submitted payment."),
+    "pacs.029": ("MultilateralSettlementRequest",
+                 "Request for multilateral settlement of net positions."),
+    # pain - Payments Initiation
+    "pain.001": ("CustomerCreditTransferInitiation",
+                 "Initiates a credit transfer from a customer to one or more creditors."),
+    "pain.002": ("CustomerPaymentStatusReport",
+                 "Status report on a previously submitted payment initiation."),
+    "pain.007": ("CustomerPaymentReversal",
+                 "Reversal of a previously submitted customer payment."),
+    "pain.008": ("CustomerDirectDebitInitiation",
+                 "Initiates a direct debit collection from a debtor."),
+    "pain.013": ("CreditorPaymentActivationRequest",
+                 "Request from a creditor to a debtor to initiate a payment."),
+    "pain.014": ("CreditorPaymentActivationRequestStatusReport",
+                 "Status of a creditor payment activation request."),
+    # camt - Cash Management
     "camt.003": ("GetAccount", "Request for account information."),
     "camt.004": ("ReturnAccount", "Account information returned in response to a query."),
     "camt.005": ("GetTransaction", "Request for transaction information."),
-    "camt.052": ("BankToCustomerAccountReport", "Intraday account balance and transaction report."),
-    "camt.053": ("BankToCustomerStatement", "End-of-day account statement from bank to customer."),
-    "camt.054": ("BankToCustomerDebitCreditNotification", "Real-time debit or credit notification from bank to customer."),
-    "camt.056": ("FIToFIPaymentCancellationRequest", "Request to cancel a previously submitted payment."),
-    "camt.088": ("NetReport", "Report of net positions between financial institutions."),
-    "sese.023": ("SecuritiesSettlementTransactionInstruction", "Instruction to settle a securities trade."),
-    "sese.024": ("SecuritiesSettlementTransactionStatusAdvice", "Status of a securities settlement instruction."),
-    "sese.034": ("SecuritiesSettlementAllegementNotification", "Notification of an unmatched settlement instruction."),
-    "semt.001": ("SecuritiesMessageCancellationAdvice", "Advice that a securities message has been cancelled."),
-    "semt.002": ("CustodyStatementOfHoldings", "Statement of securities holdings held in custody."),
-    "fxtr.008": ("ForeignExchangeTradeInstruction", "Instruction to settle a foreign exchange trade."),
-    "fxtr.013": ("ForeignExchangeTradeConfirmation", "Confirmation of a foreign exchange trade."),
-    "fxtr.014": ("ForeignExchangeTradeStatusNotification", "Status notification for a foreign exchange trade."),
-    "tsin.001": ("InvoiceFinancingRequest", "Request to finance a trade invoice."),
-    "tsin.002": ("InvoiceFinancingRequestStatus", "Status of an invoice financing request."),
-    "tsin.009": ("InvoiceTaxReport", "Tax report associated with an invoice in a trade transaction."),
+    "camt.052": ("BankToCustomerAccountReport",
+                 "Intraday account balance and transaction report."),
+    "camt.053": ("BankToCustomerStatement",
+                 "End-of-day account statement from bank to customer."),
+    "camt.054": ("BankToCustomerDebitCreditNotification",
+                 "Real-time debit or credit notification from bank to customer."),
+    "camt.056": ("FIToFIPaymentCancellationRequest",
+                 "Request to cancel a previously submitted payment."),
+    "camt.088": ("NetReport",
+                 "Report of net positions between financial institutions."),
+    # remt - Remittance Advice
+    "remt.001": ("RemittanceAdvice",
+                 "Remittance information sent separately from the payment instruction."),
+    "remt.002": ("RemittanceLocationAdvice",
+                 "Advice on how remittance information can be retrieved."),
+    # trck - Payment Tracker
+    "trck.001": ("PaymentStatusRequest",
+                 "Request for the status of a payment transaction."),
+    "trck.002": ("PaymentStatusReport",
+                 "Report on the status of a payment transaction in the payment chain."),
+    "trck.004": ("PaymentStatusRequestRejection",
+                 "Rejection of a payment status request."),
+    # sese - Securities Settlement
+    "sese.023": ("SecuritiesSettlementTransactionInstruction",
+                 "Instruction to settle a securities trade."),
+    "sese.024": ("SecuritiesSettlementTransactionStatusAdvice",
+                 "Status of a securities settlement instruction."),
+    "sese.034": ("SecuritiesSettlementAllegementNotification",
+                 "Notification of an unmatched settlement instruction."),
+    # semt - Securities Management
+    "semt.001": ("SecuritiesMessageCancellationAdvice",
+                 "Advice that a securities message has been cancelled."),
+    "semt.002": ("CustodyStatementOfHoldings",
+                 "Statement of securities holdings held in custody."),
+    # secl - Securities Clearing
+    "secl.001": ("SecuritiesSettlementConditionsModificationRequest",
+                 "Request to modify settlement conditions for a securities transaction."),
+    "secl.002": ("SecuritiesSettlementConditionsModificationStatusAdvice",
+                 "Status of a settlement conditions modification request."),
+    # seev - Securities Events (Corporate Actions)
+    "seev.031": ("CorporateActionNotification",
+                 "Notification of a corporate action event affecting securities."),
+    "seev.033": ("CorporateActionInstruction",
+                 "Instruction from an account owner on how to respond to a corporate action."),
+    "seev.036": ("CorporateActionMovementConfirmation",
+                 "Confirmation of a corporate action movement."),
+    "seev.050": ("MeetingNotification",
+                 "Notification of a general meeting for shareholders."),
+    # setr - Securities Trade
+    "setr.001": ("RedemptionBulkOrder",
+                 "Bulk order to redeem a collective investment vehicle."),
+    "setr.003": ("RedemptionOrder",
+                 "Individual redemption order for a collective investment vehicle."),
+    "setr.010": ("SubscriptionBulkOrder",
+                 "Bulk order to subscribe to a collective investment vehicle."),
+    "setr.012": ("SubscriptionOrder",
+                 "Individual subscription order for a collective investment vehicle."),
+    # fxtr - Foreign Exchange Trade
+    "fxtr.008": ("ForeignExchangeTradeInstruction",
+                 "Instruction to settle a foreign exchange trade."),
+    "fxtr.013": ("ForeignExchangeTradeConfirmation",
+                 "Confirmation of a foreign exchange trade."),
+    "fxtr.014": ("ForeignExchangeTradeStatusNotification",
+                 "Status notification for a foreign exchange trade."),
+    # tsin - Trade Services Initiation
+    "tsin.001": ("InvoiceFinancingRequest",
+                 "Request to finance a trade invoice."),
+    "tsin.002": ("InvoiceFinancingRequestStatus",
+                 "Status of an invoice financing request."),
+    "tsin.009": ("InvoiceTaxReport",
+                 "Tax report associated with an invoice in a trade transaction."),
+    # tsmt - Trade Services Management
+    "tsmt.001": ("BaselineAmendmentRequest",
+                 "Request to amend the baseline of a trade transaction."),
+    "tsmt.002": ("BaselineAmendmentRequestStatus",
+                 "Status of a baseline amendment request."),
+    "tsmt.019": ("DataSetSubmission",
+                 "Submission of a data set under an established transaction baseline."),
+    # colr - Collateral
+    "colr.001": ("CollateralValueCalculationRequest",
+                 "Request to calculate the value of collateral."),
+    "colr.002": ("CollateralValueCalculationStatus",
+                 "Status of a collateral value calculation request."),
+    "colr.003": ("CollateralPropositionRequest",
+                 "Request to propose collateral to satisfy a margin call."),
+    # acmt - Account Management
+    "acmt.001": ("AccountOpeningInstructionV08",
+                 "Instruction to open an account with a financial institution."),
+    "acmt.002": ("AccountDetailsConfirmation",
+                 "Confirmation of account details following an account opening instruction."),
+    "acmt.003": ("AccountModificationInstruction",
+                 "Instruction to modify the details of an existing account."),
+    # reda - Reference Data
+    "reda.001": ("PriceReportV05",
+                 "Report of prices for collective investment vehicle instruments."),
+    "reda.002": ("PriceReportCancellationV05",
+                 "Cancellation of a previously submitted price report."),
+    "reda.004": ("FundReferenceDataReportV07",
+                 "Reference data about a collective investment vehicle."),
+    # auth - Authorities / Regulatory
+    "auth.001": ("InformationRequestOpeningV02",
+                 "Opening of an information request from a regulatory authority."),
+    "auth.002": ("InformationRequestResponseV02",
+                 "Response to an information request from a regulatory authority."),
 }
 
 
@@ -115,55 +257,55 @@ def _download_area(area_id: int, family: str) -> bytes:
     url = BASE_URL.format(id=area_id)
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     print(f"  GET     {url}")
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.read()
 
 
 def main(force: bool = False) -> None:
     os.makedirs(XSD_DIR, exist_ok=True)
 
-    manifest = []
     downloaded_at = datetime.now(tz=timezone.utc).isoformat()
 
     for area_id, family, business_area, area_name in BUSINESS_AREAS:
         if not force and _area_is_fresh(area_id):
-            print(f"  CACHED  {family} (area {area_id})")
-        else:
-            try:
-                zip_bytes = _download_area(area_id, family)
-            except Exception as exc:
-                print(f"  FAILED  {family} (area {area_id}): {exc}")
+            print(f"  CACHED  {family} / {area_name} (area {area_id})")
+            continue
+
+        try:
+            zip_bytes = _download_area(area_id, family)
+        except Exception as exc:
+            print(f"  FAILED  {family} (area {area_id}): {exc}")
+            continue
+
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        count = 0
+        for name in zf.namelist():
+            if not name.endswith(".xsd"):
                 continue
+            xsd_bytes = zf.read(name)
+            dst = os.path.join(XSD_DIR, name)
+            with open(dst, "wb") as fh:
+                fh.write(xsd_bytes)
+            count += 1
+        print(f"  OK      {family}: {count} XSD files extracted")
 
-            zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
-            count = 0
-            for name in zf.namelist():
-                if not name.endswith(".xsd"):
-                    continue
-                xsd_bytes = zf.read(name)
-                dst = os.path.join(XSD_DIR, name)
-                with open(dst, "wb") as fh:
-                    fh.write(xsd_bytes)
-                count += 1
-            print(f"  OK      {family}: {count} XSD files extracted")
-
-            # Touch the marker file so freshness check works next run
-            with open(_area_cache_marker(area_id), "w") as fh:
-                fh.write(downloaded_at)
+        with open(_area_cache_marker(area_id), "w") as fh:
+            fh.write(downloaded_at)
 
     # Build manifest from everything in XSD_DIR
+    manifest = []
     for filename in sorted(os.listdir(XSD_DIR)):
         if not filename.endswith(".xsd"):
             continue
         message_id = filename[:-4]  # strip .xsd
-        family = message_id.split(".")[0]
-        area_match = next((a for a in BUSINESS_AREAS if a[1] == family), None)
+        file_family = message_id.split(".")[0]
+        area_match = next((a for a in BUSINESS_AREAS if a[1] == file_family), None)
         business_area = area_match[2] if area_match else "other"
         name, description = _message_meta(message_id)
         manifest.append(
             {
                 "id": message_id,
-                "family": family,
+                "family": file_family,
                 "business_area": business_area,
                 "name": name,
                 "description": description,

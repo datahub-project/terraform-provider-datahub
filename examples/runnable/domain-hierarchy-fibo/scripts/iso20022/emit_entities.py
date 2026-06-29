@@ -3,9 +3,14 @@
 """
 Emit ISO 20022 financial pipeline entities to DataHub.
 
-Creates synthetic metadata for a Kafka -> PostgreSQL -> Looker pipeline
-and wires lineage between the three tiers. No real systems are deployed;
-all entities are metadata-only.
+Creates:
+  - ISO 20022 glossary hierarchy: root node -> business area nodes -> message type terms
+  - ISO 20022 family tags (e.g. iso20022:pacs, iso20022:camt)
+  - Kafka topics, PostgreSQL tables, Looker views for each message schema
+  - 3-tier lineage: Kafka -> PostgreSQL -> Looker (with field-level lineage)
+  - ISO 20022 glossary term and family tag associations on each dataset
+
+No real systems are deployed; all entities are metadata-only.
 
 Requires env vars:
     DATAHUB_GMS_URL    e.g. http://localhost:8080
@@ -15,7 +20,6 @@ Reads:
     .iso-cache/manifest.json
     .iso-cache/avro/{id}.avsc
     .iso-cache/avro/{id}.fields.json
-    .fibo-cache/fibo.json   (optional, for domain URN lookup)
 
 Usage:
     python3 scripts/iso20022/emit_entities.py [--dry-run]
@@ -24,6 +28,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -33,6 +38,7 @@ try:
         make_dataset_urn,
         make_data_platform_urn,
         make_schema_field_urn,
+        make_tag_urn,
     )
     from datahub.emitter.mcp import MetadataChangeProposalWrapper
     from datahub.metadata.schema_classes import (
@@ -41,11 +47,14 @@ try:
         BytesTypeClass,
         DatasetLineageTypeClass,
         DatasetPropertiesClass,
-        DomainsClass,
-        EnumTypeClass,
         FineGrainedLineageClass,
         FineGrainedLineageDownstreamTypeClass,
         FineGrainedLineageUpstreamTypeClass,
+        GlobalTagsClass,
+        GlossaryNodeInfoClass,
+        GlossaryTermAssociationClass,
+        GlossaryTermInfoClass,
+        GlossaryTermsClass,
         NullTypeClass,
         NumberTypeClass,
         OtherSchemaClass,
@@ -54,6 +63,8 @@ try:
         SchemaMetadataClass,
         SchemalessClass,
         StringTypeClass,
+        TagAssociationClass,
+        TagPropertiesClass,
         UpstreamClass,
         UpstreamLineageClass,
     )
@@ -65,16 +76,39 @@ except ImportError:
 CACHE_DIR = ".iso-cache"
 AVRO_DIR = os.path.join(CACHE_DIR, "avro")
 MANIFEST_PATH = os.path.join(CACHE_DIR, "manifest.json")
-FIBO_CACHE_PATH = os.path.join(".fibo-cache", "fibo.json")
 
-# PostgreSQL database per business area
+# PostgreSQL database per business area slug
 BUSINESS_AREA_DB = {
-    "payments": "payments_db",
-    "cash_management": "payments_db",
-    "securities": "securities_db",
-    "foreign_exchange": "fx_db",
-    "trade_finance": "trade_finance_db",
+    "payments":          "payments_db",
+    "cash_management":   "payments_db",
+    "securities":        "securities_db",
+    "foreign_exchange":  "fx_db",
+    "trade_finance":     "trade_finance_db",
+    "collateral":        "securities_db",
+    "account_management":"accounts_db",
+    "reference_data":    "reference_db",
+    "authorities":       "regulatory_db",
+    "cards":             "cards_db",
+    "administration":    "admin_db",
 }
+
+# Display names for each business area slug (used in glossary node names)
+ISO20022_AREA_NAMES = {
+    "payments":          "Payments",
+    "cash_management":   "Cash Management",
+    "securities":        "Securities",
+    "foreign_exchange":  "Foreign Exchange",
+    "trade_finance":     "Trade Finance",
+    "collateral":        "Collateral Management",
+    "account_management":"Account Management",
+    "reference_data":    "Reference Data",
+    "authorities":       "Authorities and Regulatory Reporting",
+    "cards":             "Cards and ATM",
+    "administration":    "Administration",
+}
+
+ISO20022_GLOSSARY_ROOT_URN = "urn:li:glossaryNode:iso20022-root"
+ISO20022_TAG_PREFIX = "iso20022"
 
 ACTOR_URN = "urn:li:corpuser:datahub"
 ENV = "PROD"
@@ -84,60 +118,69 @@ def _audit_stamp() -> AuditStampClass:
     return AuditStampClass(time=int(time.time() * 1000), actor=ACTOR_URN)
 
 
+def _snake(name: str) -> str:
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    return s.lower()
+
+
+def _area_db(business_area: str) -> str:
+    return BUSINESS_AREA_DB.get(business_area, "data_db")
+
+
+def _iso22_node_urn(area_slug: str) -> str:
+    return f"urn:li:glossaryNode:iso20022-{area_slug.replace('_', '-')}"
+
+
+def _iso22_term_urn(message_id: str) -> str:
+    prefix = ".".join(message_id.split(".")[:2])
+    return f"urn:li:glossaryTerm:iso20022.{prefix}"
+
+
 def _avro_type_to_datahub(avro_type: str) -> SchemaFieldDataTypeClass:
     mapping = {
-        "string": StringTypeClass(),
-        "double": NumberTypeClass(),
-        "long": NumberTypeClass(),
+        "string":  StringTypeClass(),
+        "double":  NumberTypeClass(),
+        "long":    NumberTypeClass(),
         "boolean": BooleanTypeClass(),
-        "bytes": BytesTypeClass(),
-        "null": NullTypeClass(),
+        "bytes":   BytesTypeClass(),
+        "null":    NullTypeClass(),
     }
     return SchemaFieldDataTypeClass(type=mapping.get(avro_type, StringTypeClass()))
 
 
-def _pg_schema_fields(flat_fields: list) -> list[SchemaFieldClass]:
-    """Build DataHub schema fields for a PostgreSQL table from flattened Avro fields."""
+def _pg_schema_fields(flat_fields: list) -> list:
     stamp = _audit_stamp()
-    result = []
-    # Use only top-level fields (no dot in path) for a realistic SQL table schema
     top_level = [f for f in flat_fields if "." not in f["field_path"]]
     if not top_level:
-        top_level = flat_fields[:20]  # fallback: first 20 flat fields
-
-    for field in top_level:
-        result.append(
-            SchemaFieldClass(
-                fieldPath=field["field_path"],
-                type=_avro_type_to_datahub(field["avro_type"]),
-                nativeDataType=field.get("pg_type", "text"),
-                description=field.get("doc", ""),
-                lastModified=stamp,
-            )
+        top_level = flat_fields[:20]
+    return [
+        SchemaFieldClass(
+            fieldPath=f["field_path"],
+            type=_avro_type_to_datahub(f["avro_type"]),
+            nativeDataType=f.get("pg_type", "text"),
+            description=f.get("doc", ""),
+            lastModified=stamp,
         )
-    return result
+        for f in top_level
+    ]
 
 
-def _looker_schema_fields(flat_fields: list) -> list[SchemaFieldClass]:
-    """Build a minimal Looker view schema: key dimensions + a synthetic measure."""
+def _looker_schema_fields(flat_fields: list) -> list:
     stamp = _audit_stamp()
-    # Pick up to 5 top-level string/long fields as dimensions
     dims = [
-        f
-        for f in flat_fields
+        f for f in flat_fields
         if "." not in f["field_path"] and f["avro_type"] in ("string", "long")
     ][:5]
-    fields = []
-    for field in dims:
-        fields.append(
-            SchemaFieldClass(
-                fieldPath=field["field_path"],
-                type=_avro_type_to_datahub(field["avro_type"]),
-                nativeDataType="dimension",
-                description=field.get("doc", ""),
-                lastModified=stamp,
-            )
+    fields = [
+        SchemaFieldClass(
+            fieldPath=f["field_path"],
+            type=_avro_type_to_datahub(f["avro_type"]),
+            nativeDataType="dimension",
+            description=f.get("doc", ""),
+            lastModified=stamp,
         )
+        for f in dims
+    ]
     fields.append(
         SchemaFieldClass(
             fieldPath="count",
@@ -150,20 +193,112 @@ def _looker_schema_fields(flat_fields: list) -> list[SchemaFieldClass]:
     return fields
 
 
-def _snake(name: str) -> str:
-    import re
-    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
-    return s.lower()
+def emit_iso20022_glossary(manifest: list, emitter, dry_run: bool) -> dict:
+    """Emit the ISO 20022 glossary hierarchy and return a message_id -> term_urn map."""
+    stamp = _audit_stamp()
+    mcps = []
+
+    # Root node
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=ISO20022_GLOSSARY_ROOT_URN,
+        aspect=GlossaryNodeInfoClass(
+            name="ISO 20022 Financial Messaging Standards",
+            definition=(
+                "International standard for electronic data interchange between "
+                "financial institutions. Covers payments, securities, trade finance, "
+                "foreign exchange, and card transactions."
+            ),
+        ),
+    ))
+
+    # Group messages by business area (preserve first-seen order)
+    seen_areas: dict[str, list] = {}
+    for entry in manifest:
+        area = entry["business_area"]
+        seen_areas.setdefault(area, []).append(entry)
+
+    # Business area nodes
+    for area_slug in seen_areas:
+        area_display = ISO20022_AREA_NAMES.get(
+            area_slug, area_slug.replace("_", " ").title()
+        )
+        node_urn = _iso22_node_urn(area_slug)
+        mcps.append(MetadataChangeProposalWrapper(
+            entityUrn=node_urn,
+            aspect=GlossaryNodeInfoClass(
+                name=area_display,
+                definition=f"ISO 20022 messages covering {area_display.lower()}.",
+                parentNode=ISO20022_GLOSSARY_ROOT_URN,
+            ),
+        ))
+
+    # Message type terms (one per unique prefix, e.g. pacs.008 regardless of version)
+    term_map: dict[str, str] = {}
+    seen_prefixes: set[str] = set()
+    for area_slug, entries in seen_areas.items():
+        node_urn = _iso22_node_urn(area_slug)
+        for entry in entries:
+            msg_id = entry["id"]
+            prefix = ".".join(msg_id.split(".")[:2])
+            term_urn = _iso22_term_urn(msg_id)
+            term_map[msg_id] = term_urn
+            if prefix in seen_prefixes:
+                continue
+            seen_prefixes.add(prefix)
+            mcps.append(MetadataChangeProposalWrapper(
+                entityUrn=term_urn,
+                aspect=GlossaryTermInfoClass(
+                    name=f"{entry['name']} ({prefix})",
+                    definition=entry["description"],
+                    termSource="EXTERNAL",
+                    sourceRef="ISO 20022 Registration Authority",
+                    sourceUrl="https://www.iso20022.org",
+                    parentNode=node_urn,
+                ),
+            ))
+
+    n_areas = len(seen_areas)
+    n_terms = len(seen_prefixes)
+    if dry_run:
+        print(f"  [dry-run] ISO 20022 glossary: 1 root + {n_areas} area nodes + {n_terms} message terms")
+        return term_map
+
+    for mcp in mcps:
+        emitter.emit_mcp(mcp)
+    print(f"  Glossary: 1 root + {n_areas} area nodes + {n_terms} message terms emitted.")
+    return term_map
+
+
+def emit_iso20022_tags(manifest: list, emitter, dry_run: bool) -> None:
+    """Emit one tag entity per ISO 20022 message family (e.g. iso20022:pacs)."""
+    families = sorted({entry["family"] for entry in manifest})
+    mcps = [
+        MetadataChangeProposalWrapper(
+            entityUrn=make_tag_urn(f"{ISO20022_TAG_PREFIX}:{fam}"),
+            aspect=TagPropertiesClass(
+                name=f"{ISO20022_TAG_PREFIX}:{fam}",
+                description=f"ISO 20022 message family: {fam}.",
+            ),
+        )
+        for fam in families
+    ]
+    if dry_run:
+        print(f"  [dry-run] would emit {len(families)} family tags: {', '.join(families)}")
+        return
+    for mcp in mcps:
+        emitter.emit_mcp(mcp)
+    print(f"  Tags: {len(families)} ISO 20022 family tags emitted ({', '.join(families)}).")
 
 
 def emit_message(
     entry: dict,
     avro_schema: dict,
     flat_fields: list,
-    emitter: "DatahubRestEmitter | None",
+    iso22_term_urn: str,
+    emitter,
     dry_run: bool,
-) -> tuple[str, str, str]:
-    """Emit Kafka topic, PostgreSQL table, Looker view, and lineage for one message.
+) -> tuple:
+    """Emit Kafka topic, PostgreSQL table, Looker view, lineage, and metadata.
 
     Returns (kafka_urn, pg_urn, looker_urn).
     """
@@ -172,7 +307,7 @@ def emit_message(
     business_area = entry["business_area"]
     name = entry["name"]
     description = entry["description"]
-    db = BUSINESS_AREA_DB.get(business_area, "data_db")
+    db = _area_db(business_area)
     snake_name = _snake(name)
 
     kafka_topic = f"iso20022.{family}.{message_id}"
@@ -183,117 +318,102 @@ def emit_message(
     pg_urn = make_dataset_urn(platform="postgres", name=pg_table, env=ENV)
     looker_urn = make_dataset_urn(platform="looker", name=looker_view, env=ENV)
 
+    stamp = _audit_stamp()
+    tag_urn = make_tag_urn(f"{ISO20022_TAG_PREFIX}:{family}")
     mcps = []
 
     # --- Kafka topic ---
-    stamp = _audit_stamp()
     try:
         kafka_fields = avro_schema_to_mce_fields(
-            avro_schema=avro_schema,
-            is_key_schema=False,
-            default_nullable=True,
+            avro_schema=avro_schema, is_key_schema=False, default_nullable=True,
         )
     except Exception:
         kafka_fields = []
 
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=kafka_urn,
-            aspect=DatasetPropertiesClass(
-                name=kafka_topic,
-                description=description,
-                customProperties={
-                    "iso20022_id": message_id,
-                    "iso20022_family": family,
-                    "business_area": business_area,
-                    "source": "https://www.iso20022.org",
-                },
-            ),
-        )
-    )
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=kafka_urn,
-            aspect=SchemaMetadataClass(
-                schemaName=kafka_topic,
-                platform=make_data_platform_urn("kafka"),
-                version=0,
-                hash="",
-                fields=kafka_fields,
-                platformSchema=SchemalessClass(),
-                lastModified=stamp,
-            ),
-        )
-    )
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=kafka_urn,
+        aspect=DatasetPropertiesClass(
+            name=kafka_topic,
+            description=description,
+            customProperties={
+                "iso20022_id": message_id,
+                "iso20022_family": family,
+                "business_area": business_area,
+                "source": "https://www.iso20022.org",
+            },
+        ),
+    ))
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=kafka_urn,
+        aspect=SchemaMetadataClass(
+            schemaName=kafka_topic,
+            platform=make_data_platform_urn("kafka"),
+            version=0,
+            hash="",
+            fields=kafka_fields,
+            platformSchema=SchemalessClass(),
+            lastModified=stamp,
+        ),
+    ))
 
     # --- PostgreSQL table ---
     pg_fields = _pg_schema_fields(flat_fields)
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=pg_urn,
-            aspect=DatasetPropertiesClass(
-                name=snake_name,
-                description=f"Processed ISO 20022 {name} messages stored in {db}.",
-                customProperties={
-                    "iso20022_id": message_id,
-                    "source_topic": kafka_topic,
-                    "database": db,
-                },
-            ),
-        )
-    )
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=pg_urn,
-            aspect=SchemaMetadataClass(
-                schemaName=snake_name,
-                platform=make_data_platform_urn("postgres"),
-                version=0,
-                hash="",
-                fields=pg_fields,
-                platformSchema=OtherSchemaClass(rawSchema=""),
-                lastModified=stamp,
-            ),
-        )
-    )
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=pg_urn,
+        aspect=DatasetPropertiesClass(
+            name=snake_name,
+            description=f"Processed ISO 20022 {name} messages stored in {db}.",
+            customProperties={
+                "iso20022_id": message_id,
+                "source_topic": kafka_topic,
+                "database": db,
+            },
+        ),
+    ))
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=pg_urn,
+        aspect=SchemaMetadataClass(
+            schemaName=snake_name,
+            platform=make_data_platform_urn("postgres"),
+            version=0,
+            hash="",
+            fields=pg_fields,
+            platformSchema=OtherSchemaClass(rawSchema=""),
+            lastModified=stamp,
+        ),
+    ))
 
     # --- Looker view ---
     looker_fields = _looker_schema_fields(flat_fields)
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=looker_urn,
-            aspect=DatasetPropertiesClass(
-                name=f"{snake_name}_view",
-                description=f"Looker LookML view over {db}.public.{snake_name} for {business_area} analytics.",
-                customProperties={
-                    "iso20022_id": message_id,
-                    "source_table": pg_table,
-                    "looker_model": f"{business_area}_analytics",
-                },
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=looker_urn,
+        aspect=DatasetPropertiesClass(
+            name=f"{snake_name}_view",
+            description=(
+                f"Looker LookML view over {db}.public.{snake_name} "
+                f"for {business_area.replace('_', ' ')} analytics."
             ),
-        )
-    )
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=looker_urn,
-            aspect=SchemaMetadataClass(
-                schemaName=f"{snake_name}_view",
-                platform=make_data_platform_urn("looker"),
-                version=0,
-                hash="",
-                fields=looker_fields,
-                platformSchema=OtherSchemaClass(rawSchema=""),
-                lastModified=stamp,
-            ),
-        )
-    )
+            customProperties={
+                "iso20022_id": message_id,
+                "source_table": pg_table,
+                "looker_model": f"{business_area}_analytics",
+            },
+        ),
+    ))
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=looker_urn,
+        aspect=SchemaMetadataClass(
+            schemaName=f"{snake_name}_view",
+            platform=make_data_platform_urn("looker"),
+            version=0,
+            hash="",
+            fields=looker_fields,
+            platformSchema=OtherSchemaClass(rawSchema=""),
+            lastModified=stamp,
+        ),
+    ))
 
-    # --- Lineage: Kafka -> PostgreSQL ---
-    kafka_upstream = UpstreamClass(
-        dataset=kafka_urn,
-        type=DatasetLineageTypeClass.TRANSFORMED,
-    )
-    # Field-level lineage for top-level fields that appear in both schemas
+    # --- Lineage: Kafka -> PostgreSQL (with field-level lineage) ---
     kafka_field_names = {f["field_path"] for f in flat_fields if "." not in f["field_path"]}
     pg_field_names = {f.fieldPath for f in pg_fields}
     shared = kafka_field_names & pg_field_names
@@ -306,31 +426,49 @@ def emit_message(
         )
         for col in sorted(shared)
     ]
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=pg_urn,
-            aspect=UpstreamLineageClass(
-                upstreams=[kafka_upstream],
-                fineGrainedLineages=fine_grained,
-            ),
-        )
-    )
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=pg_urn,
+        aspect=UpstreamLineageClass(
+            upstreams=[UpstreamClass(
+                dataset=kafka_urn,
+                type=DatasetLineageTypeClass.TRANSFORMED,
+            )],
+            fineGrainedLineages=fine_grained,
+        ),
+    ))
 
     # --- Lineage: PostgreSQL -> Looker ---
-    pg_upstream = UpstreamClass(
-        dataset=pg_urn,
-        type=DatasetLineageTypeClass.VIEW,
-    )
-    mcps.append(
-        MetadataChangeProposalWrapper(
-            entityUrn=looker_urn,
-            aspect=UpstreamLineageClass(upstreams=[pg_upstream]),
+    mcps.append(MetadataChangeProposalWrapper(
+        entityUrn=looker_urn,
+        aspect=UpstreamLineageClass(upstreams=[UpstreamClass(
+            dataset=pg_urn,
+            type=DatasetLineageTypeClass.VIEW,
+        )]),
+    ))
+
+    # --- ISO 20022 glossary term association (Kafka + PG) ---
+    if iso22_term_urn:
+        glossary_aspect = GlossaryTermsClass(
+            terms=[GlossaryTermAssociationClass(urn=iso22_term_urn, actor=stamp.actor)],
+            auditStamp=stamp,
         )
-    )
+        for dataset_urn in [kafka_urn, pg_urn]:
+            mcps.append(MetadataChangeProposalWrapper(
+                entityUrn=dataset_urn,
+                aspect=glossary_aspect,
+            ))
+
+    # --- ISO 20022 family tag (all three tiers) ---
+    tag_aspect = GlobalTagsClass(tags=[TagAssociationClass(tag=tag_urn)])
+    for dataset_urn in [kafka_urn, pg_urn, looker_urn]:
+        mcps.append(MetadataChangeProposalWrapper(
+            entityUrn=dataset_urn,
+            aspect=tag_aspect,
+        ))
 
     if dry_run:
         for mcp in mcps:
-            print(f"    [dry-run] would emit {mcp.entityUrn} / {type(mcp.aspect).__name__}")
+            print(f"    [dry-run] {mcp.entityUrn} / {type(mcp.aspect).__name__}")
     else:
         for mcp in mcps:
             emitter.emit_mcp(mcp)
@@ -353,8 +491,19 @@ def main(dry_run: bool = False) -> None:
     with open(MANIFEST_PATH) as fh:
         manifest = json.load(fh)
 
-    emitter = None if dry_run else DatahubRestEmitter(gms_server=gms_url, token=gms_token or None)
+    emitter = (
+        None if dry_run
+        else DatahubRestEmitter(gms_server=gms_url, token=gms_token or None)
+    )
 
+    # Step 1: emit glossary hierarchy and family tags
+    print("\n--- ISO 20022 Glossary ---")
+    term_map = emit_iso20022_glossary(manifest, emitter, dry_run)
+    print("\n--- ISO 20022 Tags ---")
+    emit_iso20022_tags(manifest, emitter, dry_run)
+
+    # Step 2: emit dataset entities with lineage and associations
+    print("\n--- Dataset Entities ---")
     ok = 0
     failed = 0
     for entry in manifest:
@@ -374,18 +523,19 @@ def main(dry_run: bool = False) -> None:
             import avro.schema as avro_schema_mod
             avro_parsed = avro_schema_mod.parse(json.dumps(avro_schema_dict))
         except Exception:
-            avro_parsed = avro_schema_dict  # avro_schema_to_mce_fields also accepts dict
+            avro_parsed = avro_schema_dict
 
         flat_fields = []
         if os.path.exists(fields_path):
             with open(fields_path) as fh:
                 flat_fields = json.load(fh)
 
+        iso22_term_urn = term_map.get(message_id, _iso22_term_urn(message_id))
         action = "DRY-RUN" if dry_run else "EMIT"
         print(f"  {action}    {message_id}")
         try:
             kafka_urn, pg_urn, looker_urn = emit_message(
-                entry, avro_parsed, flat_fields, emitter, dry_run
+                entry, avro_parsed, flat_fields, iso22_term_urn, emitter, dry_run
             )
             ok += 1
             if dry_run:
@@ -402,7 +552,9 @@ def main(dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Emit ISO 20022 pipeline entities to DataHub.")
+    parser = argparse.ArgumentParser(
+        description="Emit ISO 20022 pipeline entities to DataHub."
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",

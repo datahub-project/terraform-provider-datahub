@@ -63,13 +63,20 @@ TERM_CONFIDENCE_THRESHOLD = 0.6
 ENV = "PROD"
 ACTOR_URN = "urn:li:corpuser:datahub"
 
-# ISO 20022 business area -> most likely FIBO domain codes (for prompt narrowing)
+# ISO 20022 business area -> most likely FIBO domain codes (for prompt narrowing).
+# Empty list means show all FIBO domains without preferencing (e.g. cards, admin).
 AREA_TO_FIBO_DOMAINS = {
-    "payments": ["FBC", "FND"],
-    "cash_management": ["FBC", "FND"],
-    "securities": ["SEC", "DER", "MD"],
-    "foreign_exchange": ["DER", "FX", "FBC"],
-    "trade_finance": ["FBC", "LOAN"],
+    "payments":          ["FBC", "FND"],
+    "cash_management":   ["FBC", "FND"],
+    "securities":        ["SEC", "DER", "MD"],
+    "foreign_exchange":  ["DER", "FBC"],
+    "trade_finance":     ["FBC", "LOAN"],
+    "collateral":        ["SEC", "FBC"],
+    "account_management":["FBC", "BE"],
+    "reference_data":    ["FBC", "FND"],
+    "authorities":       ["FBC", "BE"],
+    "cards":             [],
+    "administration":    [],
 }
 
 
@@ -279,8 +286,14 @@ def process_message(
             except Exception as exc:
                 print(f"    WARNING: failed to apply domain tag: {exc}")
 
-    # Glossary terms: collect high-confidence field-level decisions
-    kafka_terms = []
+    # Always include the ISO 20022 message type term so it survives this aspect write.
+    # emit_entities.py sets GlossaryTermsClass to [iso22 term]; this replaces it with
+    # [iso22 term + FIBO terms] so both coexist after auto_tag runs.
+    msg_prefix = ".".join(message_id.split(".")[:2])
+    iso22_term_urn = f"urn:li:glossaryTerm:iso20022.{msg_prefix}"
+    kafka_terms = [GlossaryTermAssociationClass(urn=iso22_term_urn, actor=stamp.actor)]
+
+    # Collect high-confidence FIBO glossary term matches from LLM decisions
     for d in decisions:
         term_id = d.get("term_id", "")
         term_conf = float(d.get("term_confidence", 0))
@@ -315,11 +328,17 @@ def process_message(
 
 def _area_db(business_area: str) -> str:
     mapping = {
-        "payments": "payments_db",
-        "cash_management": "payments_db",
-        "securities": "securities_db",
-        "foreign_exchange": "fx_db",
-        "trade_finance": "trade_finance_db",
+        "payments":          "payments_db",
+        "cash_management":   "payments_db",
+        "securities":        "securities_db",
+        "foreign_exchange":  "fx_db",
+        "trade_finance":     "trade_finance_db",
+        "collateral":        "securities_db",
+        "account_management":"accounts_db",
+        "reference_data":    "reference_db",
+        "authorities":       "regulatory_db",
+        "cards":             "cards_db",
+        "administration":    "admin_db",
     }
     return mapping.get(business_area, "data_db")
 
