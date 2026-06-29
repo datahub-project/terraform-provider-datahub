@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   DataHub ❌ | DataHub Cloud ✅
   Creates and manages a DataHub Remote Executor Pool.
-  API stability notice. The underlying GraphQL mutations used by this resource are classified as internal in DataHub Cloud and carry no external API stability guarantee. They may change between Cloud releases without notice. This is documented as a known risk in the provider; file an issue at https://github.com/datahub-project/terraform-provider-datahub if a breaking change is encountered.
+  Remote Executor Pools are a DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
   What is a Remote Executor Pool?
   A Remote Executor Pool is a server-side entity that acts as a named registration point for one or more Remote Executor worker processes. Workers are deployed in your own environment (Kubernetes via the datahub-executor-worker Helm chart, or ECS) and connect outbound to DataHub Cloud. Each worker references the pool by setting DATAHUB_EXECUTOR_POOL_ID to the pool's pool_id. Workers self-attach when they start up; the pool entity itself must already exist.
   Reserved pool IDs
@@ -39,7 +39,7 @@ description: |-
 
 Creates and manages a DataHub Remote Executor Pool.
 
-**API stability notice.** The underlying GraphQL mutations used by this resource are classified as `internal` in DataHub Cloud and carry no external API stability guarantee. They may change between Cloud releases without notice. This is documented as a known risk in the provider; file an issue at https://github.com/datahub-project/terraform-provider-datahub if a breaking change is encountered.
+Remote Executor Pools are a DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
 
 ## What is a Remote Executor Pool?
 

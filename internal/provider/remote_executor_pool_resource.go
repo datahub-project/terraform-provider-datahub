@@ -70,11 +70,10 @@ func (r *remoteExecutorPoolResource) Schema(_ context.Context, _ resource.Schema
 	resp.Schema = schema.Schema{
 		MarkdownDescription: cloudOnlyBadge +
 			"Creates and manages a DataHub Remote Executor Pool.\n\n" +
-			"**API stability notice.** The underlying GraphQL mutations used by this resource are " +
-			"classified as `internal` in DataHub Cloud and carry no external API stability guarantee. " +
-			"They may change between Cloud releases without notice. This is documented as a known risk " +
-			"in the provider; file an issue at https://github.com/datahub-project/terraform-provider-datahub " +
-			"if a breaking change is encountered.\n\n" +
+			"Remote Executor Pools are a DataHub Cloud capability. DataHub Cloud upgrades on its own " +
+			"release cadence, so a release may occasionally affect this resource; fixes are handled in the " +
+			"provider. Pin the provider version for client-side stability and upgrade it to pick up fixes " +
+			"(including any needed for backend changes), and please open an issue if you hit one.\n\n" +
 			"## What is a Remote Executor Pool?\n\n" +
 			"A Remote Executor Pool is a server-side entity that acts as a named registration point " +
 			"for one or more Remote Executor worker processes. Workers are deployed in your own " +
