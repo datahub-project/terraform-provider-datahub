@@ -25,9 +25,11 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import json
 import os
 import sys
+import threading
 import time
 
 try:
@@ -176,7 +178,7 @@ Return a JSON array only -- no explanation, no markdown, no code block. Example:
     try:
         response = client.messages.create(
             model=MODEL,
-            max_tokens=2048,
+            max_tokens=8192,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
@@ -236,7 +238,7 @@ def process_message(
                 domain_summary,
             )
             decisions.extend(batch_decisions)
-            time.sleep(0.3)  # polite pacing
+            time.sleep(0.1)  # brief pause between batches within a message
 
         with open(tags_path, "w") as fh:
             json.dump(decisions, fh, indent=2)
@@ -349,7 +351,7 @@ def _snake(name: str) -> str:
     return s.lower()
 
 
-def main(force: bool = False, dry_run: bool = False) -> None:
+def main(force: bool = False, dry_run: bool = False, workers: int = 10) -> None:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     gms_url = os.environ.get("DATAHUB_GMS_URL", "")
     gms_token = os.environ.get("DATAHUB_GMS_TOKEN", "")
@@ -374,27 +376,39 @@ def main(force: bool = False, dry_run: bool = False) -> None:
 
     os.makedirs(TAGS_DIR, exist_ok=True)
 
+    # anthropic.Anthropic client is thread-safe; share a single instance.
     client = anthropic.Anthropic(api_key=api_key)
-    emitter = (
-        None
-        if dry_run
-        else DatahubRestEmitter(gms_server=gms_url, token=gms_token or None)
-    )
+    # DatahubRestEmitter uses requests.Session internally; create one per thread.
+    def make_emitter():
+        return None if dry_run else DatahubRestEmitter(gms_server=gms_url, token=gms_token or None)
 
+    counter_lock = threading.Lock()
     ok = 0
     failed = 0
-    for entry in manifest:
+    total = len(manifest)
+
+    def _process_one(entry: dict) -> bool:
+        nonlocal ok, failed
         message_id = entry["id"]
         fields_path = os.path.join(AVRO_DIR, f"{message_id}.fields.json")
         flat_fields = []
         if os.path.exists(fields_path):
             with open(fields_path) as fh:
                 flat_fields = json.load(fh)
+        result = process_message(entry, flat_fields, fibo, client, make_emitter(), dry_run, force)
+        with counter_lock:
+            if result:
+                ok += 1
+            else:
+                failed += 1
+            done = ok + failed
+            if done % 50 == 0 or done == total:
+                print(f"  Progress: {done}/{total} ({ok} ok, {failed} failed)")
+        return result
 
-        if process_message(entry, flat_fields, fibo, client, emitter, dry_run, force):
-            ok += 1
-        else:
-            failed += 1
+    print(f"Processing {total} messages with {workers} parallel workers...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(_process_one, manifest))
 
     print(f"\nDone: {ok} messages tagged, {failed} failed.")
     if failed:
@@ -405,5 +419,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LLM-based FIBO tagging of ISO 20022 entities.")
     parser.add_argument("--force", action="store_true", help="Re-tag even if cache exists.")
     parser.add_argument("--dry-run", action="store_true", help="Do not contact DataHub or Anthropic.")
+    parser.add_argument("--workers", type=int, default=10, help="Parallel worker threads (default: 10).")
     args = parser.parse_args()
-    main(force=args.force, dry_run=args.dry_run)
+    main(force=args.force, dry_run=args.dry_run, workers=args.workers)
