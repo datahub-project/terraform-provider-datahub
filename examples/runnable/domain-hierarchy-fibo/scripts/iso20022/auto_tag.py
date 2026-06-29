@@ -86,6 +86,26 @@ def _audit_stamp() -> AuditStampClass:
     return AuditStampClass(time=int(time.time() * 1000), actor=ACTOR_URN)
 
 
+def _build_term_lookup(fibo: dict) -> dict:
+    """Build a lowercase name -> term_id map from all FIBO terms.
+
+    The LLM returns plausible term_names but fabricates term_ids. This
+    lookup resolves those names to the actual IDs used in DataHub
+    (which match the id field in fibo.json, e.g. 'tf-fibo-fbc-debtor').
+    """
+    lookup: dict[str, str] = {}
+    root = fibo.get("root", {})
+    for domain in root.get("domains", []):
+        for module in domain.get("modules", []):
+            for leaf in module.get("leaves", []):
+                for term in leaf.get("terms", []):
+                    name = term.get("name", "").lower().strip()
+                    tid = term.get("id", "")
+                    if name and tid:
+                        lookup[name] = tid
+    return lookup
+
+
 def _load_fibo(fibo_path: str) -> dict:
     if not os.path.exists(fibo_path):
         return {}
@@ -200,6 +220,7 @@ def process_message(
     entry: dict,
     flat_fields: list,
     fibo: dict,
+    term_lookup: dict,
     client: "anthropic.Anthropic | None",
     emitter: "DatahubRestEmitter | None",
     dry_run: bool,
@@ -276,7 +297,8 @@ def process_message(
     stamp = _audit_stamp()
 
     if best_domain:
-        domain_urn = f"urn:li:domain:{best_domain}"
+        # Domain URN must match the tf-example-fibo-{code} format used by Terraform.
+        domain_urn = f"urn:li:domain:tf-example-fibo-{best_domain}"
         for dataset_urn in [kafka_urn, pg_urn]:
             try:
                 emitter.emit_mcp(
@@ -295,17 +317,25 @@ def process_message(
     iso22_term_urn = f"urn:li:glossaryTerm:iso20022.{msg_prefix}"
     kafka_terms = [GlossaryTermAssociationClass(urn=iso22_term_urn, actor=stamp.actor)]
 
-    # Collect high-confidence FIBO glossary term matches from LLM decisions
+    # Resolve LLM-returned term_names to actual FIBO term IDs via the lookup.
+    # The LLM fabricates term_ids; only term_name is reliable. The lookup maps
+    # lowercase names to the tf-fibo-* IDs stored in DataHub.
+    seen_term_ids: set[str] = set()
     for d in decisions:
-        term_id = d.get("term_id", "")
+        term_name = d.get("term_name", "").lower().strip()
         term_conf = float(d.get("term_confidence", 0))
-        if term_id and term_conf >= TERM_CONFIDENCE_THRESHOLD:
-            kafka_terms.append(
-                GlossaryTermAssociationClass(
-                    urn=f"urn:li:glossaryTerm:{term_id}",
-                    actor=stamp.actor,
-                )
+        if not term_name or term_conf < TERM_CONFIDENCE_THRESHOLD:
+            continue
+        resolved_id = term_lookup.get(term_name)
+        if not resolved_id or resolved_id in seen_term_ids:
+            continue
+        seen_term_ids.add(resolved_id)
+        kafka_terms.append(
+            GlossaryTermAssociationClass(
+                urn=f"urn:li:glossaryTerm:{resolved_id}",
+                actor=stamp.actor,
             )
+        )
 
     if kafka_terms:
         for dataset_urn in [kafka_urn, pg_urn]:
@@ -376,6 +406,11 @@ def main(force: bool = False, dry_run: bool = False, workers: int = 10) -> None:
 
     os.makedirs(TAGS_DIR, exist_ok=True)
 
+    # Build lookup: lowercase term name -> actual term ID (tf-fibo-* format).
+    # Used to resolve LLM-returned term_names to real DataHub URN suffixes.
+    term_lookup = _build_term_lookup(fibo)
+    print(f"Loaded {len(term_lookup)} FIBO terms for name resolution.")
+
     # anthropic.Anthropic client is thread-safe; share a single instance.
     client = anthropic.Anthropic(api_key=api_key)
     # DatahubRestEmitter uses requests.Session internally; create one per thread.
@@ -395,7 +430,7 @@ def main(force: bool = False, dry_run: bool = False, workers: int = 10) -> None:
         if os.path.exists(fields_path):
             with open(fields_path) as fh:
                 flat_fields = json.load(fh)
-        result = process_message(entry, flat_fields, fibo, client, make_emitter(), dry_run, force)
+        result = process_message(entry, flat_fields, fibo, term_lookup, client, make_emitter(), dry_run, force)
         with counter_lock:
             if result:
                 ok += 1
