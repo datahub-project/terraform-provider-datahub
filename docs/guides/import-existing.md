@@ -89,7 +89,7 @@ datahub-tf-extract enumerate --output ./import --skip-terraform
 `enumerate` is deployment-wide: it discovers every instance of each supported type that the authenticated principal can see, not only the resources you (or one project) created. Two consequences are worth planning for:
 
 - **System objects are excluded automatically where they can be identified.** DataHub Cloud provisions internal ingestion sources (`datahub-gc`, `datahub-usage-reporting`, `semantic-anchor`, ...) and internal/OAuth connections; these are filtered out so you never adopt platform-managed objects into Terraform. Assertions are filtered the same way: only `NATIVE` (author-as-code) assertions are enumerated, and only of the type/sub-shape each resource models -- ingested `EXTERNAL` assertions (e.g. dbt or Great Expectations tests) and `INFERRED` smart/AI assertions are never enumerated, since they are owned by the system that produces them.
-- **Shared instances surface other people's objects.** On a shared or multi-tenant instance, enumeration will also list tags, glossary terms, policies, users, etc. created by others or by the UI. Always start with `--skip-terraform` and review `import.tf`, narrow with `--types`, and delete any `import {}` blocks you do not want before generating config. Importing the whole deployment is rarely what you want.
+- **Shared instances surface other people's objects.** On a shared or multi-tenant instance, enumeration will also list tags, glossary terms, policies, users, etc. created by others or by the UI. Always start with `--skip-terraform` and review `import.tf`, narrow with `--types`, and delete any `import {}` blocks you do not want before generating config. Importing the whole deployment is rarely what you want. Note that once you narrow this way you generate config yourself (`terraform plan -generate-config-out`, as in the Manual path below), which skips the post-processing the full `enumerate` run performs -- the connection platform-block stub, `variables.tf`, and `IMPORT_README.md` are not written, so handle write-only attributes manually (see Manual path, Step 4).
 
 ### Step 2: fill in sensitive values
 
@@ -121,7 +121,9 @@ If terraform reports planned changes, they typically indicate:
 
 ### Step 4: adopt the state
 
-Copy the files from `./import` into your main Terraform working directory (or move the entire directory and add a `backend` block). Run `terraform apply` -- it is a no-op that adopts the resources into your state file without making any changes to DataHub.
+Copy the files from `./import` into your main Terraform working directory (or move the entire directory and add a `backend` block). Run `terraform apply` -- for resources with no write-only attributes this is a no-op that adopts them into your state file without making any changes to DataHub.
+
+Write-only resources (`datahub_secret`, `datahub_connection`) are the exception: their `*_wo_version` rotation counter is import-as-`null` and triggers replacement when set, so the first post-import apply plans a one-time **replacement** (destroy + recreate) rather than a no-op. This is expected -- the value was never readable from DataHub, so it must be supplied and re-sent once. Because these resources use deterministic URNs, the recreated object keeps the same URN and references survive. See Step 5 of the Manual path.
 
 ---
 
@@ -210,9 +212,33 @@ Affected attributes by resource type:
 ### Step 5: verify and apply
 
 ```shell
-terraform plan   # should show no changes after filling in write-only values
-terraform apply  # no-op; adopts resources into state
+terraform plan   # see note below for write-only resources
+terraform apply  # adopts resources into state
 ```
+
+For resources with no write-only attributes, `plan` shows no changes and `apply` is a no-op adopt. For write-only resources (`datahub_secret`, `datahub_connection`), `plan` instead shows a one-time **replacement**: the `*_wo_version` counter imports as `null`, and setting it to `1` forces a destroy + recreate (you will see `+ value_wo_version = 1 # forces replacement`). This is expected -- the value was never readable from DataHub, so it must be supplied in config and sent once. The supplied value must be the live secret's actual value; with a deterministic URN the recreated object keeps its URN, so references survive. Subsequent rotations work the same way: bump the counter to re-send a changed value.
+
+---
+
+## Migrating from another Terraform provider
+
+The paths above assume the DataHub objects are **not yet managed by Terraform** (created via the UI, the `datahub` CLI, or the SDK). If they are **already tracked in a Terraform state** -- under a generic GraphQL provider, under `null_resource` + `local-exec` scripts, or under an earlier layout of this provider -- you are doing a provider *swap*, which needs a few extra steps. Plain `import` is not enough: the objects are already held by the old resources, so you must release that hold first.
+
+This is rare, but the recipe is straightforward. For each object:
+
+1. **Generate the new config** for the target `datahub_*` resources, exactly as in the CLI or Manual path above. If your Terraform project also manages unrelated resources (e.g. cloud infrastructure), generate in a *separate* directory so the generation step does not refresh them or require their credentials, then copy the resource blocks into your real configuration.
+2. **Release the old management:** `terraform state rm <old.address>` for each resource that currently manages a DataHub object. This removes it from Terraform state only -- it does **not** delete the remote DataHub object.
+3. **Import under the new resources:** `terraform import <new.address> <id>`. Prefer the imperative `terraform import` command (one resource at a time) over `import {}` blocks + `apply` here: it touches only the targeted resource, so it never refreshes or risks changing the rest of your project.
+4. **Fix everything that referenced the old resources** -- not just the resource blocks. `outputs`, `locals`, and any cross-resource interpolation that pointed at the removed addresses will otherwise fail to plan (or, if the old blocks are still present, plan to recreate them). Repoint them at the new resources or remove them.
+5. **Delete the old resource blocks** from your configuration.
+6. **Verify** with a plan scoped to the new addresses: `terraform plan $(terraform state list | grep '^datahub_' | sed 's/^/-target=/')`. A clean swap reports `No changes`.
+
+A few points worth knowing:
+
+- **Order: import before you remove.** `terraform state rm` never deletes the remote object, so a gap where an object is briefly unmanaged is harmless -- but importing into the new resource *before* removing the old one keeps the old management as a safety net until the new hold is secured. Two addresses may reference the same remote object simultaneously; `terraform import` only guards its own target address.
+- **Do not run a bare `plan`/`apply` mid-swap.** While both the old and new blocks exist in configuration, a full plan will try to create duplicates (or recreate the old resources you removed from state). Use only scoped, imperative commands until the swap is complete and the old blocks are deleted.
+- **Back up your state first** (`cp terraform.tfstate terraform.tfstate.bak`); `state rm` and `import` are state surgery.
+- **Labels:** imported resources are labelled by their import id (see the rename note in the CLI path) -- a cosmetic post-import cleanup, identical to a greenfield import.
 
 ---
 
@@ -291,6 +317,7 @@ See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_f
 | `datahub_sql_assertion` | Yes (Cloud only; NATIVE, METRIC/METRIC_CHANGE) | `datahub_assertions` |
 | `datahub_field_assertion` | Yes (Cloud only; NATIVE, FIELD_VALUES/FIELD_METRIC) | `datahub_assertions` |
 | `datahub_schema_assertion` | Yes (Cloud only; NATIVE) | `datahub_assertions` |
+| `datahub_action_pipeline` | Yes (Cloud only; experimental) | `datahub_action_pipelines` |
 | `datahub_corp_group_member` | No (relationship; import by composite ID) | -- |
 | `datahub_role_assignment` | No (relationship; import by composite ID) | -- |
 | `datahub_local_user_login` | No (import by user URN) | -- |

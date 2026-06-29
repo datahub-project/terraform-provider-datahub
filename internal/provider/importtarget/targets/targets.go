@@ -323,6 +323,25 @@ func init() {
 		OSSCompatible: false,
 	})
 
+	// Action pipelines (dataHubAction) are Cloud-only and enumerable via
+	// listActionPipelines. The import ID is the bare action_id (URN suffix);
+	// ImportState also accepts the full URN. The shared-instance/selective-
+	// extraction caveat applies (a shared instance may hold pipelines created
+	// elsewhere).
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_action_pipeline",
+		DataSourceTypeName: "datahub_action_pipelines",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListActionPipelineURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing action pipeline URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:dataHubAction:") },
+		OSSCompatible: false,
+	})
+
 	// Remote executor pools are Cloud-only with no list API reachable via OSS
 	// GraphQL; users supply pool IDs manually when importing.
 	importtarget.Register(importtarget.Target{

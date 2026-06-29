@@ -64,6 +64,21 @@ func typeSet(s string) map[string]bool {
 
 // Run executes the full enumerate pipeline.
 func Run(ctx context.Context, opts Options) error {
+	// Fail fast on a leftover generated.tf from a previous run. `terraform plan
+	// -generate-config-out` refuses to overwrite it, so proceeding would
+	// silently leave stale, partial config in place. Ask the user to clean up
+	// rather than guessing. (Irrelevant under SkipTerraform, which never
+	// generates config.)
+	if !opts.SkipTerraform {
+		genPath := filepath.Join(opts.OutputDir, "generated.tf")
+		if _, err := os.Stat(genPath); err == nil {
+			return fmt.Errorf("output directory already contains %s from a previous run; "+
+				"remove it (or use a fresh --output directory) and re-run", genPath)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("checking for existing generated.tf: %w", err)
+		}
+	}
+
 	// Resolve credentials.
 	gmsURL := opts.GmsURL
 	if gmsURL == "" {
@@ -210,7 +225,8 @@ func Run(ctx context.Context, opts Options) error {
 	if !opts.SkipValidation && len(vars) == 0 {
 		fmt.Printf("\nRunning: terraform -chdir=%s plan (validation) ...\n", opts.OutputDir)
 		if err := terraformPlan(ctx, opts.OutputDir); err != nil {
-			fmt.Printf("Warning: final terraform plan returned an error (may require manual fixes): %v\n", err)
+			return fmt.Errorf("validation plan failed -- the generated config is incomplete or invalid; "+
+				"review the terraform output above and do not treat the output as ready to use: %w", err)
 		}
 	} else if len(vars) > 0 {
 		fmt.Printf("\nSkipping final plan: fill in terraform.tfvars first (see IMPORT_README.md).\n")

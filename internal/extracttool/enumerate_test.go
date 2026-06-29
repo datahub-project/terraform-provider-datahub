@@ -387,3 +387,29 @@ func TestTypeSet(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// TestRun_RefusesExistingGeneratedTF guards the fail-fast check: a leftover
+// generated.tf from a previous run must abort Run with a clear error rather
+// than letting terraform's "already exists" failure be swallowed and stale,
+// partial config be silently kept. The guard runs before any DataHub call, so
+// no credentials or terraform binary are needed.
+func TestRun_RefusesExistingGeneratedTF(t *testing.T) {
+	dir := t.TempDir()
+	genPath := filepath.Join(dir, "generated.tf")
+	if err := os.WriteFile(genPath, []byte("# leftover from a previous run\n"), 0o644); err != nil {
+		t.Fatalf("seeding generated.tf: %v", err)
+	}
+
+	err := Run(context.Background(), Options{OutputDir: dir})
+	if err == nil {
+		t.Fatal("expected Run to refuse an output dir already containing generated.tf, got nil")
+	}
+	if !strings.Contains(err.Error(), "already contains") || !strings.Contains(err.Error(), "generated.tf") {
+		t.Fatalf("expected a stale-generated.tf error, got: %v", err)
+	}
+
+	// The guard must not delete the user's file -- it only refuses.
+	if _, statErr := os.Stat(genPath); statErr != nil {
+		t.Fatalf("guard must leave the existing file untouched: %v", statErr)
+	}
+}

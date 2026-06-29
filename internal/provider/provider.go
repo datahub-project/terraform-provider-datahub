@@ -270,6 +270,7 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 // DataSources defines the data sources implemented in the provider.
 func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
+		NewActionPipelinesDataSource,
 		NewAssertionDataSource,
 		NewAssertionsDataSource,
 		NewConnectionsDataSource,
@@ -304,6 +305,7 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 // Resources defines the resources implemented in the provider.
 func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewActionPipelineResource,
 		NewCustomAssertionResource,
 		NewConnectionResource,
 		NewCorpGroupResource,

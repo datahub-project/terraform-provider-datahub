@@ -1,6 +1,8 @@
 # Design assessment: `datahub_action_pipeline` resource
 
-Status: assessment / recommendation (no code yet). Written during the datahub-gcp-demo migration field test, where 5 action pipelines (Dataplex + BigQuery metadata sync-back) are the one class of Terraform-managed DataHub object with no provider resource.
+Status: **BUILT** (was: assessment / recommendation). Written during the datahub-gcp-demo migration field test, where 5 action pipelines (Dataplex + BigQuery metadata sync-back) are the one class of Terraform-managed DataHub object with no provider resource.
+
+**Gate verified (the crux in "Design implications" below): `upsertActionPipeline(urn, input)` DOES create at a caller-chosen, not-yet-existing URN** -- confirmed live: the entity persists with the chosen `dataHubActionKey.value.id` and the recipe round-trips verbatim (including `${SECRET}` placeholders). So `datahub_action_pipeline` was built as a deterministic-URN, Cloud-only, recipe-as-`jsontypes.Normalized`, OpenAPI-read resource (plus a `datahub_action_pipelines` data source). One nuance found: the upsert writes the definition and then reloads/starts the runtime; the reload can return HTTP 500 for a recipe it cannot run while the definition is already persisted, so the resource verifies via the OpenAPI read on a non-cloud-only error and treats a persisted definition as success-with-warning (definition-only scope; run state is not modeled). Validated end-to-end: live create/update/import/destroy, plus an extract/import round-trip of the demo's 11 live pipelines that plans `0 to change`.
 
 ## What an action pipeline is
 
