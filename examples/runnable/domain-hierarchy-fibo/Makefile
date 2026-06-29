@@ -1,5 +1,5 @@
 .PHONY: fibo-deps fibo-data fibo-data-provisional fibo-update clean-fibo \
-        iso-deps iso-data iso-avro iso-emit iso-tag iso-all clean-iso \
+        iso-deps iso-data iso-avro iso-emit iso-assertions-config iso-tag iso-all clean-iso \
         .iso-cache/xsd .iso-cache/avro
 
 # Install Python dependencies required for glossary term extraction.
@@ -63,6 +63,11 @@ iso-avro: iso-deps .iso-cache/avro
 iso-emit: iso-deps iso-avro
 	python3 scripts/iso20022/emit_entities.py
 
+# Generate assertions_config.json from the Avro field cache.
+# Run once after iso-avro; commit the output alongside assertions.tf.
+iso-assertions-config: iso-deps .iso-cache/avro
+	python3 scripts/iso20022/generate_assertions_config.py
+
 # LLM-based FIBO domain and glossary term tagging.
 # Requires: ANTHROPIC_API_KEY, DATAHUB_GMS_URL, DATAHUB_GMS_TOKEN env vars.
 # Run 'make fibo-data' first so FIBO context is available.
@@ -70,7 +75,7 @@ iso-tag: iso-deps
 	python3 scripts/iso20022/auto_tag.py $(if $(FORCE),--force,)
 
 # Run the full ISO 20022 pipeline end-to-end.
-iso-all: iso-deps iso-data iso-avro iso-emit iso-tag
+iso-all: iso-deps iso-data iso-avro iso-emit iso-assertions-config iso-tag
 
 # Remove the ISO 20022 cache entirely.
 clean-iso:

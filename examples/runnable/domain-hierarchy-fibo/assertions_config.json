@@ -1,0 +1,3538 @@
+{
+  "tables": [
+    {
+      "key": "pacs-002",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.fito_fipayment_status_report,PROD)",
+      "table": "payments_db.public.fito_fipayment_status_report",
+      "description": "FIToFIPaymentStatusReport (ISO 20022 pacs.002)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "FIToFIPmtStsRpt.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.GrpHdr.OrgnlBizQry",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgNmId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlCreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlNbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlCtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.GrpSts",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.StsRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.NbOfTxsPerSts",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.StsId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.OrgnlGrpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.OrgnlInstrId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.OrgnlEndToEndId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.OrgnlTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.OrgnlUETR",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.TxSts",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 50000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FIToFIPmtStsRpt.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on FIToFIPaymentStatusReport (ISO 20022 pacs.002) records"
+        },
+        {
+          "id": "orgnlmsgid",
+          "field_path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlMsgId must never be null on FIToFIPaymentStatusReport (ISO 20022 pacs.002) records"
+        },
+        {
+          "id": "orgnlnboftxs",
+          "field_path": "FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlNbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlNbOfTxs must never be null on FIToFIPaymentStatusReport (ISO 20022 pacs.002) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "HIGH",
+          "description": "Zero tolerance for null message IDs - FIToFIPaymentStatusReport (ISO 20022 pacs.002)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_fipayment_status_report WHERE \"FIToFIPmtStsRpt.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_orgnlmsgid",
+          "severity": "HIGH",
+          "description": "Null values not permitted in OrgnlMsgId column - FIToFIPaymentStatusReport (ISO 20022 pacs.002)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_fipayment_status_report WHERE \"FIToFIPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pacs-003",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.fito_ficustomer_direct_debit,PROD)",
+      "table": "payments_db.public.fito_ficustomer_direct_debit",
+      "description": "FIToFICustomerDirectDebit (ISO 20022 pacs.003)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.TtlIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.SttlmInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.PmtId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.SttlmPrty",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.SttlmTmIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.InstdAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.XchgRate",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 5000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FIToFICstmrDrctDbt.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on FIToFICustomerDirectDebit (ISO 20022 pacs.003) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "FIToFICstmrDrctDbt.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on FIToFICustomerDirectDebit (ISO 20022 pacs.003) records"
+        },
+        {
+          "id": "ttlintrbksttlmamt",
+          "field_path": "FIToFICstmrDrctDbt.GrpHdr.TtlIntrBkSttlmAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Total Interbank Settlement Amount must never be null on FIToFICustomerDirectDebit (ISO 20022 pacs.003) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - FIToFICustomerDirectDebit (ISO 20022 pacs.003)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_ficustomer_direct_debit WHERE \"FIToFICstmrDrctDbt.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "MEDIUM",
+          "description": "Number of transactions must always be present - FIToFICustomerDirectDebit (ISO 20022 pacs.003)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_ficustomer_direct_debit WHERE \"FIToFICstmrDrctDbt.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pacs-004",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.payment_return,PROD)",
+      "table": "payments_db.public.payment_return",
+      "description": "PaymentReturn (ISO 20022 pacs.004)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "PmtRtr.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.GrpRtr",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.TtlRtrdIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.SttlmInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.OrgnlGrpInf.OrgnlMsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.OrgnlGrpInf.OrgnlMsgNmId",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.OrgnlGrpInf.OrgnlCreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.OrgnlGrpInf.RtrRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.RtrId",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlGrpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlInstrId",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 3000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "PmtRtr.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on PaymentReturn (ISO 20022 pacs.004) records"
+        },
+        {
+          "id": "orgnlmsgid",
+          "field_path": "PmtRtr.OrgnlGrpInf.OrgnlMsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlMsgId must never be null on PaymentReturn (ISO 20022 pacs.004) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "PmtRtr.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on PaymentReturn (ISO 20022 pacs.004) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - PaymentReturn (ISO 20022 pacs.004)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.payment_return WHERE \"PmtRtr.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_orgnlmsgid",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in OrgnlMsgId column - PaymentReturn (ISO 20022 pacs.004)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.payment_return WHERE \"PmtRtr.OrgnlGrpInf.OrgnlMsgId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pacs-007",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.fito_fipayment_reversal,PROD)",
+      "table": "payments_db.public.fito_fipayment_reversal",
+      "description": "FIToFIPaymentReversal (ISO 20022 pacs.007)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.GrpRvsl",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.TtlRvsdIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.SttlmInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.OrgnlGrpInf.OrgnlMsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.OrgnlGrpInf.OrgnlMsgNmId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.OrgnlGrpInf.OrgnlCreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.OrgnlGrpInf.RvslRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.RvslId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlGrpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlInstrId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlEndToEndId",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 3000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FIToFIPmtRvsl.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on FIToFIPaymentReversal (ISO 20022 pacs.007) records"
+        },
+        {
+          "id": "orgnlmsgid",
+          "field_path": "FIToFIPmtRvsl.OrgnlGrpInf.OrgnlMsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlMsgId must never be null on FIToFIPaymentReversal (ISO 20022 pacs.007) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "FIToFIPmtRvsl.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on FIToFIPaymentReversal (ISO 20022 pacs.007) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - FIToFIPaymentReversal (ISO 20022 pacs.007)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_fipayment_reversal WHERE \"FIToFIPmtRvsl.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_orgnlmsgid",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in OrgnlMsgId column - FIToFIPaymentReversal (ISO 20022 pacs.007)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_fipayment_reversal WHERE \"FIToFIPmtRvsl.OrgnlGrpInf.OrgnlMsgId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pacs-008",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.fito_ficustomer_credit_transfer,PROD)",
+      "table": "payments_db.public.fito_ficustomer_credit_transfer",
+      "description": "FIToFICustomerCreditTransfer (ISO 20022 pacs.008)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.XpryDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.TtlIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.SttlmInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PmtId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.SttlmPrty",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.SttlmTmIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.SttlmTmReq",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.AddtlDtTm",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 50000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FIToFICstmrCdtTrf.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on FIToFICustomerCreditTransfer (ISO 20022 pacs.008) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "FIToFICstmrCdtTrf.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on FIToFICustomerCreditTransfer (ISO 20022 pacs.008) records"
+        },
+        {
+          "id": "ttlintrbksttlmamt",
+          "field_path": "FIToFICstmrCdtTrf.GrpHdr.TtlIntrBkSttlmAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Total Interbank Settlement Amount must never be null on FIToFICustomerCreditTransfer (ISO 20022 pacs.008) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "HIGH",
+          "description": "Zero tolerance for null message IDs - FIToFICustomerCreditTransfer (ISO 20022 pacs.008)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_ficustomer_credit_transfer WHERE \"FIToFICstmrCdtTrf.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "HIGH",
+          "description": "Number of transactions must always be present - FIToFICustomerCreditTransfer (ISO 20022 pacs.008)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_ficustomer_credit_transfer WHERE \"FIToFICstmrCdtTrf.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pacs-009",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.financial_institution_credit_transfer,PROD)",
+      "table": "payments_db.public.financial_institution_credit_transfer",
+      "description": "FinancialInstitutionCreditTransfer (ISO 20022 pacs.009)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "FICdtTrf.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.XpryDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.TtlIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.SttlmInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PmtId",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.SttlmPrty",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.SttlmTmIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.SttlmTmReq",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.XpryDtTm",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 10000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FICdtTrf.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on FinancialInstitutionCreditTransfer (ISO 20022 pacs.009) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "FICdtTrf.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on FinancialInstitutionCreditTransfer (ISO 20022 pacs.009) records"
+        },
+        {
+          "id": "ttlintrbksttlmamt",
+          "field_path": "FICdtTrf.GrpHdr.TtlIntrBkSttlmAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Total Interbank Settlement Amount must never be null on FinancialInstitutionCreditTransfer (ISO 20022 pacs.009) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "HIGH",
+          "description": "Zero tolerance for null message IDs - FinancialInstitutionCreditTransfer (ISO 20022 pacs.009)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.financial_institution_credit_transfer WHERE \"FICdtTrf.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "HIGH",
+          "description": "Number of transactions must always be present - FinancialInstitutionCreditTransfer (ISO 20022 pacs.009)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.financial_institution_credit_transfer WHERE \"FICdtTrf.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pacs-010",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.financial_institution_direct_debit,PROD)",
+      "table": "payments_db.public.financial_institution_direct_debit",
+      "description": "FinancialInstitutionDirectDebit (ISO 20022 pacs.010)",
+      "area": "payments",
+      "family": "pacs",
+      "schema_fields": [
+        {
+          "path": "FIDrctDbt.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.GrpHdr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.GrpHdr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.CdtId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.TtlIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.SttlmTmIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrmyAgt1",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrmyAgt1Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrmyAgt2",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrmyAgt2Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrmyAgt3",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.IntrmyAgt3Acct",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 5000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FIDrctDbt.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on FinancialInstitutionDirectDebit (ISO 20022 pacs.010) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "FIDrctDbt.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on FinancialInstitutionDirectDebit (ISO 20022 pacs.010) records"
+        },
+        {
+          "id": "ttlintrbksttlmamt",
+          "field_path": "FIDrctDbt.CdtInstr.TtlIntrBkSttlmAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Total Interbank Settlement Amount must never be null on FinancialInstitutionDirectDebit (ISO 20022 pacs.010) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - FinancialInstitutionDirectDebit (ISO 20022 pacs.010)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.financial_institution_direct_debit WHERE \"FIDrctDbt.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "MEDIUM",
+          "description": "Number of transactions must always be present - FinancialInstitutionDirectDebit (ISO 20022 pacs.010)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.financial_institution_direct_debit WHERE \"FIDrctDbt.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pain-001",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.customer_credit_transfer_initiation,PROD)",
+      "table": "payments_db.public.customer_credit_transfer_initiation",
+      "description": "CustomerCreditTransferInitiation (ISO 20022 pain.001)",
+      "area": "payments",
+      "family": "pain",
+      "schema_fields": [
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.FwdgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.GrpHdr.InitnSrc",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.PmtInfId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.PmtMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.ReqdAdvcTp",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.ReqdExctnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.PoolgAdjstmntDt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.Dbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.DbtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.DbtrAgt",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 25000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "CstmrCdtTrfInitn.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on CustomerCreditTransferInitiation (ISO 20022 pain.001) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "CstmrCdtTrfInitn.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on CustomerCreditTransferInitiation (ISO 20022 pain.001) records"
+        },
+        {
+          "id": "ctrlsum",
+          "field_path": "CstmrCdtTrfInitn.GrpHdr.CtrlSum",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Control Sum must never be null on CustomerCreditTransferInitiation (ISO 20022 pain.001) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "HIGH",
+          "description": "Zero tolerance for null message IDs - CustomerCreditTransferInitiation (ISO 20022 pain.001)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_credit_transfer_initiation WHERE \"CstmrCdtTrfInitn.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "HIGH",
+          "description": "Number of transactions must always be present - CustomerCreditTransferInitiation (ISO 20022 pain.001)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_credit_transfer_initiation WHERE \"CstmrCdtTrfInitn.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pain-002",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.customer_payment_status_report,PROD)",
+      "table": "payments_db.public.customer_payment_status_report",
+      "description": "CustomerPaymentStatusReport (ISO 20022 pain.002)",
+      "area": "payments",
+      "family": "pain",
+      "schema_fields": [
+        {
+          "path": "CstmrPmtStsRpt.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.GrpHdr.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.GrpHdr.FwdgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.GrpHdr.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.GrpHdr.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgNmId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlCreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlNbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlCtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.GrpSts",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.StsRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.NbOfTxsPerSts",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.OrgnlPmtInfId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.OrgnlNbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.OrgnlCtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.PmtInfSts",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.StsRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.NbOfTxsPerSts",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 25000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "CstmrPmtStsRpt.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on CustomerPaymentStatusReport (ISO 20022 pain.002) records"
+        },
+        {
+          "id": "orgnlmsgid",
+          "field_path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlMsgId must never be null on CustomerPaymentStatusReport (ISO 20022 pain.002) records"
+        },
+        {
+          "id": "orgnlnboftxs",
+          "field_path": "CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlNbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlNbOfTxs must never be null on CustomerPaymentStatusReport (ISO 20022 pain.002) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "HIGH",
+          "description": "Zero tolerance for null message IDs - CustomerPaymentStatusReport (ISO 20022 pain.002)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_payment_status_report WHERE \"CstmrPmtStsRpt.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_orgnlmsgid",
+          "severity": "HIGH",
+          "description": "Null values not permitted in OrgnlMsgId column - CustomerPaymentStatusReport (ISO 20022 pain.002)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_payment_status_report WHERE \"CstmrPmtStsRpt.OrgnlGrpInfAndSts.OrgnlMsgId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pain-007",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.customer_payment_reversal,PROD)",
+      "table": "payments_db.public.customer_payment_reversal",
+      "description": "CustomerPaymentReversal (ISO 20022 pain.007)",
+      "area": "payments",
+      "family": "pain",
+      "schema_fields": [
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.GrpRvsl",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.FwdgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.GrpHdr.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlGrpInf.OrgnlMsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlGrpInf.OrgnlMsgNmId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlGrpInf.OrgnlCreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlGrpInf.RvslRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.RvslPmtInfId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.OrgnlPmtInfId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.OrgnlNbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.OrgnlCtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.PmtInfRvsl",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 2000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "CstmrPmtRvsl.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on CustomerPaymentReversal (ISO 20022 pain.007) records"
+        },
+        {
+          "id": "orgnlmsgid",
+          "field_path": "CstmrPmtRvsl.OrgnlGrpInf.OrgnlMsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgnlMsgId must never be null on CustomerPaymentReversal (ISO 20022 pain.007) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "CstmrPmtRvsl.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on CustomerPaymentReversal (ISO 20022 pain.007) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - CustomerPaymentReversal (ISO 20022 pain.007)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_payment_reversal WHERE \"CstmrPmtRvsl.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_orgnlmsgid",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in OrgnlMsgId column - CustomerPaymentReversal (ISO 20022 pain.007)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_payment_reversal WHERE \"CstmrPmtRvsl.OrgnlGrpInf.OrgnlMsgId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pain-008",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.customer_direct_debit_initiation,PROD)",
+      "table": "payments_db.public.customer_direct_debit_initiation",
+      "description": "CustomerDirectDebitInitiation (ISO 20022 pain.008)",
+      "area": "payments",
+      "family": "pain",
+      "schema_fields": [
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.GrpHdr.FwdgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.PmtInfId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.PmtMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.ReqdAdvcTp",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.BtchBookg",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.ReqdColltnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.Cdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.CdtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.CdtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.UltmtCdtr",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 2000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "CstmrDrctDbtInitn.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on CustomerDirectDebitInitiation (ISO 20022 pain.008) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "CstmrDrctDbtInitn.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on CustomerDirectDebitInitiation (ISO 20022 pain.008) records"
+        },
+        {
+          "id": "ctrlsum",
+          "field_path": "CstmrDrctDbtInitn.GrpHdr.CtrlSum",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Control Sum must never be null on CustomerDirectDebitInitiation (ISO 20022 pain.008) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - CustomerDirectDebitInitiation (ISO 20022 pain.008)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_direct_debit_initiation WHERE \"CstmrDrctDbtInitn.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "MEDIUM",
+          "description": "Number of transactions must always be present - CustomerDirectDebitInitiation (ISO 20022 pain.008)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.customer_direct_debit_initiation WHERE \"CstmrDrctDbtInitn.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "pain-013",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.creditor_payment_activation_request,PROD)",
+      "table": "payments_db.public.creditor_payment_activation_request",
+      "description": "CreditorPaymentActivationRequest (ISO 20022 pain.013)",
+      "area": "payments",
+      "family": "pain",
+      "schema_fields": [
+        {
+          "path": "CdtrPmtActvtnReq.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.GrpHdr.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.GrpHdr.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.GrpHdr.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.GrpHdr.FwdgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.PmtInfId",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.PmtMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.ReqdAdvcTp",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.ReqdExctnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.XpryDt",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.PmtCond",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.Dbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.DbtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.DbtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.UltmtDbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.PmtInf.CdtTrfTx",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 100,
+        "severity": "LOW"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "CdtrPmtActvtnReq.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on CreditorPaymentActivationRequest (ISO 20022 pain.013) records"
+        },
+        {
+          "id": "nboftxs",
+          "field_path": "CdtrPmtActvtnReq.GrpHdr.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on CreditorPaymentActivationRequest (ISO 20022 pain.013) records"
+        },
+        {
+          "id": "ctrlsum",
+          "field_path": "CdtrPmtActvtnReq.GrpHdr.CtrlSum",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Control Sum must never be null on CreditorPaymentActivationRequest (ISO 20022 pain.013) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "LOW",
+          "description": "Zero tolerance for null message IDs - CreditorPaymentActivationRequest (ISO 20022 pain.013)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.creditor_payment_activation_request WHERE \"CdtrPmtActvtnReq.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "LOW",
+          "description": "Number of transactions must always be present - CreditorPaymentActivationRequest (ISO 20022 pain.013)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.creditor_payment_activation_request WHERE \"CdtrPmtActvtnReq.GrpHdr.NbOfTxs\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "camt-052",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.bank_to_customer_account_report,PROD)",
+      "table": "payments_db.public.bank_to_customer_account_report",
+      "description": "BankToCustomerAccountReport (ISO 20022 camt.052)",
+      "area": "cash_management",
+      "family": "camt",
+      "schema_fields": [
+        {
+          "path": "BkToCstmrAcctRpt.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.GrpHdr.MsgRcpt",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.GrpHdr.MsgPgntn",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.GrpHdr.OrgnlBizQry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.GrpHdr.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.RptPgntn",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.ElctrncSeqNb",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.RptgSeq",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.LglSeqNb",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.FrToDt",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.CpyDplctInd",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.RptgSrc",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.RltdAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.Intrst",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.Bal",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.TxsSummry",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 500,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "BkToCstmrAcctRpt.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on BankToCustomerAccountReport (ISO 20022 camt.052) records"
+        },
+        {
+          "id": "credttm",
+          "field_path": "BkToCstmrAcctRpt.GrpHdr.CreDtTm",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CreDtTm must never be null on BankToCustomerAccountReport (ISO 20022 camt.052) records"
+        },
+        {
+          "id": "msgrcpt",
+          "field_path": "BkToCstmrAcctRpt.GrpHdr.MsgRcpt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "MsgRcpt must never be null on BankToCustomerAccountReport (ISO 20022 camt.052) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - BankToCustomerAccountReport (ISO 20022 camt.052)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.bank_to_customer_account_report WHERE \"BkToCstmrAcctRpt.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_credttm",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in CreDtTm column - BankToCustomerAccountReport (ISO 20022 camt.052)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.bank_to_customer_account_report WHERE \"BkToCstmrAcctRpt.GrpHdr.CreDtTm\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "camt-053",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.bank_to_customer_statement,PROD)",
+      "table": "payments_db.public.bank_to_customer_statement",
+      "description": "BankToCustomerStatement (ISO 20022 camt.053)",
+      "area": "cash_management",
+      "family": "camt",
+      "schema_fields": [
+        {
+          "path": "BkToCstmrStmt.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.GrpHdr.MsgRcpt",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.GrpHdr.MsgPgntn",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.GrpHdr.OrgnlBizQry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.GrpHdr.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.StmtPgntn",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.ElctrncSeqNb",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.RptgSeq",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.LglSeqNb",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.FrToDt",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.CpyDplctInd",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.RptgSrc",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.RltdAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.Intrst",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.Bal",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.TxsSummry",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 1000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "BkToCstmrStmt.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on BankToCustomerStatement (ISO 20022 camt.053) records"
+        },
+        {
+          "id": "credttm",
+          "field_path": "BkToCstmrStmt.GrpHdr.CreDtTm",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CreDtTm must never be null on BankToCustomerStatement (ISO 20022 camt.053) records"
+        },
+        {
+          "id": "msgrcpt",
+          "field_path": "BkToCstmrStmt.GrpHdr.MsgRcpt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "MsgRcpt must never be null on BankToCustomerStatement (ISO 20022 camt.053) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "HIGH",
+          "description": "Zero tolerance for null message IDs - BankToCustomerStatement (ISO 20022 camt.053)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.bank_to_customer_statement WHERE \"BkToCstmrStmt.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_credttm",
+          "severity": "HIGH",
+          "description": "Null values not permitted in CreDtTm column - BankToCustomerStatement (ISO 20022 camt.053)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.bank_to_customer_statement WHERE \"BkToCstmrStmt.GrpHdr.CreDtTm\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "camt-054",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.bank_to_customer_debit_credit_notification,PROD)",
+      "table": "payments_db.public.bank_to_customer_debit_credit_notification",
+      "description": "BankToCustomerDebitCreditNotification (ISO 20022 camt.054)",
+      "area": "cash_management",
+      "family": "camt",
+      "schema_fields": [
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.GrpHdr.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.GrpHdr.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.GrpHdr.MsgRcpt",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.GrpHdr.MsgPgntn",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.GrpHdr.OrgnlBizQry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.GrpHdr.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.NtfctnPgntn",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.ElctrncSeqNb",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.RptgSeq",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.LglSeqNb",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.FrToDt",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.CpyDplctInd",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.RptgSrc",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.RltdAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.Intrst",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.TxsSummry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.Ntry",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 5000,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "BkToCstmrDbtCdtNtfctn.GrpHdr.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on BankToCustomerDebitCreditNotification (ISO 20022 camt.054) records"
+        },
+        {
+          "id": "credttm",
+          "field_path": "BkToCstmrDbtCdtNtfctn.GrpHdr.CreDtTm",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CreDtTm must never be null on BankToCustomerDebitCreditNotification (ISO 20022 camt.054) records"
+        },
+        {
+          "id": "msgrcpt",
+          "field_path": "BkToCstmrDbtCdtNtfctn.GrpHdr.MsgRcpt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "MsgRcpt must never be null on BankToCustomerDebitCreditNotification (ISO 20022 camt.054) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - BankToCustomerDebitCreditNotification (ISO 20022 camt.054)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.bank_to_customer_debit_credit_notification WHERE \"BkToCstmrDbtCdtNtfctn.GrpHdr.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_credttm",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in CreDtTm column - BankToCustomerDebitCreditNotification (ISO 20022 camt.054)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.bank_to_customer_debit_credit_notification WHERE \"BkToCstmrDbtCdtNtfctn.GrpHdr.CreDtTm\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "camt-056",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,payments_db.public.fito_fipayment_cancellation_request,PROD)",
+      "table": "payments_db.public.fito_fipayment_cancellation_request",
+      "description": "FIToFIPaymentCancellationRequest (ISO 20022 camt.056)",
+      "area": "cash_management",
+      "family": "camt",
+      "schema_fields": [
+        {
+          "path": "FIToFIPmtCxlReq.Assgnmt.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Assgnmt.Assgnr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Assgnmt.Assgne",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Assgnmt.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Case.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Case.Cretr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Case.ReopCaseIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.CtrlData.NbOfTxs",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.CtrlData.CtrlSum",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Undrlyg.OrgnlGrpInfAndCxl",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.Undrlyg.TxInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtCxlReq.SplmtryData.Envlp",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 200,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "nboftxs",
+          "field_path": "FIToFIPmtCxlReq.CtrlData.NbOfTxs",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Number of Transactions must never be null on FIToFIPaymentCancellationRequest (ISO 20022 camt.056) records"
+        },
+        {
+          "id": "ctrlsum",
+          "field_path": "FIToFIPmtCxlReq.CtrlData.CtrlSum",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Control Sum must never be null on FIToFIPaymentCancellationRequest (ISO 20022 camt.056) records"
+        },
+        {
+          "id": "id",
+          "field_path": "FIToFIPmtCxlReq.Assgnmt.Id",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Id must never be null on FIToFIPaymentCancellationRequest (ISO 20022 camt.056) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_nboftxs",
+          "severity": "MEDIUM",
+          "description": "Number of transactions must always be present - FIToFIPaymentCancellationRequest (ISO 20022 camt.056)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_fipayment_cancellation_request WHERE \"FIToFIPmtCxlReq.CtrlData.NbOfTxs\" IS NULL"
+        },
+        {
+          "id": "sql_null_ctrlsum",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in CtrlSum column - FIToFIPaymentCancellationRequest (ISO 20022 camt.056)",
+          "statement": "SELECT COUNT(*) FROM payments_db.public.fito_fipayment_cancellation_request WHERE \"FIToFIPmtCxlReq.CtrlData.CtrlSum\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "sese-023",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,securities_db.public.securities_settlement_transaction_instruction,PROD)",
+      "table": "securities_db.public.securities_settlement_transaction_instruction",
+      "description": "SecuritiesSettlementTransactionInstruction (ISO 20022 sese.023)",
+      "area": "securities",
+      "family": "sese",
+      "schema_fields": [
+        {
+          "path": "SctiesSttlmTxInstr.TxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.SctiesMvmntTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.Pmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.CmonId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.CorpActnEvtId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.RcncltnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.ClntCollInstrId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.ClntTrptyCollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.TrptyAgtSvcPrvdrCollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.TrptyAgtSvcPrvdrCollInstrId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.NbCounts.CurInstrNb",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.NbCounts.TtlNb",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.Lnkgs.PrcgPos",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.Lnkgs.MsgNb",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.Lnkgs.Ref",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.Lnkgs.LkdQty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.Lnkgs.RefOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.TradId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.CollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.PlcOfTrad",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 2000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "txid",
+          "field_path": "SctiesSttlmTxInstr.TxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Transaction ID must never be null on SecuritiesSettlementTransactionInstruction (ISO 20022 sese.023) records"
+        },
+        {
+          "id": "clnttrptycolltxid",
+          "field_path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.ClntTrptyCollTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "ClntTrptyCollTxId must never be null on SecuritiesSettlementTransactionInstruction (ISO 20022 sese.023) records"
+        },
+        {
+          "id": "trptyagtsvcprvdrcolltxid",
+          "field_path": "SctiesSttlmTxInstr.SttlmTpAndAddtlParams.TrptyAgtSvcPrvdrCollTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "TrptyAgtSvcPrvdrCollTxId must never be null on SecuritiesSettlementTransactionInstruction (ISO 20022 sese.023) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_txid",
+          "severity": "HIGH",
+          "description": "Transaction identifier must be set on every record - SecuritiesSettlementTransactionInstruction (ISO 20022 sese.023)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.securities_settlement_transaction_instruction WHERE \"SctiesSttlmTxInstr.TxId\" IS NULL"
+        },
+        {
+          "id": "sql_null_clnttrptycolltxid",
+          "severity": "HIGH",
+          "description": "Null values not permitted in ClntTrptyCollTxId column - SecuritiesSettlementTransactionInstruction (ISO 20022 sese.023)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.securities_settlement_transaction_instruction WHERE \"SctiesSttlmTxInstr.SttlmTpAndAddtlParams.ClntTrptyCollTxId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "sese-024",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,securities_db.public.securities_settlement_transaction_status_advice,PROD)",
+      "table": "securities_db.public.securities_settlement_transaction_status_advice",
+      "description": "SecuritiesSettlementTransactionStatusAdvice (ISO 20022 sese.024)",
+      "area": "securities",
+      "family": "sese",
+      "schema_fields": [
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.AcctOwnrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.AcctSvcrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.MktInfrstrctrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.CtrPtyMktInfrstrctrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.PrcrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.CmonId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxId.NetgSvcPrvdrId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.Lnkgs.PrcgPos",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.Lnkgs.SctiesSttlmTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.AckdAccptd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.PdgPrcg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.Rjctd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.Rpr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.Canc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.PdgCxl",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.CxlReqd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.PrcgSts.ModReqd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.IfrrdMtchgSts.Mtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.IfrrdMtchgSts.Umtchd",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 2000,
+        "severity": "HIGH"
+      },
+      "field_rules": [
+        {
+          "id": "acctownrtxid",
+          "field_path": "SctiesSttlmTxStsAdvc.TxId.AcctOwnrTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "AcctOwnrTxId must never be null on SecuritiesSettlementTransactionStatusAdvice (ISO 20022 sese.024) records"
+        },
+        {
+          "id": "acctsvcrtxid",
+          "field_path": "SctiesSttlmTxStsAdvc.TxId.AcctSvcrTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "AcctSvcrTxId must never be null on SecuritiesSettlementTransactionStatusAdvice (ISO 20022 sese.024) records"
+        },
+        {
+          "id": "mktinfrstrctrtxid",
+          "field_path": "SctiesSttlmTxStsAdvc.TxId.MktInfrstrctrTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "MktInfrstrctrTxId must never be null on SecuritiesSettlementTransactionStatusAdvice (ISO 20022 sese.024) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_acctownrtxid",
+          "severity": "HIGH",
+          "description": "Null values not permitted in AcctOwnrTxId column - SecuritiesSettlementTransactionStatusAdvice (ISO 20022 sese.024)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.securities_settlement_transaction_status_advice WHERE \"SctiesSttlmTxStsAdvc.TxId.AcctOwnrTxId\" IS NULL"
+        },
+        {
+          "id": "sql_null_acctsvcrtxid",
+          "severity": "HIGH",
+          "description": "Null values not permitted in AcctSvcrTxId column - SecuritiesSettlementTransactionStatusAdvice (ISO 20022 sese.024)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.securities_settlement_transaction_status_advice WHERE \"SctiesSttlmTxStsAdvc.TxId.AcctSvcrTxId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "sese-034",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,securities_db.public.securities_settlement_allegement_notification,PROD)",
+      "table": "securities_db.public.securities_settlement_allegement_notification",
+      "description": "SecuritiesSettlementAllegementNotification (ISO 20022 sese.034)",
+      "area": "securities",
+      "family": "sese",
+      "schema_fields": [
+        {
+          "path": "SctiesFincgStsAdvc.TxId.AcctOwnrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxId.AcctSvcrTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxId.CmonId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.PdgCxl",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.AckdAccptd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.PdgPrcg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.Rjctd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.Rpr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.Canc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.CxlReqd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.PrcgSts.ModReqd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.MtchgSts.Mtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.MtchgSts.Umtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.MtchgSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.IfrrdMtchgSts.Mtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.IfrrdMtchgSts.Umtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.IfrrdMtchgSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.SttlmSts.Pdg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.SttlmSts.Flng",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 200,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "acctownrtxid",
+          "field_path": "SctiesFincgStsAdvc.TxId.AcctOwnrTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "AcctOwnrTxId must never be null on SecuritiesSettlementAllegementNotification (ISO 20022 sese.034) records"
+        },
+        {
+          "id": "acctsvcrtxid",
+          "field_path": "SctiesFincgStsAdvc.TxId.AcctSvcrTxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "AcctSvcrTxId must never be null on SecuritiesSettlementAllegementNotification (ISO 20022 sese.034) records"
+        },
+        {
+          "id": "cmonid",
+          "field_path": "SctiesFincgStsAdvc.TxId.CmonId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CmonId must never be null on SecuritiesSettlementAllegementNotification (ISO 20022 sese.034) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_acctownrtxid",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in AcctOwnrTxId column - SecuritiesSettlementAllegementNotification (ISO 20022 sese.034)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.securities_settlement_allegement_notification WHERE \"SctiesFincgStsAdvc.TxId.AcctOwnrTxId\" IS NULL"
+        },
+        {
+          "id": "sql_null_acctsvcrtxid",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in AcctSvcrTxId column - SecuritiesSettlementAllegementNotification (ISO 20022 sese.034)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.securities_settlement_allegement_notification WHERE \"SctiesFincgStsAdvc.TxId.AcctSvcrTxId\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "fxtr-008",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,fx_db.public.foreign_exchange_trade_instruction,PROD)",
+      "table": "fx_db.public.foreign_exchange_trade_instruction",
+      "description": "ForeignExchangeTradeInstruction (ISO 20022 fxtr.008)",
+      "area": "foreign_exchange",
+      "family": "fxtr",
+      "schema_fields": [
+        {
+          "path": "FXTradStsNtfctn.TradData.MsgId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.OrgtrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.MtchgSysUnqRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.MtchgSysMtchgRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.MtchgSysMtchdSdRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.StsOrgtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.CurSts",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.CurStsSubTp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.CurStsDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.PrvsSts",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.PrvsStsSubTp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.PrvsStsDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.PdctTp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.SttlmSsnIdr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.TradData.SpltTradInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.TradgSdTxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.CtrPtySdTxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.CntrlCtrPtyClrHs",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ClrBrkr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ClrXcptnPty",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 500,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "msgid",
+          "field_path": "FXTradStsNtfctn.TradData.MsgId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Message ID must never be null on ForeignExchangeTradeInstruction (ISO 20022 fxtr.008) records"
+        },
+        {
+          "id": "orgtrref",
+          "field_path": "FXTradStsNtfctn.TradData.OrgtrRef",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "OrgtrRef must never be null on ForeignExchangeTradeInstruction (ISO 20022 fxtr.008) records"
+        },
+        {
+          "id": "mtchgsysunqref",
+          "field_path": "FXTradStsNtfctn.TradData.MtchgSysUnqRef",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "MtchgSysUnqRef must never be null on ForeignExchangeTradeInstruction (ISO 20022 fxtr.008) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_msgid",
+          "severity": "MEDIUM",
+          "description": "Zero tolerance for null message IDs - ForeignExchangeTradeInstruction (ISO 20022 fxtr.008)",
+          "statement": "SELECT COUNT(*) FROM fx_db.public.foreign_exchange_trade_instruction WHERE \"FXTradStsNtfctn.TradData.MsgId\" IS NULL"
+        },
+        {
+          "id": "sql_null_orgtrref",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in OrgtrRef column - ForeignExchangeTradeInstruction (ISO 20022 fxtr.008)",
+          "statement": "SELECT COUNT(*) FROM fx_db.public.foreign_exchange_trade_instruction WHERE \"FXTradStsNtfctn.TradData.OrgtrRef\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "fxtr-014",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,fx_db.public.foreign_exchange_trade_status_notification,PROD)",
+      "table": "fx_db.public.foreign_exchange_trade_status_notification",
+      "description": "ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014)",
+      "area": "foreign_exchange",
+      "family": "fxtr",
+      "schema_fields": [
+        {
+          "path": "FXTradInstr.TradInf.TradDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.OrgtrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.CmonRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.OprTp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.OprScp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.PdctTp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.SttlmSsnIdr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradInf.PmtVrssPmtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdId.SubmitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdId.TradPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdId.FndId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdId.SubmitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdId.TradPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdId.FndId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradAmts.TradgSdBuyAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradAmts.TradgSdSellAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradAmts.SttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.AgrdRate.XchgRate",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.AgrdRate.UnitCcy",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.AgrdRate.QtdCcy",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 500,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "tradgsdbuyamt",
+          "field_path": "FXTradInstr.TradAmts.TradgSdBuyAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "TradgSdBuyAmt must never be null on ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014) records"
+        },
+        {
+          "id": "tradgsdsellamt",
+          "field_path": "FXTradInstr.TradAmts.TradgSdSellAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "TradgSdSellAmt must never be null on ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014) records"
+        },
+        {
+          "id": "traddt",
+          "field_path": "FXTradInstr.TradInf.TradDt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "TradDt must never be null on ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_tradgsdbuyamt",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in TradgSdBuyAmt column - ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014)",
+          "statement": "SELECT COUNT(*) FROM fx_db.public.foreign_exchange_trade_status_notification WHERE \"FXTradInstr.TradAmts.TradgSdBuyAmt\" IS NULL"
+        },
+        {
+          "id": "sql_null_tradgsdsellamt",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in TradgSdSellAmt column - ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014)",
+          "statement": "SELECT COUNT(*) FROM fx_db.public.foreign_exchange_trade_status_notification WHERE \"FXTradInstr.TradAmts.TradgSdSellAmt\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "colr-003",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,securities_db.public.collateral_proposition_request,PROD)",
+      "table": "securities_db.public.collateral_proposition_request",
+      "description": "CollateralPropositionRequest (ISO 20022 colr.003)",
+      "area": "collateral",
+      "family": "colr",
+      "schema_fields": [
+        {
+          "path": "MrgnCallReq.TxId",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.PtyA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.SvcgPtyA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.PtyB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.SvcgPtyB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.CollAcctId",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.BlckChainAdrOrWllt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.XpsrTp",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Oblgtn.ValtnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Agrmt.AgrmtDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Agrmt.AgrmtId",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Agrmt.AgrmtDt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Agrmt.BaseCcy",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.Agrmt.AgrmtFrmwk",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallRslt.DfltFndAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallRslt.MrgnCallRslt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.XpsdAmtPtyA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.XpsdAmtPtyB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.XpsrCnvntn",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.IndpdntAmtPtyA",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 200,
+        "severity": "MEDIUM"
+      },
+      "field_rules": [
+        {
+          "id": "txid",
+          "field_path": "MrgnCallReq.TxId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Transaction ID must never be null on CollateralPropositionRequest (ISO 20022 colr.003) records"
+        },
+        {
+          "id": "dfltfndamt",
+          "field_path": "MrgnCallReq.MrgnCallRslt.DfltFndAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "DfltFndAmt must never be null on CollateralPropositionRequest (ISO 20022 colr.003) records"
+        },
+        {
+          "id": "xpsdamtptya",
+          "field_path": "MrgnCallReq.MrgnDtlsDueToA.XpsdAmtPtyA",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "XpsdAmtPtyA must never be null on CollateralPropositionRequest (ISO 20022 colr.003) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_txid",
+          "severity": "MEDIUM",
+          "description": "Transaction identifier must be set on every record - CollateralPropositionRequest (ISO 20022 colr.003)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.collateral_proposition_request WHERE \"MrgnCallReq.TxId\" IS NULL"
+        },
+        {
+          "id": "sql_null_dfltfndamt",
+          "severity": "MEDIUM",
+          "description": "Null values not permitted in DfltFndAmt column - CollateralPropositionRequest (ISO 20022 colr.003)",
+          "statement": "SELECT COUNT(*) FROM securities_db.public.collateral_proposition_request WHERE \"MrgnCallReq.MrgnCallRslt.DfltFndAmt\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "tsin-001",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,trade_finance_db.public.invoice_financing_request,PROD)",
+      "table": "trade_finance_db.public.invoice_financing_request",
+      "description": "InvoiceFinancingRequest (ISO 20022 tsin.001)",
+      "area": "trade_finance",
+      "family": "tsin",
+      "schema_fields": [
+        {
+          "path": "InvcFincgReq.ReqGrpInf.GrpId",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.Authstn",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.NbOfInvcReqs",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.TtlBlkInvcAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.Ccy",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.FincgAgrmt",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.FincgRqstr",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.IntrmyAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.FrstAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.AgrmtClauses",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.ReqGrpInf.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.InvcGnlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.InvcTtlsInf",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.CdtDbtNoteAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.InstlmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.ReqdAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.Spplr",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.Buyr",
+          "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.InvcPmtInf",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 100,
+        "severity": "LOW"
+      },
+      "field_rules": [
+        {
+          "id": "ttlblkinvcamt",
+          "field_path": "InvcFincgReq.ReqGrpInf.TtlBlkInvcAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "TtlBlkInvcAmt must never be null on InvoiceFinancingRequest (ISO 20022 tsin.001) records"
+        },
+        {
+          "id": "cdtdbtnoteamt",
+          "field_path": "InvcFincgReq.InvcReqInf.CdtDbtNoteAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CdtDbtNoteAmt must never be null on InvoiceFinancingRequest (ISO 20022 tsin.001) records"
+        },
+        {
+          "id": "reqdamt",
+          "field_path": "InvcFincgReq.InvcReqInf.ReqdAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "ReqdAmt must never be null on InvoiceFinancingRequest (ISO 20022 tsin.001) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_ttlblkinvcamt",
+          "severity": "LOW",
+          "description": "Null values not permitted in TtlBlkInvcAmt column - InvoiceFinancingRequest (ISO 20022 tsin.001)",
+          "statement": "SELECT COUNT(*) FROM trade_finance_db.public.invoice_financing_request WHERE \"InvcFincgReq.ReqGrpInf.TtlBlkInvcAmt\" IS NULL"
+        },
+        {
+          "id": "sql_null_cdtdbtnoteamt",
+          "severity": "LOW",
+          "description": "Null values not permitted in CdtDbtNoteAmt column - InvoiceFinancingRequest (ISO 20022 tsin.001)",
+          "statement": "SELECT COUNT(*) FROM trade_finance_db.public.invoice_financing_request WHERE \"InvcFincgReq.InvcReqInf.CdtDbtNoteAmt\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "acmt-001",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,accounts_db.public.account_opening_instruction_v08,PROD)",
+      "table": "accounts_db.public.account_opening_instruction_v08",
+      "description": "AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
+      "area": "account_management",
+      "family": "acmt",
+      "schema_fields": [
+        {
+          "path": "AcctOpngInstr.MsgId.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.MsgId.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.OrdrRef.OrdrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.OrdrRef.MstrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.PrvsRef.Ref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.PrvsRef.RefIssr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.PrvsRef.MsgNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InstrDtls.OpngTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InstrDtls.AcctApplId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InstrDtls.ClntRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InstrDtls.CtrPtyRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InstrDtls.ExstgAcctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Nm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Dsgnt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.OwnrshTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.TaxXmptn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.StmtFrqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.RefCcy",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 50,
+        "severity": "LOW"
+      },
+      "field_rules": [
+        {
+          "id": "exstgacctid",
+          "field_path": "AcctOpngInstr.InstrDtls.ExstgAcctId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "ExstgAcctId must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
+        },
+        {
+          "id": "id",
+          "field_path": "AcctOpngInstr.MsgId.Id",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Id must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
+        },
+        {
+          "id": "credttm",
+          "field_path": "AcctOpngInstr.MsgId.CreDtTm",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CreDtTm must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_exstgacctid",
+          "severity": "LOW",
+          "description": "Null values not permitted in ExstgAcctId column - AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_opening_instruction_v08 WHERE \"AcctOpngInstr.InstrDtls.ExstgAcctId\" IS NULL"
+        },
+        {
+          "id": "sql_null_id",
+          "severity": "LOW",
+          "description": "Null values not permitted in Id column - AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_opening_instruction_v08 WHERE \"AcctOpngInstr.MsgId.Id\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "acmt-002",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,accounts_db.public.account_details_confirmation,PROD)",
+      "table": "accounts_db.public.account_details_confirmation",
+      "description": "AccountDetailsConfirmation (ISO 20022 acmt.002)",
+      "area": "account_management",
+      "family": "acmt",
+      "schema_fields": [
+        {
+          "path": "AcctDtlsConf.MsgId.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.MsgId.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.OrdrRef.OrdrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.OrdrRef.MstrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.RltdRef.Ref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.RltdRef.RefIssr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.RltdRef.MsgNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.ConfDtls.ConfTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.ConfDtls.AcctApplId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.ConfDtls.ClntRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.ConfDtls.CtrPtyRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.ConfDtls.ExstgAcctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.AcctSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.BlckdSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.StsDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Nm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Dsgnt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.OwnrshTp",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 50,
+        "severity": "LOW"
+      },
+      "field_rules": [
+        {
+          "id": "exstgacctid",
+          "field_path": "AcctDtlsConf.ConfDtls.ExstgAcctId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "ExstgAcctId must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
+        },
+        {
+          "id": "id",
+          "field_path": "AcctDtlsConf.MsgId.Id",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Id must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
+        },
+        {
+          "id": "credttm",
+          "field_path": "AcctDtlsConf.MsgId.CreDtTm",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "CreDtTm must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_exstgacctid",
+          "severity": "LOW",
+          "description": "Null values not permitted in ExstgAcctId column - AccountDetailsConfirmation (ISO 20022 acmt.002)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_details_confirmation WHERE \"AcctDtlsConf.ConfDtls.ExstgAcctId\" IS NULL"
+        },
+        {
+          "id": "sql_null_id",
+          "severity": "LOW",
+          "description": "Null values not permitted in Id column - AccountDetailsConfirmation (ISO 20022 acmt.002)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_details_confirmation WHERE \"AcctDtlsConf.MsgId.Id\" IS NULL"
+        }
+      ]
+    },
+    {
+      "key": "acmt-003",
+      "urn": "urn:li:dataset:(urn:li:dataPlatform:postgres,accounts_db.public.account_modification_instruction,PROD)",
+      "table": "accounts_db.public.account_modification_instruction",
+      "description": "AccountModificationInstruction (ISO 20022 acmt.003)",
+      "area": "account_management",
+      "family": "acmt",
+      "schema_fields": [
+        {
+          "path": "AcctModInstr.MsgId.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.MsgId.CreDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.PrvsRef.Ref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.PrvsRef.RefIssr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.PrvsRef.MsgNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InstrDtls.ModRsn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InstrDtls.AcctApplId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InstrDtls.ClntRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InstrDtls.CtrPtyRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InstrDtls.ExstgAcctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InvstmtAcctSelctn.AcctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.InvstmtAcctSelctn.OthrAcctSelctnData",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.AcctStsUpdInstr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Nm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Dsgnt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.OwnrshTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.TaxXmptn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.StmtFrqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.RefCcy",
+          "type": "STRING"
+        }
+      ],
+      "volume": {
+        "min_rows": 50,
+        "severity": "LOW"
+      },
+      "field_rules": [
+        {
+          "id": "exstgacctid",
+          "field_path": "AcctModInstr.InstrDtls.ExstgAcctId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "ExstgAcctId must never be null on AccountModificationInstruction (ISO 20022 acmt.003) records"
+        },
+        {
+          "id": "acctid",
+          "field_path": "AcctModInstr.InvstmtAcctSelctn.AcctId",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Account ID must never be null on AccountModificationInstruction (ISO 20022 acmt.003) records"
+        },
+        {
+          "id": "id",
+          "field_path": "AcctModInstr.MsgId.Id",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "Id must never be null on AccountModificationInstruction (ISO 20022 acmt.003) records"
+        }
+      ],
+      "sql_rules": [
+        {
+          "id": "sql_null_exstgacctid",
+          "severity": "LOW",
+          "description": "Null values not permitted in ExstgAcctId column - AccountModificationInstruction (ISO 20022 acmt.003)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_modification_instruction WHERE \"AcctModInstr.InstrDtls.ExstgAcctId\" IS NULL"
+        },
+        {
+          "id": "sql_null_acctid",
+          "severity": "LOW",
+          "description": "Null values not permitted in AcctId column - AccountModificationInstruction (ISO 20022 acmt.003)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_modification_instruction WHERE \"AcctModInstr.InvstmtAcctSelctn.AcctId\" IS NULL"
+        }
+      ]
+    }
+  ]
+}

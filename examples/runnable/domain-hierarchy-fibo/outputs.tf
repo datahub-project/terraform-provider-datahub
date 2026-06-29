@@ -42,3 +42,19 @@ output "glossary_term_count" {
   description = "Total glossary terms created (owl:Class definitions extracted from leaf ontologies)."
   value       = length(datahub_glossary_term.fibo_term)
 }
+
+output "dq_assertion_counts" {
+  description = "Data quality assertion counts by type across the 26 ISO 20022 PostgreSQL datasets."
+  value = {
+    schema = length(datahub_schema_assertion.iso20022)
+    volume = length(datahub_volume_assertion.iso20022)
+    field  = length(datahub_field_assertion.iso20022)
+    sql    = length(datahub_sql_assertion.iso20022)
+    total = (
+      length(datahub_schema_assertion.iso20022) +
+      length(datahub_volume_assertion.iso20022) +
+      length(datahub_field_assertion.iso20022) +
+      length(datahub_sql_assertion.iso20022)
+    )
+  }
+}
