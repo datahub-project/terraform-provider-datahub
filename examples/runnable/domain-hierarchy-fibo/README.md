@@ -152,3 +152,112 @@ terraform destroy
 Terraform destroys terms before leaf nodes, leaf nodes before modules, and modules before top-level nodes -- in both the domain and glossary hierarchies -- because all `parent_domain` and `parent_node` attributes reference `.urn` outputs, giving Terraform the dependency edges it needs.
 
 Domain destruction respects DataHub's hard-delete child guard (the server refuses to delete a domain with children). Glossary destruction has no server-side guard, so ordering via `.urn` references is the only protection against orphaned nodes.
+
+---
+
+## ISO 20022 financial pipeline demo (optional)
+
+This optional layer populates DataHub with realistic financial dataset metadata drawn from ISO 20022 message schemas and tags it against the FIBO domain hierarchy created above.
+
+**What gets created (metadata only -- no real systems):**
+
+- **Kafka topics** -- one per ISO 20022 message type (e.g. `iso20022.pacs.pacs.008.001.10`), with Avro schemas derived from the XSD definitions
+- **PostgreSQL tables** -- one per message type in a per-business-area database (`payments_db`, `securities_db`, `fx_db`, `trade_finance_db`), with typed columns flattened from the Avro schema
+- **Looker views** -- one per message type representing analytics on top of the PostgreSQL data
+- **3-tier lineage** -- Kafka topic -> PostgreSQL table -> Looker view, with field-level lineage for top-level fields
+- **FIBO domain and glossary term tags** -- applied by an LLM that maps each message's field documentation to the FIBO taxonomy
+
+### Additional prerequisites
+
+- **xmlschema** and **fastavro** -- for XSD parsing and Avro conversion
+- **anthropic** -- for LLM-based FIBO tagging (Step 4 only)
+- **acryl-datahub** -- Python SDK for emitting metadata
+
+Install all with:
+
+```bash
+make iso-deps
+```
+
+### Step A -- download ISO 20022 XSD schemas (one-time)
+
+```bash
+make iso-data
+```
+
+Downloads ~18 XSD files from [iso20022.org](https://www.iso20022.org/iso-20022-message-definitions) into `.iso-cache/xsd/` (gitignored). Schemas are cached for 30 days. Re-download with `make iso-data FORCE=1`.
+
+Coverage: pacs (payments clearing), pain (payments initiation), camt (cash management), sese (securities settlement), semt (securities management), fxtr (foreign exchange), tsin (trade finance).
+
+### Step B -- convert to Avro schemas
+
+```bash
+make iso-avro
+```
+
+Parses each XSD and generates Avro schema JSON (`.iso-cache/avro/{id}.avsc`) and a flat fields list (`.iso-cache/avro/{id}.fields.json`) for use by the emit and tagging scripts.
+
+### Step C -- emit pipeline entities to DataHub
+
+```bash
+export DATAHUB_GMS_URL="https://your-instance.acryl.io/gms"
+export DATAHUB_GMS_TOKEN="your-personal-access-token"
+
+make iso-emit
+```
+
+Emits Kafka topics, PostgreSQL tables, Looker views, and lineage to DataHub. Run `python3 scripts/iso20022/emit_entities.py --dry-run` first to preview what will be created without contacting DataHub.
+
+### Step D -- auto-tag with FIBO using LLM (optional)
+
+Requires the FIBO data to already be generated (`make fibo-data`) so the LLM has domain context.
+
+```bash
+export ANTHROPIC_API_KEY="your-anthropic-api-key"
+
+make iso-tag
+```
+
+Calls `claude-haiku-4-5` (via the Anthropic API) for each message type and asks it to match field documentation to FIBO domains and glossary terms. Results are cached in `.iso-cache/tags/` -- re-tag with `make iso-tag FORCE=1`. Use `--dry-run` to preview LLM decisions without applying them.
+
+### Run the full pipeline at once
+
+```bash
+make fibo-data   # FIBO domain hierarchy (required for tagging context)
+make iso-all     # download + convert + emit + tag
+```
+
+### Verify the pipeline
+
+```bash
+# Kafka topics
+echo "Search: ${DATAHUB_GMS_URL%/gms}/search?query=iso20022&type=DATASET"
+
+# Lineage graph (open any iso20022.pacs.* topic in the UI and click Lineage)
+echo "DataHub UI: ${DATAHUB_GMS_URL%/gms}"
+```
+
+In the DataHub UI:
+- **Search** for `iso20022` to see all emitted datasets across Kafka, PostgreSQL, and Looker
+- Open any Kafka topic and click **Lineage** to see the 3-tier Kafka -> PostgreSQL -> Looker graph
+- Check the **Domains** tab on a dataset to see the FIBO domain tag applied by the LLM
+- Check the **Glossary** tab to see any matched FIBO terms
+
+### Cleanup
+
+The ISO 20022 pipeline entities are emitted directly via the DataHub Python SDK, not managed by Terraform. To remove them, use the DataHub UI or the `datahub` CLI:
+
+```bash
+# Remove all entities from a platform (example for Kafka)
+datahub delete --platform kafka --env PROD --force
+```
+
+To remove only the local cache:
+
+```bash
+make clean-iso
+```
+
+### ISO 20022 license
+
+The XSD schema files are sourced from the ISO 20022 Registration Authority at [iso20022.org](https://www.iso20022.org) under the [ISO 20022 Intellectual Property Rights Policy](https://www.iso20022.org/intellectual-property-rights). They are downloaded at runtime into the gitignored `.iso-cache/` directory and are not included in this repository. See [NOTICE](./NOTICE) for the full attribution statement.

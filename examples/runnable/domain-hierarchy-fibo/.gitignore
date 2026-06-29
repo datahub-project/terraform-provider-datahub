@@ -1,3 +1,4 @@
 .fibo-cache/
+.iso-cache/
 .terraform/
 terraform.tfstate*

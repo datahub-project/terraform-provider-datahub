@@ -1,4 +1,5 @@
-.PHONY: fibo-deps fibo-data fibo-data-provisional fibo-update clean-fibo
+.PHONY: fibo-deps fibo-data fibo-data-provisional fibo-update clean-fibo \
+        iso-deps iso-data iso-avro iso-emit iso-tag iso-all clean-iso
 
 # Install Python dependencies required for glossary term extraction.
 # Run this once before fibo-data (fibo-data depends on it automatically).
@@ -34,3 +35,41 @@ fibo-update: fibo-deps
 # Remove the cache entirely. Next fibo-data run will re-clone.
 clean-fibo:
 	rm -rf .fibo-cache
+
+# -----------------------------------------------------------------------
+# ISO 20022 financial pipeline demo
+# -----------------------------------------------------------------------
+# Install Python dependencies (shared with fibo-deps; both call pip install).
+iso-deps:
+	python3 -m pip install --quiet -r requirements.txt
+
+# Download ISO 20022 XSD schemas from iso20022.org into .iso-cache/xsd/.
+# Schemas are cached for 30 days; pass FORCE=1 to bypass: make iso-data FORCE=1
+.iso-cache/xsd:
+	python3 scripts/iso20022/download.py $(if $(FORCE),--force,)
+
+iso-data: iso-deps .iso-cache/xsd
+
+# Convert downloaded XSDs to Avro schemas in .iso-cache/avro/.
+.iso-cache/avro: scripts/iso20022/xsd_to_avro.py .iso-cache/xsd
+	python3 scripts/iso20022/xsd_to_avro.py $(if $(FORCE),--force,)
+
+iso-avro: iso-deps .iso-cache/avro
+
+# Emit Kafka / PostgreSQL / Looker entities and lineage to DataHub.
+# Requires: DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN env vars.
+iso-emit: iso-deps iso-avro
+	python3 scripts/iso20022/emit_entities.py
+
+# LLM-based FIBO domain and glossary term tagging.
+# Requires: ANTHROPIC_API_KEY, DATAHUB_GMS_URL, DATAHUB_GMS_TOKEN env vars.
+# Run 'make fibo-data' first so FIBO context is available.
+iso-tag: iso-deps
+	python3 scripts/iso20022/auto_tag.py $(if $(FORCE),--force,)
+
+# Run the full ISO 20022 pipeline end-to-end.
+iso-all: iso-deps iso-data iso-avro iso-emit iso-tag
+
+# Remove the ISO 20022 cache entirely.
+clean-iso:
+	rm -rf .iso-cache
