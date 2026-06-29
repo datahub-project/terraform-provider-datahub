@@ -201,9 +201,10 @@ def build_table_entry(entry: dict, fields: list, prefix: str) -> dict:
     pg_table = f"{db}.public.{snake_name}"
     urn = f"urn:li:dataset:(urn:li:dataPlatform:postgres,{pg_table},PROD)"
 
-    # Schema fields: mirror exactly what emit_entities.py _pg_schema_fields() emitted.
-    # Since all ISO 20022 field paths contain dots, the fallback flat_fields[:20] is always used.
-    schema_fields_raw = fields[:20]
+    # Schema fields: all fields emitted by emit_entities.py _pg_schema_fields().
+    # emit_entities.py uses all flat_fields when no top-level (dot-free) fields exist,
+    # which is always the case for ISO 20022 messages.
+    schema_fields_raw = fields
     schema_fields = [
         {"path": f["field_path"], "type": _pg_type_to_dh(f.get("pg_type", "text"))}
         for f in schema_fields_raw
@@ -219,7 +220,7 @@ def build_table_entry(entry: dict, fields: list, prefix: str) -> dict:
     family = prefix.split(".")[0]
     description = f"{name} (ISO 20022 {prefix})"
 
-    # Field rules: pick 2-3 mandatory identifier fields from the first 20
+    # Field rules: pick 2-3 mandatory identifier fields from all fields
     mandatory = _pick_mandatory_fields(schema_fields_raw, n=3)
     field_rules = []
     for mf in mandatory:

@@ -133,6 +133,29 @@ def _thread_emitter(gms_url: str, gms_token: str):
     return _tl.emitter
 
 
+def _emit_mcps_parallel(
+    mcps: list,
+    gms_url: str,
+    gms_token: str,
+    workers: int,
+    label: str = "MCPs",
+) -> None:
+    """Emit a flat list of MCPs in parallel using per-thread emitters."""
+    total = len(mcps)
+    lock = threading.Lock()
+    done = [0]
+
+    def _one(mcp):
+        _thread_emitter(gms_url, gms_token).emit_mcp(mcp)
+        with lock:
+            done[0] += 1
+            if done[0] % 50 == 0 or done[0] == total:
+                print(f"  {done[0]}/{total} {label} emitted")
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(_one, mcps))
+
+
 def _audit_stamp() -> AuditStampClass:
     return AuditStampClass(time=int(time.time() * 1000), actor=ACTOR_URN)
 
@@ -171,7 +194,7 @@ def _pg_schema_fields(flat_fields: list) -> list:
     stamp = _audit_stamp()
     top_level = [f for f in flat_fields if "." not in f["field_path"]]
     if not top_level:
-        top_level = flat_fields[:20]
+        top_level = flat_fields
     return [
         SchemaFieldClass(
             fieldPath=f["field_path"],
@@ -186,10 +209,10 @@ def _pg_schema_fields(flat_fields: list) -> list:
 
 def _looker_schema_fields(flat_fields: list) -> list:
     stamp = _audit_stamp()
-    dims = [
-        f for f in flat_fields
-        if "." not in f["field_path"] and f["avro_type"] in ("string", "long")
-    ][:5]
+    # For ISO 20022 all field paths contain dots, so filter on type only.
+    # Cap at 20 dimensions - Looker views are a demo surface and don't need
+    # every column, just enough to show meaningful lineage.
+    dims = [f for f in flat_fields if f["avro_type"] in ("string", "long")][:20]
     fields = [
         SchemaFieldClass(
             fieldPath=f["field_path"],
@@ -212,7 +235,7 @@ def _looker_schema_fields(flat_fields: list) -> list:
     return fields
 
 
-def emit_iso20022_glossary(manifest: list, emitter, dry_run: bool) -> dict:
+def emit_iso20022_glossary(manifest: list, gms_url: str, gms_token: str, dry_run: bool) -> dict:
     """Emit the ISO 20022 glossary hierarchy and return a message_id -> term_urn map."""
     stamp = _audit_stamp()
     mcps = []
@@ -283,15 +306,12 @@ def emit_iso20022_glossary(manifest: list, emitter, dry_run: bool) -> dict:
         return term_map
 
     print(f"  Emitting 1 root + {n_areas} area nodes + {n_terms} message terms ({len(mcps)} MCPs)...")
-    for i, mcp in enumerate(mcps, 1):
-        emitter.emit_mcp(mcp)
-        if i % 50 == 0 or i == len(mcps):
-            print(f"  {i}/{len(mcps)} MCPs emitted")
+    _emit_mcps_parallel(mcps, gms_url, gms_token, EMIT_WORKERS, label="glossary MCPs")
     print(f"  Glossary done.")
     return term_map
 
 
-def emit_iso20022_tags(manifest: list, emitter, dry_run: bool) -> None:
+def emit_iso20022_tags(manifest: list, gms_url: str, gms_token: str, dry_run: bool) -> None:
     """Emit one tag entity per ISO 20022 message family (e.g. iso20022:pacs)."""
     families = sorted({entry["family"] for entry in manifest})
     mcps = [
@@ -307,8 +327,7 @@ def emit_iso20022_tags(manifest: list, emitter, dry_run: bool) -> None:
     if dry_run:
         print(f"  [dry-run] would emit {len(families)} family tags: {', '.join(families)}")
         return
-    for mcp in mcps:
-        emitter.emit_mcp(mcp)
+    _emit_mcps_parallel(mcps, gms_url, gms_token, EMIT_WORKERS, label="tag MCPs")
     print(f"  Tags: {len(families)} ISO 20022 family tags emitted ({', '.join(families)}).")
 
 
@@ -524,9 +543,9 @@ def main(dry_run: bool = False) -> None:
 
     # Step 1: emit glossary hierarchy and family tags
     print("\n--- ISO 20022 Glossary ---")
-    term_map = emit_iso20022_glossary(manifest, emitter, dry_run)
+    term_map = emit_iso20022_glossary(manifest, gms_url, gms_token, dry_run)
     print("\n--- ISO 20022 Tags ---")
-    emit_iso20022_tags(manifest, emitter, dry_run)
+    emit_iso20022_tags(manifest, gms_url, gms_token, dry_run)
 
     # Step 2: prepare work items (read files in main thread; emit in parallel)
     print("\n--- Dataset Entities ---")

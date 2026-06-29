@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/datahub-project/terraform-provider-datahub/graph/badge.svg)](https://codecov.io/gh/datahub-project/terraform-provider-datahub)
 [![Terraform Registry Downloads](https://img.shields.io/terraform/provider/dw/1896655?logo=terraform&logoColor=white&labelColor=623CE4&color=4D27AA)](https://registry.terraform.io/providers/datahub-project/datahub/latest/docs)
 
-Terraform provider for DataHub. Manage ingestion, governance taxonomy, access control, and more as code.
+Terraform provider for DataHub. Manage ingestion, governance taxonomy, access control, data quality, and more as code.
 
 This provider is implemented with the Terraform Plugin Framework and talks to DataHub via its OpenAPI v3 and GraphQL APIs.
 
@@ -36,6 +36,8 @@ This provider is implemented with the Terraform Plugin Framework and talks to Da
 | `datahub_glossary_terms` | data source | Enumerate all glossary term URNs for bulk import. |
 | `datahub_structured_property` | resource + data source | Typed custom property schema (value type, cardinality, entity types, allowed values). |
 | `datahub_structured_properties` | data source | Enumerate all structured property URNs for bulk import. |
+| `datahub_ownership_type` | resource + data source | Custom ownership type definitions (e.g. Data Steward, Business Owner). |
+| `datahub_ownership_types` | data source | Enumerate all ownership type URNs. |
 
 **Access control**
 
@@ -51,6 +53,35 @@ This provider is implemented with the Terraform Plugin Framework and talks to Da
 | `datahub_role_assignment` | resource | Assign a built-in role to a user or group. |
 | `datahub_policy` | resource | PLATFORM and METADATA access policies with full actor/privilege/resource control. |
 | `datahub_policies` | data source | Enumerate all policy URNs for bulk import. |
+
+**Observe / Data quality**
+
+Assertion resources create monitor rules visible in the DataHub Validations tab. The five typed assertion resources are **DataHub Cloud only** (they require the Cloud monitor service layer). Custom assertions and the read-only data sources work on both OSS DataHub and DataHub Cloud.
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_freshness_assertion` | resource | Freshness monitor: dataset must be updated within a time window. **DataHub Cloud only.** |
+| `datahub_volume_assertion` | resource | Volume monitor: row count must satisfy an operator/threshold. **DataHub Cloud only.** |
+| `datahub_field_assertion` | resource | Field (column) monitor: metric (null count, uniqueness, etc.) must satisfy a threshold. **DataHub Cloud only.** |
+| `datahub_sql_assertion` | resource | SQL metric monitor: a custom SQL expression result must satisfy an operator/value. **DataHub Cloud only.** |
+| `datahub_schema_assertion` | resource | Schema stability monitor: column set must match a declared field list. **DataHub Cloud only.** |
+| `datahub_custom_assertion` | resource | External / custom assertion registered in DataHub (results pushed by an external system). |
+| `datahub_assertion` | data source | Look up an existing assertion by URN. |
+| `datahub_assertions` | data source | Enumerate all assertion URNs visible to the authenticated principal. |
+
+**Actions**
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_action_pipeline` | resource | DataHub Cloud action pipeline (automation triggered by metadata events). **DataHub Cloud only.** |
+| `datahub_action_pipelines` | data source | Enumerate all action pipeline URNs. **DataHub Cloud only.** |
+
+**Data products**
+
+| Component | Type | Notes |
+|---|---|---|
+| `datahub_data_product` | resource + data source | DataHub data product (a curated collection of datasets with ownership and documentation). |
+| `datahub_data_products` | data source | Enumerate all data product URNs. |
 
 **Identity**
 
@@ -78,7 +109,7 @@ See `examples/runnable/provider-install-verification/` for a working development
 
 ## Security / Credentials
 
-DataHub ingestion source configurations (including the recipe JSON) are stored in DataHub. If you embed credentials (tokens, passwords, private keys) directly into the recipe/config, they can end up stored in DataHub metadata and exposed to users/services with access to view ingestion source configs. This provider does not “magically” change that behavior.
+DataHub ingestion source configurations (including the recipe JSON) are stored in DataHub. If you embed credentials (tokens, passwords, private keys) directly into the recipe/config, they can end up stored in DataHub metadata and exposed to users/services with access to view ingestion source configs. This provider does not "magically" change that behavior.
 
 Recommended approaches:
 

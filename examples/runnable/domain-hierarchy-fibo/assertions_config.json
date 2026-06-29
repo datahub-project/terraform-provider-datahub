@@ -87,6 +87,62 @@
         {
           "path": "FIToFIPmtStsRpt.TxInfAndSts.TxSts",
           "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.StsRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.ChrgsInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.AccptncDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.PrcgDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.FctvIntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.AcctSvcrRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.ClrSysRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.CdtSttlmKey",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.OrgnlTxRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.TxInfAndSts.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtStsRpt.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -223,6 +279,126 @@
         },
         {
           "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.XchgRate",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.ChrgsInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.ReqdColltnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.DrctDbtTx",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.Cdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.CdtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.CdtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.UltmtCdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrmyAgt1",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrmyAgt1Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrmyAgt2",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrmyAgt2Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrmyAgt3",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.IntrmyAgt3Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.Dbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.DbtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.DbtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.UltmtDbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.Purp",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.RgltryRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.RltdRmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.RmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.DrctDbtTxInf.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrDrctDbt.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -361,6 +537,114 @@
         {
           "path": "PmtRtr.TxInf.OrgnlInstrId",
           "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlEndToEndId",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlUETR",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlClrSysRef",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlIntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.PmtTpInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.RtrdIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.SttlmPrty",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.SttlmTmIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.SttlmTmReq",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.RtrdInstdAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.XchgRate",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.AgrdRate",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.CompstnAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.ChrgsInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.ClrSysRef",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.RtrChain",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.RtrRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.OrgnlTxRef",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.TxInf.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "PmtRtr.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -497,6 +781,86 @@
         },
         {
           "path": "FIToFIPmtRvsl.TxInf.OrgnlEndToEndId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlUETR",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlClrSysRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.RvsdIntrBkSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.IntrBkSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.SttlmPrty",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.SttlmTmIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.RvsdInstdAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.XchgRate",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.CompstnAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.ChrgsInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.RvslRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.OrgnlTxRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.TxInf.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFIPmtRvsl.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -635,6 +999,174 @@
         {
           "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.AddtlDtTm",
           "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.InstdAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.XchgRate",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.AgrdRate",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.ChrgsInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.MndtRltdInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PmtSgntr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PrvsInstgAgt1",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PrvsInstgAgt1Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PrvsInstgAgt2",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PrvsInstgAgt2Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PrvsInstgAgt3",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.PrvsInstgAgt3Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrmyAgt1",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrmyAgt1Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrmyAgt2",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrmyAgt2Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrmyAgt3",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.IntrmyAgt3Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.UltmtDbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.InitgPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.Dbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.DbtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.DbtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.Cdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.CdtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.UltmtCdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.InstrForCdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.InstrForNxtAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.Purp",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.RgltryRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.Tax",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.RltdRmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.RmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.CdtTrfTxInf.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIToFICstmrCdtTrf.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -771,6 +1303,150 @@
         },
         {
           "path": "FICdtTrf.CdtTrfTxInf.XpryDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PmtSgntr",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PrvsInstgAgt1",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PrvsInstgAgt1Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PrvsInstgAgt2",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PrvsInstgAgt2Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PrvsInstgAgt3",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.PrvsInstgAgt3Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.InstgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.InstdAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrmyAgt1",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrmyAgt1Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrmyAgt2",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrmyAgt2Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrmyAgt3",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.IntrmyAgt3Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.UltmtDbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.Dbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.DbtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.DbtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.CdtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.Cdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.CdtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.UltmtCdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.InstrForCdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.InstrForNxtAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.Purp",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.RgltryRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.RmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.UndrlygAllcn",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.UndrlygCstmrCdtTrf",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.UndrlygFICdtTrf",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.CdtTrfTxInf.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FICdtTrf.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -909,6 +1585,46 @@
         {
           "path": "FIDrctDbt.CdtInstr.IntrmyAgt3Acct",
           "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.CdtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.Cdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.CdtrAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.UltmtCdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.InstrForCdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.DrctDbtTxInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.CdtInstr.SplmtryData",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FIDrctDbt.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -1045,6 +1761,42 @@
         },
         {
           "path": "CstmrCdtTrfInitn.PmtInf.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.DbtrAgtAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.InstrForDbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.UltmtDbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.ChrgsAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.ChrgsAcctAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.PmtInf.CdtTrfTxInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrCdtTrfInitn.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -1183,6 +1935,18 @@
         {
           "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.NbOfTxsPerSts",
           "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.OrgnlPmtInfAndSts.TxInfAndSts",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtStsRpt.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -1319,6 +2083,22 @@
         },
         {
           "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.PmtInfRvsl",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.RvslRsnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.OrgnlPmtInfAndRvsl.TxInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrPmtRvsl.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -1457,6 +2237,34 @@
         {
           "path": "CstmrDrctDbtInitn.PmtInf.UltmtCdtr",
           "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.ChrgBr",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.ChrgsAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.ChrgsAcctAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.CdtrSchmeId",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.PmtInf.DrctDbtTxInf",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "CstmrDrctDbtInitn.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -1593,6 +2401,14 @@
         },
         {
           "path": "CdtrPmtActvtnReq.PmtInf.CdtTrfTx",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "CdtrPmtActvtnReq.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -1731,6 +2547,22 @@
         {
           "path": "BkToCstmrAcctRpt.Rpt.TxsSummry",
           "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.Ntry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.Rpt.AddtlRptInf",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrAcctRpt.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -1868,6 +2700,22 @@
         {
           "path": "BkToCstmrStmt.Stmt.TxsSummry",
           "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.Ntry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.Stmt.AddtlStmtInf",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrStmt.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -2004,6 +2852,18 @@
         },
         {
           "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.Ntry",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.Ntfctn.AddtlNtfctnInf",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "BkToCstmrDbtCdtNtfctn.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -2251,6 +3111,674 @@
         {
           "path": "SctiesSttlmTxInstr.TradDtls.PlcOfTrad",
           "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.PlcOfClr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.TradDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.SttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.LateDlvryDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.DealPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.NbOfDaysAcrd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.OpngClsg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.Rptg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.TradTxCond",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.InvstrCpcty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.TradOrgtrRole",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.TpOfPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.CcyToBuyOrSell",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.MtchgSts",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.AffirmSts",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.FxAddtlDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.TradDtls.SttlmInstrPrcgAddtlDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmId.ISIN",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmId.OthrId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmId.Desc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PlcOfListg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.DayCntBsis",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.RegnForm",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PmtFrqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PmtSts",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.VarblRateChngFrqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.ClssfctnTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.OptnStyle",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.OptnTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.DnmtnCcy",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.CpnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.XpryDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.FltgRateFxgDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.MtrtyDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.IsseDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.NxtCllblDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PutblDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.DtdDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.FrstPmtDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PrvsFctr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.CurFctr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.NxtFctr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.IntrstRate",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.YldToMtrtyRate",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.NxtIntrstRate",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.IndxRateBsis",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.CpnAttchdNb",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PoolNb",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.VarblRateInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.CllblInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.PutblInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.MktOrIndctvPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.ExrcPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.SbcptPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.ConvsPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.StrkPric",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.MinNmnlQty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.CtrctSz",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.UndrlygFinInstrmId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.FinInstrmAttrbts.FinInstrmAttrAddtlDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.SttlmQty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.DnmtnChc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.AcctOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.SfkpgAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.BlckChainAdrOrWllt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.CshAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.SfkpgPlc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.QtyAndAcctDtls.QtyBrkdwn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.HldInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.Prty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.SctiesTxTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.SttlmTxCond",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.PrtlSttlmInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.BnfclOwnrsh",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.BlckTrad",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.CCPElgblty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.DlvryRtrRsn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.CshClrSys",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.XpsrTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.FxStgInstr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.MktClntSd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.NetgElgblty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.Regn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.RpTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.LglRstrctns",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.SctiesRTGS",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.SttlgCpcty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.SttlmSysMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.TaxCpcty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.StmpDtyTaxBsis",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.Trckg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.AutomtcBrrwg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.LttrOfGrnt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.RtrLeg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.ModCxlAllwd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.ElgblForColl",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.DlvrgSctiesSubBalTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.RcvgSctiesSubBalTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmParams.CshSubBalTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.StgSttlmInstrDtls.SttlmStgInstrDB",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.StgSttlmInstrDtls.CtrPty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.StgSttlmInstrDtls.Vndr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.StgSttlmInstrDtls.OthrDlvrgSttlmPties",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.StgSttlmInstrDtls.OthrRcvgSttlmPties",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.DlvrgSttlmPties.Dpstry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.DlvrgSttlmPties.Pty1",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.DlvrgSttlmPties.Pty2",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.DlvrgSttlmPties.Pty3",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.DlvrgSttlmPties.Pty4",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.DlvrgSttlmPties.Pty5",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.RcvgSttlmPties.Dpstry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.RcvgSttlmPties.Pty1",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.RcvgSttlmPties.Pty2",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.RcvgSttlmPties.Pty3",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.RcvgSttlmPties.Pty4",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.RcvgSttlmPties.Pty5",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.CshPties.Dbtr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.CshPties.DbtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.CshPties.Cdtr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.CshPties.CdtrAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.CshPties.Intrmy",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.AcrdIntrstInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.StmpDtyInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.BrkrgAmtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.RsrchFeeInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.Amt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.CdtDbtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.OrgnlCcyAndOrdrdAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.FXDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SttlmAmt.ValDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.AcrdIntrstAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.ChrgsFees",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.CtryNtlFdrlTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.TradAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.ExctgBrkrAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.IsseDscntAllwnc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.PmtLevyTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.LclTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.LclTaxCtrySpcfc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.LclBrkrComssn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.Mrgn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.Othr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.RgltryAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.ShppgAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.SpclCncssn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.StmpDty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.StockXchgTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.TrfTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.TxTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.ValAddedTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.WhldgTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.NetGnLoss",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.CsmptnTax",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.AcrdCptlstnAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrAmts.RsrchFee",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrBizPties.Invstr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrBizPties.QlfdFrgnIntrmy",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrBizPties.StockXchg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrBizPties.TradRgltr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrBizPties.TrptyAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.OthrBizPties.Brkr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.AddtlPhysOrRegnDtls.CertfctnId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.AddtlPhysOrRegnDtls.CertfctnDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.AddtlPhysOrRegnDtls.RegarAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.AddtlPhysOrRegnDtls.CertNb",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxInstr.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -2387,6 +3915,170 @@
         },
         {
           "path": "SctiesSttlmTxStsAdvc.IfrrdMtchgSts.Umtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.IfrrdMtchgSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.MtchgSts.Mtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.MtchgSts.Umtchd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.MtchgSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.SttlmSts.Pdg",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.SttlmSts.Flng",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.SttlmSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.TradId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.PoolId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.CorpActnEvtId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.TrptyAgtSvcPrvdrCollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.ClntTrptyCollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.ClntCollInstrId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.TrptyAgtSvcPrvdrCollInstrId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.AcctOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SfkpgAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.BlckChainAdrOrWllt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SfkpgPlc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.PlcOfTrad",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.PlcOfClr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.FinInstrmId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SttlmQty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.PrtlyRlsdQty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.LateDlvryDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.XpctdSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.XpctdValDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.TradDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.AckdStsTmStmp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.MtchdStsTmStmp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SctiesMvmntTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.Pmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SttlmParams",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.RcvgSttlmPties",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.DlvrgSttlmPties",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.Invstr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.QlfdFrgnIntrmy",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.TxDtls.SttlmInstrPrcgAddtlDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesSttlmTxStsAdvc.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -2525,6 +4217,178 @@
         {
           "path": "SctiesFincgStsAdvc.SttlmSts.Flng",
           "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.SttlmSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.RepoCallReqSts.AckdAccptd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.RepoCallReqSts.Dnd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.RepoCallReqSts.Prtry",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SctiesFincgTradId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.ClsgLegId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.PoolId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.CorpActnEvtId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.TrptyAgtSvcPrvdrCollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.ClntTrptyCollTxId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.AcctOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SfkpgAcct",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.BlckChainAdrOrWllt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SfkpgPlc",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.PlcOfTrad",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.FinInstrmId",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SttlmQty",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.OpngSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.TermntnTxAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.OpngSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.TermntnDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.TradDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.XpctdSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.XpctdValDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.LateDlvryDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.RateChngDt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SctiesFincgTxTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SctiesMvmntTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.Pmt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SttlmParams",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.RateTp",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.VarblRateSpprt",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.RpRate",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.StockLnMrgn",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SctiesHrcut",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.PricgRate",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.Sprd",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.DlvrgSttlmPties",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.RcvgSttlmPties",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.Invstr",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.TxDtls.SttlmInstrPrcgAddtlDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "SctiesFincgStsAdvc.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -2551,13 +4415,13 @@
           "description": "AcctSvcrTxId must never be null on SecuritiesSettlementAllegementNotification (ISO 20022 sese.034) records"
         },
         {
-          "id": "cmonid",
-          "field_path": "SctiesFincgStsAdvc.TxId.CmonId",
+          "id": "trptyagtsvcprvdrcolltxid",
+          "field_path": "SctiesFincgStsAdvc.TxDtls.TrptyAgtSvcPrvdrCollTxId",
           "field_type": "STRING",
           "metric": "NULL_COUNT",
           "operator": "EQUAL_TO",
           "single_value": "0",
-          "description": "CmonId must never be null on SecuritiesSettlementAllegementNotification (ISO 20022 sese.034) records"
+          "description": "TrptyAgtSvcPrvdrCollTxId must never be null on SecuritiesSettlementAllegementNotification (ISO 20022 sese.034) records"
         }
       ],
       "sql_rules": [
@@ -2661,6 +4525,106 @@
         },
         {
           "path": "FXTradStsNtfctn.RgltryRptg.ClrXcptnPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ClrBrkrId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ClrThrshldInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ClrdPdctId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.PdctIdr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.AllcnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.CollstnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ExctnVn",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ExctnTmstmp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.NonStdFlg",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.LkSwpId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.FinNtrOfTheCtrPtyInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.CollPrtflInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.CollPrtflCd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.PrtflCmprssnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.CorpSctrInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.TradWthNonEEACtrPtyInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.NtrgrpTradInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ComrclOrTrsrFincgInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.FinInstrmId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ConfDtAndTmstmp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ClrTmstmp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.ComssnsAndFees",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.RgltryRptg.AddtlRptgInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradStsNtfctn.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -2799,6 +4763,250 @@
         {
           "path": "FXTradInstr.AgrdRate.QtdCcy",
           "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.NDFConds.OpngInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.NDFConds.OpngFxgConds",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdSttlmInstrs.DlvryAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdSttlmInstrs.Intrmy",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdSttlmInstrs.RcvgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.TradgSdSttlmInstrs.BnfcryInstn",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdSttlmInstrs.DlvryAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdSttlmInstrs.Intrmy",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdSttlmInstrs.RcvgAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.CtrPtySdSttlmInstrs.BnfcryInstn",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.BlckInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.RltdTradRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.DealgMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.BrkrId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.CtrPtyRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.BrkrsComssn",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.SndrToRcvrInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.DealgBrnchTradgSd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.DealgBrnchCtrPtySd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.CtctInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.AgrmtDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.DefsYr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.BrkrsRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.PmtClrCentr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.OptnlGnlInf.ClctnAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.TradgSdTxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.CtrPtySdTxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.CntrlCtrPtyClrHs",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ClrBrkr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ClrXcptnPty",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ClrBrkrId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ClrThrshldInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ClrdPdctId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.PdctIdr",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.AllcnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.CollstnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ExctnVn",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ExctnTmstmp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.NonStdFlg",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.LkSwpId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.FinNtrOfTheCtrPtyInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.CollPrtflInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.CollPrtflCd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.PrtflCmprssnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.CorpSctrInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.TradWthNonEEACtrPtyInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.NtrgrpTradInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ComrclOrTrsrFincgInd",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.FinInstrmId",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ConfDtAndTmstmp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ClrTmstmp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.ComssnsAndFees",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.RgltryRptg.AddtlRptgInf",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.PstTradEvt.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.PstTradEvt.OrgnlRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.PstTradEvt.UndrlygLbltyRef",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.PstTradEvt.PrftOrLossSttlmDt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.PstTradEvt.PrftOrLoss",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.PstTradEvt.OutsdngSttlmAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "FXTradInstr.SplmtryData.Envlp",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -2825,13 +5033,13 @@
           "description": "TradgSdSellAmt must never be null on ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014) records"
         },
         {
-          "id": "traddt",
-          "field_path": "FXTradInstr.TradInf.TradDt",
+          "id": "outsdngsttlmamt",
+          "field_path": "FXTradInstr.PstTradEvt.OutsdngSttlmAmt",
           "field_type": "STRING",
           "metric": "NULL_COUNT",
           "operator": "EQUAL_TO",
           "single_value": "0",
-          "description": "TradDt must never be null on ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014) records"
+          "description": "OutsdngSttlmAmt must never be null on ForeignExchangeTradeStatusNotification (ISO 20022 fxtr.014) records"
         }
       ],
       "sql_rules": [
@@ -2935,6 +5143,122 @@
         },
         {
           "path": "MrgnCallReq.MrgnDtlsDueToA.IndpdntAmtPtyA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.IndpdntAmtPtyB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.MrgnTerms",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToA.CollBal",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.XpsdAmtPtyA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.XpsdAmtPtyB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.XpsrCnvntn",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.IndpdntAmtPtyA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.IndpdntAmtPtyB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.MrgnTerms",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnDtlsDueToB.CollBal",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.RqrmntDtlsDueToA.MrgnRqrmnt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.RqrmntDtlsDueToA.SgrtdIndpdntAmtRqrmnt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.RqrmntDtlsDueToB.MrgnRqrmnt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.RqrmntDtlsDueToB.SgrtdIndpdntAmtRqrmnt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.XpctdCollDueToA.XpctdCollDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.XpctdCollDueToA.SgrtdIndpdntAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.XpctdCollDueToB.XpctdCollDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.XpctdCollDueToB.SgrtdIndpdntAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.CollAcctId",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.BlckChainAdrOrWllt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.MrgnCallRslt",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.MrgnDtlDueToA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.MrgnDtlDueToB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.RqrmntDtlsDueToA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.RqrmntDtlsDueToB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.XpctdCollDueToA",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.MrgnCallDtls.XpctdCollDueToB",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.SplmtryData.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "MrgnCallReq.SplmtryData.Envlp",
           "type": "STRING"
         }
       ],
@@ -3073,6 +5397,10 @@
         {
           "path": "InvcFincgReq.InvcReqInf.InvcPmtInf",
           "type": "STRING"
+        },
+        {
+          "path": "InvcFincgReq.InvcReqInf.RfrdDoc",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -3210,6 +5538,446 @@
         {
           "path": "AcctOpngInstr.InvstmtAcct.RefCcy",
           "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Lang",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.RinvstmtDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.TaxWhldgMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.TaxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.LttrInttDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.AcmltnRghtRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.ReqrdSgntriesNb",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.FndFmlyNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.FinInstrmDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.RndgDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.AcctSvcr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.BlckdSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.AcctUsgTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.FrgnStsCertfctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.AcctSgntrDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.TxChanlTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.InvstmtAcctCtgy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Pldgg",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Coll",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.ThrdPtyRghts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.PwrOfAttnyLvlOfCtrl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.AcctgSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.OpngDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.ClsgDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.NegInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.PrcgOrdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.Lblty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.InvstrPrfl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.InvstmtAcct.FsclYr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.PrncplAcctPty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.ScndryOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.Bnfcry",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.PwrOfAttny",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.LglGuardn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.CtdnForMnr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.SucssrOnDth",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.Admstr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.OthrPty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.Grntr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.Sttlr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.SnrMggOffcl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.Prtctr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AcctPties.RegdShrhldrNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.LglNttyIdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.WvdTrlrComssnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.Role",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.PmryComAdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.ScndryComAdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Intrmies.NmAndAdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Plcmnt.Rfrd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Plcmnt.RfrdPlcmntAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.NewIsseAllcn.Rstrctd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.NewIsseAllcn.XmptPrsnRsn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.NewIsseAllcn.DeMnms",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.Frqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.StartDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.EndDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.Qty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.GrssAmtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.InitlAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.TtlNbOfInstlmts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.RndgDrctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.SctyDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.CshSttlm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.CtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.RltdCtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.PdctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.SLAChrgAndComssnRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.InsrncCover",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.PlanSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvgsInvstmtPlan.InstlmtMgrRole",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.Frqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.StartDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.EndDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.Qty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.GrssAmtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.InitlAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.TtlNbOfInstlmts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.RndgDrctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.SctyDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.CshSttlm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.CtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.RltdCtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.PdctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.SLAChrgAndComssnRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.InsrncCover",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.PlanSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.WdrwlInvstmtPlan.InstlmtMgrRole",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.CshSttlm.CshAcctDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.CshSttlm.OthrCshSttlmDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvcLvlAgrmt.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvcLvlAgrmt.Rcpt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.SvcLvlAgrmt.MtdOfTrnsmssn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.Lmttn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.AcctVldtn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.Rgltr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.Sts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.AddtlInf.Prd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.MktPrctcVrsn.Nm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.MktPrctcVrsn.Dt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.MktPrctcVrsn.Nb",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Xtnsn.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctOpngInstr.Xtnsn.Txt",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -3218,6 +5986,24 @@
       },
       "field_rules": [
         {
+          "id": "grssamtind",
+          "field_path": "AcctOpngInstr.SvgsInvstmtPlan.GrssAmtInd",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "GrssAmtInd must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
+        },
+        {
+          "id": "initlamt",
+          "field_path": "AcctOpngInstr.SvgsInvstmtPlan.InitlAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "InitlAmt must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
+        },
+        {
           "id": "exstgacctid",
           "field_path": "AcctOpngInstr.InstrDtls.ExstgAcctId",
           "field_type": "STRING",
@@ -3225,38 +6011,20 @@
           "operator": "EQUAL_TO",
           "single_value": "0",
           "description": "ExstgAcctId must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
-        },
-        {
-          "id": "id",
-          "field_path": "AcctOpngInstr.MsgId.Id",
-          "field_type": "STRING",
-          "metric": "NULL_COUNT",
-          "operator": "EQUAL_TO",
-          "single_value": "0",
-          "description": "Id must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
-        },
-        {
-          "id": "credttm",
-          "field_path": "AcctOpngInstr.MsgId.CreDtTm",
-          "field_type": "STRING",
-          "metric": "NULL_COUNT",
-          "operator": "EQUAL_TO",
-          "single_value": "0",
-          "description": "CreDtTm must never be null on AccountOpeningInstructionV08 (ISO 20022 acmt.001) records"
         }
       ],
       "sql_rules": [
         {
-          "id": "sql_null_exstgacctid",
+          "id": "sql_null_grssamtind",
           "severity": "LOW",
-          "description": "Null values not permitted in ExstgAcctId column - AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
-          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_opening_instruction_v08 WHERE \"AcctOpngInstr.InstrDtls.ExstgAcctId\" IS NULL"
+          "description": "Null values not permitted in GrssAmtInd column - AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_opening_instruction_v08 WHERE \"AcctOpngInstr.SvgsInvstmtPlan.GrssAmtInd\" IS NULL"
         },
         {
-          "id": "sql_null_id",
+          "id": "sql_null_initlamt",
           "severity": "LOW",
-          "description": "Null values not permitted in Id column - AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
-          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_opening_instruction_v08 WHERE \"AcctOpngInstr.MsgId.Id\" IS NULL"
+          "description": "Null values not permitted in InitlAmt column - AccountOpeningInstructionV08 (ISO 20022 acmt.001)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_opening_instruction_v08 WHERE \"AcctOpngInstr.SvgsInvstmtPlan.InitlAmt\" IS NULL"
         }
       ]
     },
@@ -3347,6 +6115,454 @@
         {
           "path": "AcctDtlsConf.InvstmtAcct.OwnrshTp",
           "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.TaxXmptn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.StmtFrqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.RefCcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Lang",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.RinvstmtDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.TaxWhldgMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.TaxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.LttrInttDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.AcmltnRghtRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.ReqrdSgntriesNb",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.FndFmlyNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.FinInstrmDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.RndgDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.AcctSvcr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.AcctUsgTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.FrgnStsCertfctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.AcctSgntrDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.TxChanlTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.InvstmtAcctCtgy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Pldgg",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Coll",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.ThrdPtyRghts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.PwrOfAttnyLvlOfCtrl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.AcctgSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.OpngDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.ClsgDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.NegInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.PrcgOrdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.Lblty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.InvstrPrfl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.InvstmtAcct.FsclYr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.PrncplAcctPty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.ScndryOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.Bnfcry",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.PwrOfAttny",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.LglGuardn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.CtdnForMnr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.SucssrOnDth",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.Admstr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.OthrPty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.Grntr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.Sttlr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.SnrMggOffcl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.Prtctr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AcctPties.RegdShrhldrNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.Id",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.LglNttyIdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.Acct",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.WvdTrlrComssnInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.Role",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.PmryComAdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.ScndryComAdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Intrmies.NmAndAdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Plcmnt.Rfrd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Plcmnt.RfrdPlcmntAgt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.NewIsseAllcn.Rstrctd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.NewIsseAllcn.XmptPrsnRsn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.NewIsseAllcn.DeMnms",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.Frqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.StartDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.EndDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.Qty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.GrssAmtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.InitlAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.TtlNbOfInstlmts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.RndgDrctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.SctyDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.CshSttlm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.CtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.RltdCtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.PdctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.SLAChrgAndComssnRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.InsrncCover",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.PlanSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvgsInvstmtPlan.InstlmtMgrRole",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.Frqcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.StartDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.EndDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.Qty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.GrssAmtInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.InitlAmt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.TtlNbOfInstlmts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.RndgDrctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.SctyDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.CshSttlm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.CtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.RltdCtrctRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.PdctId",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.SLAChrgAndComssnRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.InsrncCover",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.PlanSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.WdrwlInvstmtPlan.InstlmtMgrRole",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.CshSttlm.CshAcctDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.CshSttlm.OthrCshSttlmDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvcLvlAgrmt.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvcLvlAgrmt.Rcpt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.SvcLvlAgrmt.MtdOfTrnsmssn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.Lmttn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.AcctVldtn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.Tp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.Rgltr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.Sts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.AddtlInf.Prd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.MktPrctcVrsn.Nm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.MktPrctcVrsn.Dt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.MktPrctcVrsn.Nb",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Xtnsn.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctDtlsConf.Xtnsn.Txt",
+          "type": "STRING"
         }
       ],
       "volume": {
@@ -3355,6 +6571,24 @@
       },
       "field_rules": [
         {
+          "id": "grssamtind",
+          "field_path": "AcctDtlsConf.SvgsInvstmtPlan.GrssAmtInd",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "GrssAmtInd must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
+        },
+        {
+          "id": "initlamt",
+          "field_path": "AcctDtlsConf.SvgsInvstmtPlan.InitlAmt",
+          "field_type": "STRING",
+          "metric": "NULL_COUNT",
+          "operator": "EQUAL_TO",
+          "single_value": "0",
+          "description": "InitlAmt must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
+        },
+        {
           "id": "exstgacctid",
           "field_path": "AcctDtlsConf.ConfDtls.ExstgAcctId",
           "field_type": "STRING",
@@ -3362,38 +6596,20 @@
           "operator": "EQUAL_TO",
           "single_value": "0",
           "description": "ExstgAcctId must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
-        },
-        {
-          "id": "id",
-          "field_path": "AcctDtlsConf.MsgId.Id",
-          "field_type": "STRING",
-          "metric": "NULL_COUNT",
-          "operator": "EQUAL_TO",
-          "single_value": "0",
-          "description": "Id must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
-        },
-        {
-          "id": "credttm",
-          "field_path": "AcctDtlsConf.MsgId.CreDtTm",
-          "field_type": "STRING",
-          "metric": "NULL_COUNT",
-          "operator": "EQUAL_TO",
-          "single_value": "0",
-          "description": "CreDtTm must never be null on AccountDetailsConfirmation (ISO 20022 acmt.002) records"
         }
       ],
       "sql_rules": [
         {
-          "id": "sql_null_exstgacctid",
+          "id": "sql_null_grssamtind",
           "severity": "LOW",
-          "description": "Null values not permitted in ExstgAcctId column - AccountDetailsConfirmation (ISO 20022 acmt.002)",
-          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_details_confirmation WHERE \"AcctDtlsConf.ConfDtls.ExstgAcctId\" IS NULL"
+          "description": "Null values not permitted in GrssAmtInd column - AccountDetailsConfirmation (ISO 20022 acmt.002)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_details_confirmation WHERE \"AcctDtlsConf.SvgsInvstmtPlan.GrssAmtInd\" IS NULL"
         },
         {
-          "id": "sql_null_id",
+          "id": "sql_null_initlamt",
           "severity": "LOW",
-          "description": "Null values not permitted in Id column - AccountDetailsConfirmation (ISO 20022 acmt.002)",
-          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_details_confirmation WHERE \"AcctDtlsConf.MsgId.Id\" IS NULL"
+          "description": "Null values not permitted in InitlAmt column - AccountDetailsConfirmation (ISO 20022 acmt.002)",
+          "statement": "SELECT COUNT(*) FROM accounts_db.public.account_details_confirmation WHERE \"AcctDtlsConf.SvgsInvstmtPlan.InitlAmt\" IS NULL"
         }
       ]
     },
@@ -3483,6 +6699,274 @@
         },
         {
           "path": "AcctModInstr.ModfdInvstmtAcct.RefCcy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Lang",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.IncmPref",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.RinvstmtDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.TaxWhldgMtd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.TaxRptg",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.LttrInttDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.AcmltnRghtRef",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.ReqrdSgntriesNb",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.FndFmlyNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.ModfdFinInstrmDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.RndgDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.AcctSvcr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.BlckdSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.AcctUsgTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.FrgnStsCertfctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.AcctSgntrDtTm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.TxChanlTp",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.InvstmtAcctCtgy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Pldgg",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Coll",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.ThrdPtyRghts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.PwrOfAttnyLvlOfCtrl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.AcctgSts",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.OpngDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.ClsgDt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.NegInd",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.PrcgOrdr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.Lblty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.ModfdInvstrPrfl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdInvstmtAcct.FsclYr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.PrncplAcctPty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.ScndryOwnr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.Bnfcry",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.PwrOfAttny",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.LglGuardn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.CtdnForMnr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.SucssrOnDth",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.Admstr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.OthrPty",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.Grntr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.Sttlr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.SnrMggOffcl",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.Prtctr",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAcctPties.RegdShrhldrNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdIntrmies.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdIntrmies.Intrmy",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdPlcmnt.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdPlcmnt.Plcmnt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdIsseAllcn.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdIsseAllcn.IsseAllcn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdSvgsInvstmtPlan.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdSvgsInvstmtPlan.InvstmtPlan",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdWdrwlInvstmtPlan.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdWdrwlInvstmtPlan.InvstmtPlan",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdCshSttlm.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdCshSttlm.CshAcctDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdCshSttlm.OthrCshSttlmDtls",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdSvcLvlAgrmt.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdSvcLvlAgrmt.SvcLvlAgrmt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAddtlInf.ModScpIndctn",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.ModfdAddtlInf.AddtlInf",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.MktPrctcVrsn.Nm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.MktPrctcVrsn.Dt",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.MktPrctcVrsn.Nb",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.Xtnsn.PlcAndNm",
+          "type": "STRING"
+        },
+        {
+          "path": "AcctModInstr.Xtnsn.Txt",
           "type": "STRING"
         }
       ],

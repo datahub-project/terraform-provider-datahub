@@ -45,6 +45,8 @@ try:
     from datahub.metadata.schema_classes import (
         AuditStampClass,
         DomainsClass,
+        EditableSchemaFieldInfoClass,
+        EditableSchemaMetadataClass,
         GlossaryTermAssociationClass,
         GlossaryTermsClass,
     )
@@ -352,8 +354,51 @@ def process_message(
             except Exception as exc:
                 print(f"    WARNING: failed to apply glossary terms: {exc}")
 
+    # Field-level glossary term associations.
+    # Each LLM decision already carries a field_path + term_name; resolve
+    # those names to real IDs and emit EditableSchemaMetadata so the term
+    # appears on the column in the DataHub Schema tab, not just the dataset.
+    field_term_map: dict[str, list] = {}
+    for d in decisions:
+        fp = d.get("field_path", "").strip()
+        term_name = d.get("term_name", "").lower().strip()
+        term_conf = float(d.get("term_confidence", 0))
+        if not fp or not term_name or term_conf < TERM_CONFIDENCE_THRESHOLD:
+            continue
+        resolved_id = term_lookup.get(term_name)
+        if not resolved_id:
+            continue
+        field_term_map.setdefault(fp, []).append(
+            GlossaryTermAssociationClass(
+                urn=f"urn:li:glossaryTerm:{resolved_id}",
+                actor=stamp.actor,
+            )
+        )
+
+    if field_term_map:
+        editable_fields = [
+            EditableSchemaFieldInfoClass(
+                fieldPath=fp,
+                glossaryTerms=GlossaryTermsClass(terms=terms, auditStamp=stamp),
+            )
+            for fp, terms in field_term_map.items()
+        ]
+        for dataset_urn in [kafka_urn, pg_urn]:
+            try:
+                emitter.emit_mcp(
+                    MetadataChangeProposalWrapper(
+                        entityUrn=dataset_urn,
+                        aspect=EditableSchemaMetadataClass(
+                            editableSchemaFieldInfo=editable_fields,
+                        ),
+                    )
+                )
+            except Exception as exc:
+                print(f"    WARNING: failed to apply field-level terms: {exc}")
+
     print(
-        f"    applied: domain={best_domain or 'none'}, {len(kafka_terms)} glossary term(s)"
+        f"    applied: domain={best_domain or 'none'}, {len(kafka_terms)} dataset term(s),"
+        f" {len(field_term_map)} column term(s)"
     )
     return True
 
@@ -381,7 +426,7 @@ def _snake(name: str) -> str:
     return s.lower()
 
 
-def main(force: bool = False, dry_run: bool = False, workers: int = 10) -> None:
+def main(force: bool = False, dry_run: bool = False, workers: int = 20) -> None:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     gms_url = os.environ.get("DATAHUB_GMS_URL", "")
     gms_token = os.environ.get("DATAHUB_GMS_TOKEN", "")
@@ -417,6 +462,18 @@ def main(force: bool = False, dry_run: bool = False, workers: int = 10) -> None:
     def make_emitter():
         return None if dry_run else DatahubRestEmitter(gms_server=gms_url, token=gms_token or None)
 
+    # Pre-load all field data in the main thread to avoid concurrent file
+    # opens in worker threads hitting the OS file descriptor limit.
+    fields_map: dict[str, list] = {}
+    for entry in manifest:
+        mid = entry["id"]
+        fp = os.path.join(AVRO_DIR, f"{mid}.fields.json")
+        if os.path.exists(fp):
+            with open(fp) as fh:
+                fields_map[mid] = json.load(fh)
+        else:
+            fields_map[mid] = []
+
     counter_lock = threading.Lock()
     ok = 0
     failed = 0
@@ -425,11 +482,7 @@ def main(force: bool = False, dry_run: bool = False, workers: int = 10) -> None:
     def _process_one(entry: dict) -> bool:
         nonlocal ok, failed
         message_id = entry["id"]
-        fields_path = os.path.join(AVRO_DIR, f"{message_id}.fields.json")
-        flat_fields = []
-        if os.path.exists(fields_path):
-            with open(fields_path) as fh:
-                flat_fields = json.load(fh)
+        flat_fields = fields_map.get(message_id, [])
         result = process_message(entry, flat_fields, fibo, term_lookup, client, make_emitter(), dry_run, force)
         with counter_lock:
             if result:
