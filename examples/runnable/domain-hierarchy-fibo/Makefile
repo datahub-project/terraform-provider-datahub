@@ -44,6 +44,7 @@ iso-deps:
 	python3 -m pip install --quiet -r requirements.txt
 
 # Download ISO 20022 XSD schemas from iso20022.org into .iso-cache/xsd/.
+# Uses the business-area bulk download endpoint which returns a zip per family.
 # Schemas are cached for 30 days; pass FORCE=1 to bypass: make iso-data FORCE=1
 .iso-cache/xsd:
 	python3 scripts/iso20022/download.py $(if $(FORCE),--force,)
