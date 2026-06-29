@@ -206,6 +206,7 @@ def process_message(
     force: bool,
 ) -> bool:
     message_id = entry["id"]
+    business_area = entry.get("business_area", "")
     tags_path = os.path.join(TAGS_DIR, f"{message_id}.json")
 
     if not force and os.path.exists(tags_path):
@@ -217,7 +218,6 @@ def process_message(
             print(f"  SKIP    {message_id} (no fields)")
             return True
 
-        business_area = entry.get("business_area", "")
         preferred = AREA_TO_FIBO_DOMAINS.get(business_area, [])
         domain_summary = _build_domain_summary(fibo, preferred)
 
