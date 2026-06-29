@@ -27,12 +27,18 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# The DataHub SDK logs a warning + full traceback for schemas with duplicate
+# Avro type names. We already catch and tolerate those failures; suppress the
+# noise so it doesn't swamp the progress output.
+logging.getLogger("datahub.ingestion.extractor.schema_util").setLevel(logging.CRITICAL)
 
 try:
     from datahub.emitter.rest_emitter import DatahubRestEmitter
@@ -340,15 +346,13 @@ def emit_message(
 
     # --- Kafka topic ---
     # Some complex ISO 20022 schemas have duplicate Avro type names; the SDK
-    # prints a traceback internally before raising. Suppress stderr during the
-    # call so that noise doesn't swamp the progress output.
-    import io, contextlib
-    _stderr_buf = io.StringIO()
+    # raises SchemaParseException for those. We tolerate the failure and emit
+    # empty schema fields. The logger for schema_util is set to CRITICAL at
+    # module level so the SDK's internal traceback warning is suppressed.
     try:
-        with contextlib.redirect_stderr(_stderr_buf):
-            kafka_fields = avro_schema_to_mce_fields(
-                avro_schema=avro_schema, is_key_schema=False, default_nullable=True,
-            )
+        kafka_fields = avro_schema_to_mce_fields(
+            avro_schema=avro_schema, is_key_schema=False, default_nullable=True,
+        )
     except Exception:
         kafka_fields = []
 

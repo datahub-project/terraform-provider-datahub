@@ -1,5 +1,6 @@
 .PHONY: fibo-deps fibo-data fibo-data-provisional fibo-update clean-fibo \
-        iso-deps iso-data iso-avro iso-emit iso-tag iso-all clean-iso
+        iso-deps iso-data iso-avro iso-emit iso-tag iso-all clean-iso \
+        .iso-cache/xsd .iso-cache/avro
 
 # Install Python dependencies required for glossary term extraction.
 # Run this once before fibo-data (fibo-data depends on it automatically).
