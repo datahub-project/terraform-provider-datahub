@@ -1,49 +1,56 @@
 # Copyright 2026 The DataHub Project Authors
 # SPDX-License-Identifier: Apache-2.0
 """
-Download ISO 20022 XSD message schemas from iso20022.org.
+Obtain ISO 20022 XSD message schemas for the demo pipeline.
 
-Schemas are cached to .iso-cache/xsd/ and reused if less than 30 days old.
-Run with --force to bypass the cache.
+The iso20022.org /message/{id}/download endpoint requires a browser session
+(anti-scraping protection) and cannot be fetched programmatically. Instead,
+this script shallow-clones a GitHub-hosted mirror of the schemas:
+
+    https://github.com/socrates8300/mx20022  (Apache-2.0 wrapper)
+
+The underlying XSD content remains governed by the ISO 20022 Registration
+Authority IPR policy -- see NOTICE for the attribution statement.
+
+Clones to .iso-cache/iso20022-repo/ (gitignored), then copies the selected
+XSD files to .iso-cache/xsd/ and writes .iso-cache/manifest.json.
 
 Usage:
     python3 scripts/iso20022/download.py [--force]
-
-Output:
-    .iso-cache/xsd/{message-id}.xsd  -- one file per message
-    .iso-cache/manifest.json         -- metadata for downstream scripts
 """
 
 import argparse
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
-import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 
 CACHE_DIR = ".iso-cache"
 XSD_DIR = os.path.join(CACHE_DIR, "xsd")
+REPO_DIR = os.path.join(CACHE_DIR, "iso20022-repo")
 MANIFEST_PATH = os.path.join(CACHE_DIR, "manifest.json")
 CACHE_MAX_AGE_DAYS = 30
 
-BASE_URL = "https://www.iso20022.org/message/{id}/download"
-USER_AGENT = "terraform-provider-datahub/iso20022-demo (github.com/datahub-project/terraform-provider-datahub)"
+REPO_URL = "https://github.com/socrates8300/mx20022.git"
 
-# Broad representative sample: ~2 families per ISO 20022 business area.
-# Format: (message_id, family, business_area, human_name, description)
+# Selected messages from socrates8300/mx20022, mapped to their repo paths.
+# Format: (message_id, repo_relative_path, family, business_area, name, description)
 MESSAGES = [
     # Payments clearing and settlement (pacs)
     (
         "pacs.008.001.10",
+        "schemas/pacs/pacs.008.001.10.xsd",
         "pacs",
         "payments",
         "FIToFICustomerCreditTransfer",
         "Financial institution to financial institution customer credit transfer.",
     ),
     (
-        "pacs.009.001.09",
+        "pacs.009.001.10",
+        "schemas/pacs/pacs.009.001.10.xsd",
         "pacs",
         "payments",
         "FinancialInstitutionCreditTransfer",
@@ -51,185 +58,137 @@ MESSAGES = [
     ),
     (
         "pacs.002.001.12",
+        "schemas/pacs/pacs.002.001.12.xsd",
         "pacs",
         "payments",
         "FIToFIPaymentStatusReport",
         "Status report on a previously submitted payment instruction.",
     ),
+    (
+        "pacs.004.001.11",
+        "schemas/pacs/pacs.004.001.11.xsd",
+        "pacs",
+        "payments",
+        "PaymentReturn",
+        "Return of a previously executed payment transfer.",
+    ),
     # Payments initiation (pain)
     (
         "pain.001.001.11",
+        "schemas/pain/pain.001.001.11.xsd",
         "pain",
         "payments",
         "CustomerCreditTransferInitiation",
         "Initiates a credit transfer from a customer to one or more creditors.",
     ),
     (
-        "pain.002.001.12",
+        "pain.002.001.13",
+        "schemas/pain/pain.002.001.13.xsd",
         "pain",
         "payments",
         "CustomerPaymentStatusReport",
         "Status report on a previously submitted payment initiation.",
     ),
     (
-        "pain.008.001.10",
+        "pain.013.001.09",
+        "schemas/pain/pain.013.001.09.xsd",
         "pain",
         "payments",
-        "CustomerDirectDebitInitiation",
-        "Initiates a direct debit collection from a debtor.",
+        "CreditorPaymentActivationRequest",
+        "Request from a creditor to a debtor to initiate a payment.",
     ),
     # Cash management (camt)
     (
-        "camt.052.001.10",
-        "camt",
-        "cash_management",
-        "BankToCustomerAccountReport",
-        "Intraday account balance and transaction report from bank to customer.",
-    ),
-    (
-        "camt.053.001.10",
+        "camt.053.001.11",
+        "schemas/camt/camt.053.001.11.xsd",
         "camt",
         "cash_management",
         "BankToCustomerStatement",
         "End-of-day account statement from bank to customer.",
     ),
     (
-        "camt.054.001.10",
+        "camt.054.001.11",
+        "schemas/camt/camt.054.001.11.xsd",
         "camt",
         "cash_management",
         "BankToCustomerDebitCreditNotification",
         "Real-time debit or credit notification from bank to customer.",
     ),
-    # Securities settlement (sese)
     (
-        "sese.023.001.11",
-        "sese",
-        "securities",
-        "SecuritiesSettlementTransactionInstruction",
-        "Instruction to settle a securities trade.",
-    ),
-    (
-        "sese.024.001.11",
-        "sese",
-        "securities",
-        "SecuritiesSettlementTransactionStatusAdvice",
-        "Status advice on a previously submitted settlement instruction.",
-    ),
-    (
-        "sese.034.001.09",
-        "sese",
-        "securities",
-        "SecuritiesSettlementAllegementNotification",
-        "Notification of an unmatched settlement instruction from a counterparty.",
-    ),
-    # Securities management (semt)
-    (
-        "semt.001.001.12",
-        "semt",
-        "securities",
-        "SecuritiesMessageCancellationAdvice",
-        "Advice that a securities message has been cancelled.",
-    ),
-    (
-        "semt.002.001.12",
-        "semt",
-        "securities",
-        "CustodyStatementOfHoldings",
-        "Statement of securities holdings held in custody.",
-    ),
-    # Foreign exchange (fxtr)
-    (
-        "fxtr.008.001.08",
-        "fxtr",
-        "foreign_exchange",
-        "ForeignExchangeTradeInstruction",
-        "Instruction to settle a foreign exchange trade.",
-    ),
-    (
-        "fxtr.014.001.05",
-        "fxtr",
-        "foreign_exchange",
-        "ForeignExchangeTradeStatusNotification",
-        "Status notification for a foreign exchange trade.",
-    ),
-    # Trade finance (tsin)
-    (
-        "tsin.009.001.05",
-        "tsin",
-        "trade_finance",
-        "InvoiceTaxReport",
-        "Tax report associated with an invoice in a trade transaction.",
-    ),
-    (
-        "tsin.012.001.01",
-        "tsin",
-        "trade_finance",
-        "TradeServicesInitiation",
-        "Initiates trade services for open account financing.",
+        "camt.056.001.11",
+        "schemas/camt/camt.056.001.11.xsd",
+        "camt",
+        "cash_management",
+        "FIToFIPaymentCancellationRequest",
+        "Request from one financial institution to another to cancel a payment.",
     ),
 ]
 
 
-def _cache_path(message_id: str) -> str:
-    return os.path.join(XSD_DIR, f"{message_id}.xsd")
-
-
-def _is_fresh(path: str) -> bool:
-    if not os.path.exists(path):
+def _repo_is_fresh() -> bool:
+    if not os.path.isdir(REPO_DIR):
         return False
-    age_days = (time.time() - os.path.getmtime(path)) / 86400
+    fetch_head = os.path.join(REPO_DIR, ".git", "FETCH_HEAD")
+    if not os.path.exists(fetch_head):
+        return False
+    age_days = (time.time() - os.path.getmtime(fetch_head)) / 86400
     return age_days < CACHE_MAX_AGE_DAYS
 
 
-def _download(message_id: str) -> bytes | None:
-    url = BASE_URL.format(id=message_id)
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            print(f"  WARNING: {message_id} not found (404) -- skipping")
-            return None
-        raise
+def _clone_repo() -> None:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    print(f"  Cloning {REPO_URL} (shallow) ...")
+    subprocess.run(
+        ["git", "clone", "--depth", "1", REPO_URL, REPO_DIR],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    print("  Clone complete.")
+
+
+def _pull_repo() -> None:
+    print(f"  Pulling latest from {REPO_URL} ...")
+    subprocess.run(
+        ["git", "-C", REPO_DIR, "pull", "--ff-only"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    print("  Pull complete.")
 
 
 def main(force: bool = False) -> None:
     os.makedirs(XSD_DIR, exist_ok=True)
 
+    if force and os.path.isdir(REPO_DIR):
+        print(f"  Removing existing clone at {REPO_DIR}")
+        shutil.rmtree(REPO_DIR)
+
+    if not os.path.isdir(REPO_DIR):
+        _clone_repo()
+    elif force or not _repo_is_fresh():
+        _pull_repo()
+    else:
+        print(f"  Reusing existing clone at {REPO_DIR} (less than {CACHE_MAX_AGE_DAYS} days old)")
+
     manifest = []
     ok = 0
-    skipped = 0
-    failed = 0
+    missing = 0
+    downloaded_at = datetime.now(tz=timezone.utc).isoformat()
 
-    for message_id, family, business_area, name, description in MESSAGES:
-        path = _cache_path(message_id)
+    for message_id, repo_path, family, business_area, name, description in MESSAGES:
+        src = os.path.join(REPO_DIR, repo_path)
+        dst = os.path.join(XSD_DIR, f"{message_id}.xsd")
 
-        if not force and _is_fresh(path):
-            print(f"  CACHED  {message_id}")
-            skipped += 1
-            downloaded_at = datetime.fromtimestamp(
-                os.path.getmtime(path), tz=timezone.utc
-            ).isoformat()
-        else:
-            print(f"  GET     {message_id} ...", end=" ", flush=True)
-            try:
-                data = _download(message_id)
-            except Exception as exc:
-                print(f"FAILED ({exc})")
-                failed += 1
-                continue
+        if not os.path.exists(src):
+            print(f"  MISSING {message_id} (not in repo: {repo_path})")
+            missing += 1
+            continue
 
-            if data is None:
-                failed += 1
-                continue
-
-            with open(path, "wb") as fh:
-                fh.write(data)
-
-            downloaded_at = datetime.now(tz=timezone.utc).isoformat()
-            print(f"OK ({len(data):,} bytes)")
-            ok += 1
+        shutil.copy2(src, dst)
+        print(f"  OK      {message_id}")
+        ok += 1
 
         manifest.append(
             {
@@ -238,7 +197,8 @@ def main(force: bool = False) -> None:
                 "business_area": business_area,
                 "name": name,
                 "description": description,
-                "xsd_path": path,
+                "xsd_path": dst,
+                "source": f"{REPO_URL.rstrip('.git')}/blob/main/{repo_path}",
                 "downloaded_at": downloaded_at,
             }
         )
@@ -247,17 +207,17 @@ def main(force: bool = False) -> None:
         json.dump(manifest, fh, indent=2)
 
     print(
-        f"\nDone: {ok} downloaded, {skipped} from cache, {failed} failed."
+        f"\nDone: {ok} XSD files ready, {missing} missing."
         f"\nManifest written to {MANIFEST_PATH}"
     )
-    if failed:
+    if missing and ok == 0:
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Download ISO 20022 XSD schemas.")
+    parser = argparse.ArgumentParser(description="Obtain ISO 20022 XSD schemas via GitHub clone.")
     parser.add_argument(
-        "--force", action="store_true", help="Re-download even if cached."
+        "--force", action="store_true", help="Re-clone even if already cached."
     )
     args = parser.parse_args()
     main(force=args.force)
