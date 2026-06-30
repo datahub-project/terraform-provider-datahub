@@ -20,7 +20,7 @@ recent regression to FAILURE so the demo can speak to incident detection:
   - SQL       on pain.001 (customer credit transfer initiation) - null msg ids
 
 Requires env vars:
-    DATAHUB_GMS_URL    e.g. https://demo.gcp.acryl.io
+    DATAHUB_GMS_URL    e.g. https://your-instance.acryl.io
     DATAHUB_GMS_TOKEN  DataHub access token
 
 Usage:

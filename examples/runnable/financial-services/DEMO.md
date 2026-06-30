@@ -2,7 +2,7 @@
 
 A walkthrough script for demonstrating DataHub against the ISO 20022 financial-messaging pipeline this example builds: 793 message types emitted as Kafka topics, PostgreSQL tables, and Looker views, enriched with FIBO (Financial Industry Business Ontology) domains and glossary terms, column-level semantic tagging, and DataHub Observe data-quality assertions.
 
-Every navigation path and search term below was verified against the live `demo.gcp.acryl.io` instance. Counts are accurate as of the last tagging/emit run; treat them as approximate (they move with each re-run).
+Every navigation path and search term below was verified against a live DataHub Cloud instance. Counts are accurate as of the last tagging/emit run; treat them as approximate (they move with each re-run).
 
 > **Setup note.** The whole environment is built by `make iso-all` (emit entities, generate assertions config, LLM tagging), then `terraform apply` (FIBO domains/glossary + assertions), then `make iso-assertion-results` (synthetic assertion run history so DataHub Observe shows live pass/fail status). See the [README](README.md) for the build steps. This document is the *presenting* guide, not the build guide.
 
@@ -17,7 +17,7 @@ Every navigation path and search term below was verified against the live `demo.
 | 5 | Dataset `fito_ficustomer_credit_transfer` -> *Lineage* | End-to-end 3-tier lineage: Kafka topic -> PostgreSQL table -> Looker view, generated as code. | [Thread 5](#thread-5-end-to-end-lineage) |
 | 6 | Browse **Glossary** / **Domains** -> FIBO tree | Taxonomy-as-code: the entire FIBO ontology (113 domain nodes, ~1,440 terms) provisioned via Terraform. | [Thread 6](#thread-6-fibo-taxonomy-as-code) |
 
-Base URL for all links below: `https://demo.gcp.acryl.io`.
+Base URL for all links below: your DataHub instance (the `DATAHUB_GMS_URL` host, e.g. `https://your-instance.acryl.io`). The paths are relative, so prepend your own host.
 
 ---
 
