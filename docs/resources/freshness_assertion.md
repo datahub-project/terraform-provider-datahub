@@ -40,7 +40,16 @@ DataHub generates a server-side UUID for each assertion. The `urn` and `id` attr
 - `evaluation_timezone` (String) Timezone for the evaluation cron schedule (e.g. `"UTC"`).
 - `mode` (String) Monitoring mode. `ACTIVE` enables scheduled evaluation. `PASSIVE` records results without scheduling.
 - `schedule_type` (String) Freshness window type: `FIXED_INTERVAL` (rolling window), `CRON` (calendar window), or `SINCE_THE_LAST_CHECK` (any change since the previous evaluation; no window sub-configuration).
-- `source_type` (String) How DataHub determines freshness. `AUDIT_LOG` uses the platform audit log. `INFORMATION_SCHEMA` queries the source catalog.
+- `source_type` (String) How DataHub determines whether the dataset changed. Each value:
+
+- `DATAHUB_OPERATION` -- derive freshness from DataHub Operation aspects (no live source query).
+- `AUDIT_LOG` -- inspect the platform audit-log API.
+- `INFORMATION_SCHEMA` -- query the source catalog's information schema.
+- `FIELD_VALUE` -- inspect a high-water-mark column (e.g. a `last_modified` timestamp).
+- `PLATFORM_API` -- query the source platform's native API.
+- `FILE_METADATA` -- inspect the underlying file system.
+
+**Which of these a given dataset accepts is platform-specific and enforced by DataHub** (a rejection names the allowed set). `DATAHUB_OPERATION` is accepted on every platform tested and is the safe default. The relational, streaming, storage, and BI platforms verified (`postgres`, `kafka`, `gcs`, `s3`, `dbt`, `looker`) accept only `DATAHUB_OPERATION`; warehouse platforms accept more -- BigQuery, for example, also accepts `AUDIT_LOG`, `INFORMATION_SCHEMA`, `FIELD_VALUE`, and `PLATFORM_API` (verified). When in doubt use `DATAHUB_OPERATION`, or read the allowed set DataHub returns in its rejection error. The value is passed through to DataHub's `DatasetFreshnessSourceType` enum unchanged.
 
 ### Optional
 
