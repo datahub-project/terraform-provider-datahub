@@ -1,0 +1,5 @@
+rdflib>=6.0
+xmlschema>=3.0
+fastavro>=1.9
+anthropic>=0.28
+acryl-datahub>=0.14

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `examples/runnable/financial-services`: expanded the FIBO example into an end-to-end financial-services governance scenario. A `make`-driven Python pipeline downloads ISO 20022 message schemas from [iso20022.org](https://www.iso20022.org) and emits roughly 800 message types as Kafka topics, PostgreSQL tables, and Looker views with three-tier lineage; an LLM tagging pass maps each dataset and its individual columns to FIBO domains and glossary terms (for example the `Dbtr` and `Cdtr` columns of a pacs.008 credit transfer to the Debtor and Creditor terms); and a generated `assertions.tf` applies schema, volume, field, SQL, and freshness assertions across 26 representative tables. A `DEMO.md` runbook documents the resulting search, lineage, tagging, and data-quality navigation paths, each verified against a live instance.
+
+### Changed
+
+- Renamed the `examples/runnable/domain-hierarchy-fibo` example to `examples/runnable/financial-services`. The example outgrew its original domain-hierarchy scope - it now spans payments, securities, FX, collateral, and trade-finance message types with glossary, column-level tagging, lineage, and data-quality layers - so it is named for its industry vertical rather than its initial FIBO-domains contents. (Anyone referencing the old path should update it; the released 0.9.0 entry below keeps the old name as historical record.)
+- `examples/runnable/financial-services`: the generated `assertions_config.json` is no longer committed. It is a ~7,000-line artifact rebuilt from the ISO 20022 cache by `make iso-assertions-config` into the gitignored `.iso-cache/` directory, and `assertions.tf` reads it through a `fileexists` guard that plans zero assertions when the file is absent (matching the FIBO cache behaviour in `main.tf`).
+- README: documented the typed assertion resources (`datahub_schema_assertion`, `datahub_volume_assertion`, `datahub_field_assertion`, `datahub_sql_assertion`, `datahub_freshness_assertion`, `datahub_custom_assertion`), `datahub_action_pipeline`, `datahub_data_product`, and `datahub_ownership_type`, and their data sources, in the "What it supports" tables - these shipped in earlier releases but were missing from the README.
+
 ## [0.11.0] - 2026-06-29
 
 ### Added
