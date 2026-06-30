@@ -338,3 +338,48 @@ func TestGetAssertionByURN_VolumeRowCountChangeBetween(t *testing.T) {
 		t.Errorf("Value = %q, want empty for BETWEEN", ai.Volume.Value)
 	}
 }
+
+// TestIsAssertionCloudOnlyError pins which GraphQL error messages are treated
+// as "this assertion type is unavailable on OSS DataHub" versus a normal API
+// error that must reach the user verbatim.
+//
+// The guard that matters: DataHub Cloud rejects an unsupported freshness
+// source_type for a platform with a message that *contains the word
+// "Freshness"* (e.g. "Freshness source type 'AUDIT_LOG' is not allowed for
+// platform ... Allowed: [DATAHUB_OPERATION]"). That is a normal, actionable
+// API error - it must NOT be misclassified as Cloud-only, or the user would
+// see a misleading "DataHub Cloud Required" message instead of the real
+// reason. The classifier only treats "Freshness"/"Volume"/etc. as Cloud-only
+// when paired with "UnknownType"; this test fails if that pairing is ever
+// loosened to match the assertion-type word alone.
+func TestIsAssertionCloudOnlyError(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		// Genuine Cloud-only signals: the OSS GraphQL schema lacks the mutation
+		// (FieldUndefined) or the assertion-monitor types (UnknownType).
+		{"field undefined on mutation", "Validation error of type FieldUndefined: Field 'upsertDatasetFreshnessAssertionMonitor' in type 'Mutation' is undefined", true},
+		{"field undefined on query", "Validation error of type FieldUndefined: Field 'x' in type 'Query' is undefined", true},
+		{"unknown freshness type", "Validation error of type UnknownType: Unknown type FreshnessAssertionScheduleType", true},
+		{"unknown volume type", "Validation error of type UnknownType: Unknown type DatasetVolumeAssertion", true},
+		{"unknown monitor type", "Validation error of type UnknownType: Unknown type MonitorMode", true},
+
+		// The key guard: a real per-platform rejection that happens to contain
+		// "Freshness" must NOT be classified as Cloud-only.
+		{"freshness source-type platform rejection", "Freshness source type 'AUDIT_LOG' is not allowed for platform 'urn:li:dataPlatform:postgres' (connectionExists=true, isView=false). Allowed: [DATAHUB_OPERATION]", false},
+		// Closely related: the assertion-type word alone is not enough.
+		{"freshness word without unknown type", "Freshness check could not be scheduled", false},
+		{"field undefined without type clause", "Validation error of type FieldUndefined: Field 'x' is undefined", false},
+		{"generic api error", "Internal server error", false},
+		{"empty", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isAssertionCloudOnlyError(tc.msg); got != tc.want {
+				t.Errorf("isAssertionCloudOnlyError(%q) = %v, want %v", tc.msg, got, tc.want)
+			}
+		})
+	}
+}
