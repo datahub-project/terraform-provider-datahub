@@ -1,6 +1,6 @@
 # datahub_local_user_login: OSS vs Cloud Differences
 
-This document captures the empirically verified behavioral differences between OSS DataHub and DataHub Cloud for the `datahub_local_user_login` resource. All findings were discovered through live testing against OSS Quickstart and the `demo.gcp.acryl.io` Cloud instance in June 2026.
+This document captures the empirically verified behavioral differences between OSS DataHub and DataHub Cloud for the `datahub_local_user_login` resource. All findings were discovered through live testing against OSS Quickstart and a DataHub Cloud instance in June 2026.
 
 Read this before modifying `local_user_login_resource.go`, `native_users.go`, or any test scenario that exercises the signUp flow.
 

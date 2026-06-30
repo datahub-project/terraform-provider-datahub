@@ -1,6 +1,6 @@
 # Extract/import field test: migrating datahub-gcp-demo
 
-A running log of a real-world migration of the `datahub-gcp-demo` deployment (live on `https://demo.gcp.acryl.io`, DataHub Cloud) from a "makeshift" `sullivtr/graphql` + Python-script setup onto this provider and its `datahub-tf-extract` import tooling.
+A running log of a real-world migration of the `datahub-gcp-demo` deployment (a DataHub Cloud instance) from a "makeshift" `sullivtr/graphql` + Python-script setup onto this provider and its `datahub-tf-extract` import tooling.
 
 The point of the exercise is the *journey*: every error, every piece of tribal knowledge needed, every rough edge in `datahub-tf-extract` and `docs/guides/import-existing.md`. Findings here feed concrete fixes to the tooling and docs.
 
@@ -40,7 +40,7 @@ Remaining non-native on the demo after migration: the 5 action pipelines (pendin
 
 ## Phase A - Read-only extract validation
 
-Live deployment is the **shared** field-eng demo (`demo.gcp.acryl.io`), which matters: the instance carries objects from many sources (system internals, other people's experiments), not just this project. The extract tool is deployment-global, so this shows up immediately.
+Live deployment is the **shared** field-eng demo instance, which matters: the instance carries objects from many sources (system internals, other people's experiments), not just this project. The extract tool is deployment-global, so this shows up immediately.
 
 First run: `datahub-tf-extract enumerate --output ./import-poc --skip-terraform`. Connected as `brett.randall@datahub.com`. Enumerated:
 

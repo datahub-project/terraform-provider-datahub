@@ -8,7 +8,7 @@ Status: **BUILT** (was: assessment / recommendation). Written during the datahub
 
 A DataHub Cloud "action pipeline" (a.k.a. automation) runs a packaged action - e.g. propagating glossary terms / descriptions / tags back to Dataplex or BigQuery. In the demo today they are managed with the generic `sullivtr/graphql` provider via `createActionPipeline` / `upsertActionPipeline` / `deleteActionPipeline`, with the recipe carrying `${SECRET_NAME}` placeholders (see `~/src/datahub-gcp-demo/terraform/automations.tf`).
 
-## Feasibility findings (verified against demo.gcp.acryl.io)
+## Feasibility findings (verified against a DataHub Cloud instance)
 
 | Concern | Finding |
 |---|---|
