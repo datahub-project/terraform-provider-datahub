@@ -4,8 +4,12 @@
 Generate assertions_config.json for ISO 20022 DataHub Observe rules.
 
 Reads .iso-cache/manifest.json and .iso-cache/avro/*.fields.json to produce
-assertions_config.json which Terraform reads at plan time to create schema,
-volume, field-metric, and SQL assertions on the PostgreSQL datasets.
+.iso-cache/assertions_config.json which Terraform reads at plan time to create
+schema, volume, field-metric, and SQL assertions on the PostgreSQL datasets.
+
+The output lives in the gitignored .iso-cache/ directory (like .fibo-cache/
+fibo.json) rather than being committed - it is a generated artifact rebuilt
+by 'make iso-assertions-config'.
 
 Usage:
     python3 scripts/iso20022/generate_assertions_config.py
@@ -18,7 +22,7 @@ import sys
 
 MANIFEST_PATH = ".iso-cache/manifest.json"
 AVRO_DIR = ".iso-cache/avro"
-OUTPUT_PATH = "assertions_config.json"
+OUTPUT_PATH = ".iso-cache/assertions_config.json"
 
 # The 26 representative message prefixes for which we create assertions.
 # Maps prefix -> human description suffix (appended to message name).

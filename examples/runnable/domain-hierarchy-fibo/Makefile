@@ -64,8 +64,9 @@ iso-avro: iso-deps .iso-cache/avro
 iso-emit: iso-deps iso-avro
 	python3 scripts/iso20022/emit_entities.py
 
-# Generate assertions_config.json from the Avro field cache.
-# Run once after iso-avro; commit the output alongside assertions.tf.
+# Generate .iso-cache/assertions_config.json from the Avro field cache.
+# Run after iso-avro and before 'terraform apply' (assertions.tf reads it).
+# The output is a gitignored generated artifact, not committed.
 iso-assertions-config: iso-deps .iso-cache/avro
 	python3 scripts/iso20022/generate_assertions_config.py
 

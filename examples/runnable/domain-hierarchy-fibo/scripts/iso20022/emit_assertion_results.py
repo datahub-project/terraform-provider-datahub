@@ -50,7 +50,7 @@ except ImportError:
     sys.exit(1)
 
 CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "assertions_config.json"
+    os.path.dirname(__file__), "..", "..", ".iso-cache", "assertions_config.json"
 )
 DAY_MS = 24 * 60 * 60 * 1000
 
