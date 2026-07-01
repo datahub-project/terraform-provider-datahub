@@ -2005,6 +2005,58 @@ resource "datahub_domain" "test" {
 			},
 		},
 		{
+			// Add custom_properties. name/description are unchanged here, so the
+			// map is written via the OpenAPI v3 domainProperties aspect only. The
+			// clobber guard below asserts that write did not drop name/description.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id   = %q
+  name        = "Finance & Risk"
+  description = "Finance and risk management domain"
+  custom_properties = {
+    topic     = "Payments"
+    entity_id = "DE001"
+  }
+}
+`, domainID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"topic":     knownvalue.StringExact("Payments"),
+					"entity_id": knownvalue.StringExact("DE001"),
+				})),
+				// Clobber guard: writing custom_properties must preserve name/description.
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Finance & Risk")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Finance and risk management domain")),
+			},
+		},
+		{
+			// Change one key, keep one, add one.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id   = %q
+  name        = "Finance & Risk"
+  description = "Finance and risk management domain"
+  custom_properties = {
+    topic     = "Settlements"
+    entity_id = "DE001"
+    steward   = "data-office"
+  }
+}
+`, domainID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"topic":     knownvalue.StringExact("Settlements"),
+					"entity_id": knownvalue.StringExact("DE001"),
+					"steward":   knownvalue.StringExact("data-office"),
+				})),
+			},
+		},
+		{
 			// Import by bare domain_id.
 			ResourceName:      addr,
 			ImportState:       true,
@@ -2022,6 +2074,25 @@ resource "datahub_domain" "test" {
 					return "", fmt.Errorf("resource %s not found in state", addr)
 				}
 				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+		{
+			// Clear custom_properties: omitting the block removes all keys and
+			// normalises to null (no lingering drift).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id   = %q
+  name        = "Finance & Risk"
+  description = "Finance and risk management domain"
+}
+`, domainID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
 			},
 		},
 	}

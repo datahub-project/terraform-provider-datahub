@@ -70,6 +70,7 @@ output "credit_risk_urn" {
 
 ### Optional
 
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the domain (the `customProperties` field of the `domainProperties` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Omit for none.
 - `description` (String) Description of the domain's scope and purpose.
 - `parent_domain` (String) Full URN of the parent domain (e.g., `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` (not a raw string) so Terraform's dependency graph orders creation and destruction correctly. Omit for a root domain. Changing this value reparents the domain in place without forcing replacement.
 

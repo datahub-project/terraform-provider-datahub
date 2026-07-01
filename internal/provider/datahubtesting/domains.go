@@ -12,11 +12,12 @@ import (
 
 // mockDomain mirrors the domain shape the provider sends and reads.
 type mockDomain struct {
-	URN          string
-	ID           string
-	Name         string
-	Description  string
-	ParentDomain string // full URN or ""
+	URN              string
+	ID               string
+	Name             string
+	Description      string
+	ParentDomain     string // full URN or ""
+	CustomProperties map[string]string
 }
 
 // handleCreateDomain handles the createDomain mutation. DataHub's real
@@ -150,20 +151,72 @@ func (s *mockServer) handleDomainItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	propsValue := map[string]any{
+		"name":         d.Name,
+		"description":  d.Description,
+		"parentDomain": d.ParentDomain,
+	}
+	if len(d.CustomProperties) > 0 {
+		propsValue["customProperties"] = d.CustomProperties
+	}
 	entity := map[string]any{
 		"urn": d.URN,
 		"domainKey": map[string]any{
 			"value": map[string]any{"id": d.ID},
 		},
 		"domainProperties": map[string]any{
-			"value": map[string]any{
-				"name":         d.Name,
-				"description":  d.Description,
-				"parentDomain": d.ParentDomain,
-			},
+			"value": propsValue,
 		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
+}
+
+// handleDomainWrite serves POST /openapi/v3/entity/domain, the aspect write the
+// provider uses to set customProperties (which the GraphQL createDomain mutation
+// does not carry). It replaces the whole domainProperties aspect from the
+// payload, mirroring the real OpenAPI v3 semantics - so if the provider ever
+// omitted name/description/parentDomain from this write, the stored values would
+// be clobbered and the clobber-guard test would catch it.
+func (s *mockServer) handleDomainWrite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var entities []map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&entities); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	for _, e := range entities {
+		urn, _ := e["urn"].(string)
+		id := strings.TrimPrefix(urn, "urn:li:domain:")
+		props, _ := e["domainProperties"].(map[string]any)
+		val, _ := props["value"].(map[string]any)
+
+		d := s.domains[id]
+		d.URN = urn
+		d.ID = id
+		d.Name, _ = val["name"].(string)
+		d.Description, _ = val["description"].(string)
+		d.ParentDomain, _ = val["parentDomain"].(string)
+		if cp, ok := val["customProperties"].(map[string]any); ok {
+			m := make(map[string]string, len(cp))
+			for k, v := range cp {
+				m[k], _ = v.(string)
+			}
+			d.CustomProperties = m
+		} else {
+			d.CustomProperties = nil
+		}
+		s.domains[id] = d
+	}
+	s.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entities)
 }

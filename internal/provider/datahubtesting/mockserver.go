@@ -129,6 +129,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
+	mux.HandleFunc("/openapi/v3/entity/domain", s.handleDomainWrite)
 	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)
 	mux.HandleFunc("/openapi/v3/entity/glossarynode/", s.handleGlossaryNodeItem)
 	mux.HandleFunc("/openapi/v3/entity/glossaryterm/", s.handleGlossaryTermItem)
