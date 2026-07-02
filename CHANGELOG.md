@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-02
+
 ### Added
 
 - `datahub_domain` resource and data source: added `custom_properties`, a key-value string map stored on the domain's `domainProperties` aspect. Domains support arbitrary custom properties in DataHub, but the resource previously exposed only `name`, `description`, and `parent_domain`, forcing that metadata into the description. Terraform owns the complete map (keys added elsewhere are removed on the next apply), mirroring `datahub_data_product`. Because the GraphQL `createDomain`/`updateName`/`updateDescription` mutations do not carry `customProperties`, the map is written via the OpenAPI v3 entity endpoint, passing `name`/`description`/`parentDomain` through so the values those mutations own are preserved.
@@ -229,7 +231,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.8.0...v0.9.0
