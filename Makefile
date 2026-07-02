@@ -24,7 +24,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
+.PHONY: all help build install clean fmt lint generate bump-examples deps-outdated deps-outdated-all deps-update deps-update-all test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -38,6 +38,10 @@ help:
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
 	@echo "  bump-examples Bump the datahub provider version pin across examples/runnable; VERSION=x.y.z required"
+	@echo "  deps-outdated      List direct dependencies (go.mod requires) with newer versions available"
+	@echo "  deps-outdated-all  List all dependencies (direct + indirect) with newer versions available"
+	@echo "  deps-update        Update direct dependencies to latest + go mod tidy; review 'git diff' before commit"
+	@echo "  deps-update-all    Update all dependencies (direct + indirect) to latest + go mod tidy; review before commit"
 	@echo "  test          Run unit tests"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
 	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
@@ -142,6 +146,28 @@ endif
 	  templates/guides/import-existing.md.tmpl \
 	  docs/guides/import-existing.md
 	$(MAKE) generate
+
+# Dependency maintenance (main module only; the tools/ module is maintained separately).
+# The check targets query the Go module proxy for newer versions but change nothing.
+# The update targets mutate go.mod/go.sum -- review 'git diff' before committing.
+# Run through mise in your shell so the pinned Go is used, e.g. 'mise exec -- make deps-outdated'.
+deps-outdated:
+	@echo "Direct dependencies with newer versions available:"
+	@$(GO) list -u -m -f '{{if and .Update (not .Indirect)}}  {{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' all | grep . || echo "  (none - all direct dependencies are current)"
+
+deps-outdated-all:
+	@echo "All dependencies (direct + indirect) with newer versions available:"
+	@$(GO) list -u -m -f '{{if .Update}}  {{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' all | grep . || echo "  (none - all dependencies are current)"
+
+deps-update:
+	$(GO) get -u $$($(GO) list -m -f '{{if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all)
+	$(GO) mod tidy
+	@echo "Direct dependencies updated. Review 'git diff go.mod go.sum', then build/test before committing."
+
+deps-update-all:
+	$(GO) get -u ./...
+	$(GO) mod tidy
+	@echo "All dependencies updated. Review 'git diff go.mod go.sum', then build/test before committing."
 
 test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
