@@ -3352,6 +3352,40 @@ func OwnershipTypeCheckDestroy(s *terraform.State) error {
 // datahub_data_product: create with all optional fields, in-place update,
 // removal of optional fields, and import by both bare data_product_id and
 // full URN.
+// DataProductCustomPropertiesValidationSteps asserts that invalid
+// custom_properties inputs (empty map, empty key, null value, empty value) are
+// rejected at plan time by the shared nonEmptyStringMapValidator. No resource is
+// created (each step fails during plan).
+func DataProductCustomPropertiesValidationSteps() []resource.TestStep {
+	cfg := func(cp string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_data_product" "test" {
+  data_product_id   = "tf-acc-dp-cp-validation"
+  name              = "CP Validation"
+  custom_properties = %s
+}
+`, cp)
+	}
+	return []resource.TestStep{
+		{
+			Config:      cfg(`{}`),
+			ExpectError: regexp.MustCompile(`Empty map not allowed`),
+		},
+		{
+			Config:      cfg(`{ "" = "x" }`),
+			ExpectError: regexp.MustCompile(`Empty key not allowed`),
+		},
+		{
+			Config:      cfg(`{ team = null }`),
+			ExpectError: regexp.MustCompile(`Null value not allowed`),
+		},
+		{
+			Config:      cfg(`{ team = "" }`),
+			ExpectError: regexp.MustCompile(`Empty value not allowed`),
+		},
+	}
+}
+
 func DataProductLifecycleSteps(dataProductID, domainID string) []resource.TestStep {
 	const addr = "datahub_data_product.test"
 	const domainAddr = "datahub_domain.test"

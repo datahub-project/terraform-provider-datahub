@@ -26,6 +26,18 @@ func TestAcc_DataProduct_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_DataProduct_CustomPropertiesValidation asserts that invalid
+// custom_properties inputs (empty map, empty key, null value, empty value) are
+// rejected at plan time by the shared validator.
+func TestAcc_DataProduct_CustomPropertiesValidation(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.DataProductCustomPropertiesValidationSteps(),
+	})
+}
+
 // TestAcc_DataProduct_DataSource reads a created data product back via the
 // singular datahub_data_product data source.
 func TestAcc_DataProduct_DataSource(t *testing.T) {

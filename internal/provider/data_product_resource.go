@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -128,9 +129,14 @@ func (r *dataProductResource) Schema(_ context.Context, _ resource.SchemaRequest
 				MarkdownDescription: "URL of external documentation or a data product catalog page for this data product.",
 			},
 			"custom_properties": schema.MapAttribute{
-				Optional:            true,
-				ElementType:         types.StringType,
-				MarkdownDescription: "Key-value map of custom metadata properties to attach to this data product.",
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "Key-value map of custom metadata properties to attach to this data product. " +
+					"Keys and values must be non-empty strings, and values must not be null. Omit the " +
+					"attribute entirely (do not set an empty map) to attach no custom properties.",
+				Validators: []validator.Map{
+					nonEmptyStringMapValidator{},
+				},
 			},
 			"domain": schema.StringAttribute{
 				Optional:            true,
