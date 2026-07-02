@@ -2098,6 +2098,40 @@ resource "datahub_domain" "test" {
 	}
 }
 
+// DomainCustomPropertiesValidationSteps returns steps asserting that invalid
+// custom_properties inputs are rejected at plan time by the schema validator:
+// an empty map, an empty key, a null value, and an empty-string value. No
+// resource is created (each step fails during plan).
+func DomainCustomPropertiesValidationSteps() []resource.TestStep {
+	cfg := func(cp string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id         = "tf-acc-cp-validation"
+  name              = "CP Validation"
+  custom_properties = %s
+}
+`, cp)
+	}
+	return []resource.TestStep{
+		{
+			Config:      cfg(`{}`),
+			ExpectError: regexp.MustCompile(`Empty map not allowed`),
+		},
+		{
+			Config:      cfg(`{ "" = "x" }`),
+			ExpectError: regexp.MustCompile(`Empty key not allowed`),
+		},
+		{
+			Config:      cfg(`{ topic = null }`),
+			ExpectError: regexp.MustCompile(`Null value not allowed`),
+		},
+		{
+			Config:      cfg(`{ topic = "" }`),
+			ExpectError: regexp.MustCompile(`Empty value not allowed`),
+		},
+	}
+}
+
 // DomainParentChildSteps returns test steps covering parent-child creation and
 // in-place reparenting via moveDomain for datahub_domain.
 //

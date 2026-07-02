@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -121,8 +122,12 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				ElementType: types.StringType,
 				MarkdownDescription: "Arbitrary key-value metadata attached to the domain (the " +
 					"`customProperties` field of the `domainProperties` aspect). Terraform owns the " +
-					"complete map: keys added outside Terraform are removed on the next apply. Omit " +
-					"for none.",
+					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
+					"values must be non-empty strings, and values must not be null. Omit the attribute " +
+					"entirely (do not set an empty map) to attach no custom properties.",
+				Validators: []validator.Map{
+					nonEmptyStringMapValidator{},
+				},
 			},
 		},
 	}
@@ -356,4 +361,65 @@ func stringMapToTfMap(m map[string]string) types.Map {
 		return types.MapNull(types.StringType)
 	}
 	return mv
+}
+
+// nonEmptyStringMapValidator rejects an empty map and any empty key, null value,
+// or empty-string value in a string-map attribute. These inputs are either
+// silently coerced (a null value becomes "") or produce perpetual drift (an
+// empty map reads back as null), so failing fast at plan time with a clear
+// message is preferable to accepting them.
+type nonEmptyStringMapValidator struct{}
+
+func (v nonEmptyStringMapValidator) Description(_ context.Context) string {
+	return "must be omitted or contain only non-empty string keys and non-null, non-empty string values"
+}
+
+func (v nonEmptyStringMapValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v nonEmptyStringMapValidator) ValidateMap(_ context.Context, req validator.MapRequest, resp *validator.MapResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	elems := req.ConfigValue.Elements()
+	if len(elems) == 0 {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Empty map not allowed",
+			"This attribute must not be set to an empty map. Omit it entirely to attach no properties.",
+		)
+		return
+	}
+	for k, val := range elems {
+		if k == "" {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Empty key not allowed",
+				"This attribute must not contain an empty string key.",
+			)
+		}
+		sv, ok := val.(types.String)
+		if !ok {
+			continue
+		}
+		if sv.IsUnknown() {
+			continue // cannot validate a value that is not yet known
+		}
+		if sv.IsNull() {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Null value not allowed",
+				fmt.Sprintf("The value for key %q is null. Provide a non-empty string, or remove the key.", k),
+			)
+			continue
+		}
+		if sv.ValueString() == "" {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Empty value not allowed",
+				fmt.Sprintf("The value for key %q is an empty string. Provide a non-empty string, or remove the key.", k),
+			)
+		}
+	}
 }

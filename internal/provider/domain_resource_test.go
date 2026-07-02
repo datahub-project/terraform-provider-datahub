@@ -24,6 +24,18 @@ func TestAcc_Domain_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_Domain_CustomPropertiesValidation asserts that invalid
+// custom_properties inputs (empty map, empty key, null value, empty value) are
+// rejected at plan time by the schema validator.
+func TestAcc_Domain_CustomPropertiesValidation(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.DomainCustomPropertiesValidationSteps(),
+	})
+}
+
 // TestAcc_Domain_ParentChild exercises parent-child creation and in-place
 // reparenting via moveDomain for datahub_domain.
 func TestAcc_Domain_ParentChild(t *testing.T) {
