@@ -49,7 +49,7 @@ Create and update write the `dataProductProperties` aspect (and optionally the `
 
 ### Optional
 
-- `custom_properties` (Map of String) Key-value map of custom metadata properties to attach to this data product.
+- `custom_properties` (Map of String) Key-value map of custom metadata properties to attach to this data product. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
 - `description` (String) Description of the data product's purpose, contents, and intended consumers.
 - `domain` (String) Full DataHub URN of the domain that owns this data product (e.g. `urn:li:domain:finance`). Accepts a reference such as `datahub_domain.finance.urn` so Terraform can order creation automatically.
 - `external_url` (String) URL of external documentation or a data product catalog page for this data product.
