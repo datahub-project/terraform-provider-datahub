@@ -24,11 +24,12 @@ type domainDataSource struct {
 }
 
 type domainDataSourceModel struct {
-	DomainID     types.String `tfsdk:"domain_id"`
-	URN          types.String `tfsdk:"urn"`
-	Name         types.String `tfsdk:"name"`
-	Description  types.String `tfsdk:"description"`
-	ParentDomain types.String `tfsdk:"parent_domain"`
+	DomainID         types.String `tfsdk:"domain_id"`
+	URN              types.String `tfsdk:"urn"`
+	Name             types.String `tfsdk:"name"`
+	Description      types.String `tfsdk:"description"`
+	ParentDomain     types.String `tfsdk:"parent_domain"`
+	CustomProperties types.Map    `tfsdk:"custom_properties"`
 }
 
 // NewDomainDataSource returns the singular datahub_domain lookup data source.
@@ -67,6 +68,11 @@ func (d *domainDataSource) Schema(_ context.Context, _ datasource.SchemaRequest,
 			"parent_domain": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "Full URN of the parent domain, or empty if this is a root domain.",
+			},
+			"custom_properties": schema.MapAttribute{
+				Computed:            true,
+				ElementType:         types.StringType,
+				MarkdownDescription: "Arbitrary key-value metadata attached to the domain. Null if none are set.",
 			},
 		},
 	}
@@ -116,11 +122,12 @@ func (d *domainDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 	}
 
 	state := domainDataSourceModel{
-		DomainID:     types.StringValue(domain.ID),
-		URN:          types.StringValue(domain.URN),
-		Name:         types.StringValue(domain.Name),
-		Description:  types.StringValue(domain.Description),
-		ParentDomain: types.StringValue(domain.ParentDomain),
+		DomainID:         types.StringValue(domain.ID),
+		URN:              types.StringValue(domain.URN),
+		Name:             types.StringValue(domain.Name),
+		Description:      types.StringValue(domain.Description),
+		ParentDomain:     types.StringValue(domain.ParentDomain),
+		CustomProperties: stringMapToTfMap(domain.CustomProperties),
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

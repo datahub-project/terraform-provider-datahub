@@ -16,11 +16,12 @@ import (
 
 // Domain is the read-shape returned by GetDomainByURN.
 type Domain struct {
-	URN          string
-	ID           string
-	Name         string
-	Description  string
-	ParentDomain string // full URN or ""
+	URN              string
+	ID               string
+	Name             string
+	Description      string
+	ParentDomain     string // full URN or ""
+	CustomProperties map[string]string
 }
 
 // CreateDomainInput groups the inputs for creating a DataHub domain.
@@ -45,9 +46,10 @@ type domainEntity struct {
 	} `json:"domainKey,omitempty"`
 	Props *struct {
 		Value struct {
-			Name         string `json:"name"`
-			Description  string `json:"description"`
-			ParentDomain string `json:"parentDomain"`
+			Name             string            `json:"name"`
+			Description      string            `json:"description"`
+			ParentDomain     string            `json:"parentDomain"`
+			CustomProperties map[string]string `json:"customProperties"`
 		} `json:"value"`
 	} `json:"domainProperties,omitempty"`
 }
@@ -168,8 +170,80 @@ func (c *Client) GetDomainByURN(ctx context.Context, urn string) (*Domain, error
 		domain.Name = entity.Props.Value.Name
 		domain.Description = entity.Props.Value.Description
 		domain.ParentDomain = entity.Props.Value.ParentDomain
+		if len(entity.Props.Value.CustomProperties) > 0 {
+			domain.CustomProperties = entity.Props.Value.CustomProperties
+		}
 	}
 	return domain, nil
+}
+
+// SetDomainProperties writes the domainProperties aspect for a domain via the
+// OpenAPI v3 entity endpoint. This is how customProperties reaches DataHub:
+// the GraphQL createDomain/updateName/updateDescription/moveDomain mutations do
+// not carry customProperties.
+//
+// The write replaces the whole domainProperties aspect, so name/description/
+// parentDomain must be passed through alongside customProperties to preserve
+// them (they are otherwise owned by the GraphQL mutations). Callers pass the
+// domain's current name/description/parentDomain; parentDomain is carried at its
+// existing value so the parent relationship, already established by createDomain
+// or moveDomain, is not disturbed.
+func (c *Client) SetDomainProperties(ctx context.Context, urn, name, description, parentDomain string, customProperties map[string]string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	name = strings.TrimSpace(name)
+	if urn == "" {
+		return errors.New("URN is required")
+	}
+	if name == "" {
+		return errors.New("name is required")
+	}
+
+	propsValue := map[string]any{
+		"name": name,
+	}
+	if description != "" {
+		propsValue["description"] = description
+	}
+	if parentDomain != "" {
+		propsValue["parentDomain"] = parentDomain
+	}
+	// Always include customProperties (even empty) so that clearing the map
+	// overwrites a previously-set value rather than leaving it in place.
+	if customProperties == nil {
+		customProperties = map[string]string{}
+	}
+	propsValue["customProperties"] = customProperties
+
+	entity := map[string]any{
+		"urn": urn,
+		"domainProperties": map[string]any{
+			"value": propsValue,
+		},
+	}
+	payload := []map[string]any{entity}
+
+	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/domain?async=false", payload)
+	if err != nil {
+		return fmt.Errorf("building domain properties write request: %w", err)
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("domain properties write request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_DOMAINS privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unexpected HTTP %d from DataHub domain write API: %s", res.StatusCode, respBody)
+	}
+	return nil
 }
 
 // MoveDomain reparents a domain via the moveDomain mutation. Pass "" for

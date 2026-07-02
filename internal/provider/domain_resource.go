@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -30,12 +32,13 @@ type domainResource struct {
 }
 
 type domainResourceModel struct {
-	ID           types.String `tfsdk:"id"`
-	URN          types.String `tfsdk:"urn"`
-	DomainID     types.String `tfsdk:"domain_id"`
-	Name         types.String `tfsdk:"name"`
-	Description  types.String `tfsdk:"description"`
-	ParentDomain types.String `tfsdk:"parent_domain"`
+	ID               types.String `tfsdk:"id"`
+	URN              types.String `tfsdk:"urn"`
+	DomainID         types.String `tfsdk:"domain_id"`
+	Name             types.String `tfsdk:"name"`
+	Description      types.String `tfsdk:"description"`
+	ParentDomain     types.String `tfsdk:"parent_domain"`
+	CustomProperties types.Map    `tfsdk:"custom_properties"`
 }
 
 func NewDomainResource() resource.Resource {
@@ -114,6 +117,18 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 					"graph orders creation and destruction correctly. Omit for a root domain. " +
 					"Changing this value reparents the domain in place without forcing replacement.",
 			},
+			"custom_properties": schema.MapAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "Arbitrary key-value metadata attached to the domain (the " +
+					"`customProperties` field of the `domainProperties` aspect). Terraform owns the " +
+					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
+					"values must be non-empty strings, and values must not be null. Omit the attribute " +
+					"entirely (do not set an empty map) to attach no custom properties.",
+				Validators: []validator.Map{
+					nonEmptyStringMapValidator{},
+				},
+			},
 		},
 	}
 }
@@ -130,6 +145,12 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	urn, err := r.client.CreateDomain(ctx, datahub.CreateDomainInput{
 		ID:           plan.DomainID.ValueString(),
 		Name:         plan.Name.ValueString(),
@@ -139,6 +160,16 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+
+	// custom_properties is not carried by the GraphQL createDomain mutation, so
+	// write it via the OpenAPI v3 entity endpoint (carrying name/description/
+	// parentDomain to avoid clobbering what createDomain just set).
+	if len(customProps) > 0 {
+		if err := r.client.SetDomainProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentDomain), customProps); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = types.StringValue(urn)
@@ -208,6 +239,22 @@ func (r *domainResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 	if strVal(plan.ParentDomain) != strVal(state.ParentDomain) {
 		if err := r.client.MoveDomain(ctx, urn, strVal(plan.ParentDomain)); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
+	// Write custom_properties via OpenAPI v3 when it changed (including clearing
+	// it: an empty map overwrites a previously-set value). Pass the plan's
+	// name/description/parentDomain so the domainProperties aspect write does not
+	// clobber the values the GraphQL mutations above just applied.
+	if !plan.CustomProperties.Equal(state.CustomProperties) {
+		customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+		resp.Diagnostics.Append(d...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		if err := r.client.SetDomainProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentDomain), customProps); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
 		}
@@ -296,4 +343,83 @@ func applyDomainToModel(domain *datahub.Domain, m *domainResourceModel) {
 	m.Name = types.StringValue(domain.Name)
 	m.Description = nullIfEmpty(domain.Description)
 	m.ParentDomain = nullIfEmpty(domain.ParentDomain)
+	m.CustomProperties = stringMapToTfMap(domain.CustomProperties)
+}
+
+// stringMapToTfMap converts a Go string map to a types.Map, normalising an
+// empty or nil map to null so an unset custom_properties does not show drift.
+func stringMapToTfMap(m map[string]string) types.Map {
+	if len(m) == 0 {
+		return types.MapNull(types.StringType)
+	}
+	elems := make(map[string]attr.Value, len(m))
+	for k, v := range m {
+		elems[k] = types.StringValue(v)
+	}
+	mv, diags := types.MapValue(types.StringType, elems)
+	if diags.HasError() {
+		return types.MapNull(types.StringType)
+	}
+	return mv
+}
+
+// nonEmptyStringMapValidator rejects an empty map and any empty key, null value,
+// or empty-string value in a string-map attribute. These inputs are either
+// silently coerced (a null value becomes "") or produce perpetual drift (an
+// empty map reads back as null), so failing fast at plan time with a clear
+// message is preferable to accepting them.
+type nonEmptyStringMapValidator struct{}
+
+func (v nonEmptyStringMapValidator) Description(_ context.Context) string {
+	return "must be omitted or contain only non-empty string keys and non-null, non-empty string values"
+}
+
+func (v nonEmptyStringMapValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v nonEmptyStringMapValidator) ValidateMap(_ context.Context, req validator.MapRequest, resp *validator.MapResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	elems := req.ConfigValue.Elements()
+	if len(elems) == 0 {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Empty map not allowed",
+			"This attribute must not be set to an empty map. Omit it entirely to attach no properties.",
+		)
+		return
+	}
+	for k, val := range elems {
+		if k == "" {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Empty key not allowed",
+				"This attribute must not contain an empty string key.",
+			)
+		}
+		sv, ok := val.(types.String)
+		if !ok {
+			continue
+		}
+		if sv.IsUnknown() {
+			continue // cannot validate a value that is not yet known
+		}
+		if sv.IsNull() {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Null value not allowed",
+				fmt.Sprintf("The value for key %q is null. Provide a non-empty string, or remove the key.", k),
+			)
+			continue
+		}
+		if sv.ValueString() == "" {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Empty value not allowed",
+				fmt.Sprintf("The value for key %q is an empty string. Provide a non-empty string, or remove the key.", k),
+			)
+		}
+	}
 }

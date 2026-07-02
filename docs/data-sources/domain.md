@@ -38,6 +38,7 @@ output "finance_urn" {
 
 ### Read-Only
 
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the domain. Null if none are set.
 - `description` (String) Description of the domain. Empty if not set.
 - `name` (String) Human-readable display name of the domain.
 - `parent_domain` (String) Full URN of the parent domain, or empty if this is a root domain.
