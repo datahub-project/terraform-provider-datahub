@@ -24,6 +24,20 @@ func TestAcc_Domain_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_Domain_CustomPropertiesAtCreate covers setting custom_properties in
+// the initial create (SetDomainProperties invoked from Create), including the
+// clobber guard and an import round-trip.
+func TestAcc_Domain_CustomPropertiesAtCreate(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-domain-cp-create")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.DomainCustomPropertiesAtCreateSteps(domainID),
+	})
+}
+
 // TestAcc_Domain_CustomPropertiesValidation asserts that invalid
 // custom_properties inputs (empty map, empty key, null value, empty value) are
 // rejected at plan time by the schema validator.

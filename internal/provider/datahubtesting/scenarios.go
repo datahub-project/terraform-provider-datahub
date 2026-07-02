@@ -2098,6 +2098,44 @@ resource "datahub_domain" "test" {
 	}
 }
 
+// DomainCustomPropertiesAtCreateSteps covers setting custom_properties in the
+// initial create (the primary path: SetDomainProperties is called right after
+// createDomain, rather than on a later update). It asserts the map lands and
+// that name/description set in the same create are preserved (clobber guard at
+// create time), then verifies the map round-trips through import.
+func DomainCustomPropertiesAtCreateSteps(domainID string) []resource.TestStep {
+	const addr = "datahub_domain.test"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id   = %q
+  name        = "Created With Props"
+  description = "set at create time"
+  custom_properties = {
+    tier  = "gold"
+    owner = "platform"
+  }
+}
+`, domainID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"tier":  knownvalue.StringExact("gold"),
+					"owner": knownvalue.StringExact("platform"),
+				})),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Created With Props")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("set at create time")),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     domainID,
+			ImportStateVerify: true,
+		},
+	}
+}
+
 // DomainCustomPropertiesValidationSteps returns steps asserting that invalid
 // custom_properties inputs are rejected at plan time by the schema validator:
 // an empty map, an empty key, a null value, and an empty-string value. No
