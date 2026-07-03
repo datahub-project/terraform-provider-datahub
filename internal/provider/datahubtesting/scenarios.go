@@ -341,6 +341,110 @@ data "datahub_remote_executor_pool" "test" {
 	}
 }
 
+// RemoteExecutorPoolDefaultFlipSteps exercises the global "default pool"
+// pointer -- DataHub's single-holder ("conch") default used by ingestion
+// sources that do not name an executor.
+//
+// The default is a single server-side pointer (the
+// dataHubRemoteExecutorPoolGlobalConfig singleton aspect), and each pool's
+// is_default is derived from it at read time, so promoting one pool
+// atomically demotes the previous default. The scenario covers three things
+// none of the other steps touch: promote-on-create, flipping the default from
+// one pool to another (the demotion assertion), and the guard that refuses a
+// direct is_default = false on the current default.
+//
+// Note on the flip step: is_default is Optional+Computed with
+// UseStateForUnknown, so when the default moves to pool B, pool A's demotion
+// is not re-read during that same apply -- it surfaces on the next refresh.
+// The dedicated RefreshState step asserts the demotion, which also documents
+// that real-world behaviour for users.
+//
+// poolIDA and poolIDB must be unique within the target DataHub instance.
+func RemoteExecutorPoolDefaultFlipSteps(poolIDA, poolIDB string) []resource.TestStep {
+	const addrA = "datahub_remote_executor_pool.a"
+	const addrB = "datahub_remote_executor_pool.b"
+
+	// config builds a two-pool config; each fragment is either "" (is_default
+	// omitted, i.e. computed) or a full "\n  is_default = <bool>" line.
+	config := func(aFrag, bFrag string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_remote_executor_pool" "a" {
+  pool_id = %q%s
+}
+
+resource "datahub_remote_executor_pool" "b" {
+  pool_id = %q%s
+}
+`, poolIDA, aFrag, poolIDB, bFrag)
+	}
+
+	return []resource.TestStep{
+		{
+			// Create A as default, B not. Exercises the promote-on-create path.
+			Config: config("\n  is_default = true", ""),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("is_default"), knownvalue.Bool(true)),
+				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("is_default"), knownvalue.Bool(false)),
+			},
+		},
+		{
+			// Flip the default to B. A's is_default is omitted (computed); the
+			// server demotes A when B is promoted.
+			Config: config("", "\n  is_default = true"),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("is_default"), knownvalue.Bool(true)),
+			},
+		},
+		{
+			// Refresh so A's demotion becomes visible, then assert the conch
+			// flipped. RefreshState steps run the legacy Check func, not
+			// ConfigStateChecks.
+			RefreshState: true,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr(addrA, "is_default", "false"),
+				resource.TestCheckResourceAttr(addrB, "is_default", "true"),
+			),
+		},
+		{
+			// Guard: directly unsetting the default (is_default = false on the
+			// current default) is refused; the user must promote another pool.
+			Config:      config("", "\n  is_default = false"),
+			ExpectError: regexp.MustCompile(`Cannot unset default pool`),
+		},
+	}
+}
+
+// RemoteExecutorPoolDefaultFlipCheckDestroy runs the standard pool-removal
+// check, then clears the global default pointer.
+//
+// The flip scenario takes over the singleton default pointer. On DataHub Cloud,
+// deleting the pool a default points at does NOT clear that pointer -- there is
+// no GraphQL mutation to clear it -- so a plain destroy would leave the target
+// with a dangling default referencing a deleted pool. Delete the singleton
+// global-config aspect directly via OpenAPI v3 to leave the instance clean.
+// Best-effort: any error or non-2xx (e.g. the mock, which clears the pointer on
+// pool delete and does not serve this path) is ignored.
+func RemoteExecutorPoolDefaultFlipCheckDestroy(s *terraform.State) error {
+	if err := RemoteExecutorPoolCheckDestroy(s); err != nil {
+		return err
+	}
+	base := os.Getenv("DATAHUB_GMS_URL")
+	if base == "" {
+		return nil
+	}
+	url := strings.TrimRight(base, "/") +
+		"/openapi/v3/entity/datahubremoteexecutorglobalconfig/urn:li:dataHubRemoteExecutorGlobalConfig:primary"
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("building request to clear default executor pool: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+os.Getenv("DATAHUB_GMS_TOKEN"))
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		_ = resp.Body.Close()
+	}
+	return nil
+}
+
 // RemoteExecutorPoolCheckDestroy verifies every datahub_remote_executor_pool
 // in the post-destroy state has been removed from DataHub.
 func RemoteExecutorPoolCheckDestroy(s *terraform.State) error {

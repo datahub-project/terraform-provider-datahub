@@ -24,6 +24,24 @@ func TestAcc_RemoteExecutorPool_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_RemoteExecutorPool_DefaultFlip exercises the global default-pool
+// pointer: promote-on-create, flipping the default from one pool to another
+// (asserting the old default is demoted after refresh), and the guard that
+// refuses a direct is_default = false on the current default. Runs against the
+// mock in `make test` and live Cloud in `make testacc`.
+func TestAcc_RemoteExecutorPool_DefaultFlip(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets
+	poolA := tg.Name("tfprovider-pool-a")
+	poolB := tg.Name("tfprovider-pool-b")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.RemoteExecutorPoolDefaultFlipCheckDestroy,
+		Steps:                    datahubtesting.RemoteExecutorPoolDefaultFlipSteps(poolA, poolB),
+	})
+}
+
 func TestAcc_RemoteExecutorPoolDataSource_Read(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets

@@ -50,7 +50,7 @@ Current coverage: `datahub_ingestion_source`, `datahub_secret`, `datahub_remote_
 | `createIngestionSource` / `updateIngestionSource` / `deleteIngestionSource` / `ingestionSource(urn)` | M/Q | covered | no | `datahub_ingestion_source`. Gap: provider uses OpenAPI for writes; GraphQL mutations exist — worth reviewing but not a new TF component. |
 | `createSecret` / `updateSecret` / `deleteSecret` + OpenAPI Read | M | covered | no | `datahub_secret`. |
 | `createRemoteExecutorPool` / `updateRemoteExecutorPool` / `getRemoteExecutorPool` + OpenAPI Delete | M/Q | covered | yes | `datahub_remote_executor_pool`; mutations classed `category: internal`. |
-| `updateDefaultRemoteExecutorPool` + `defaultRemoteExecutorPool` | M/Q | **HIGH** | yes | Singleton resource `datahub_default_remote_executor_pool` — or fold into `datahub_remote_executor_pool` via `is_default = true` (check if already present). **Note:** schema mutation is `updateDefaultRemoteExecutorPool`; confirm provider uses this name and not `setDefaultRemoteExecutorPool`. |
+| `updateDefaultRemoteExecutorPool` + `defaultRemoteExecutorPool` | M/Q | covered | yes | Folded into `datahub_remote_executor_pool` as `is_default` since v0.2.0; a separate `datahub_default_remote_executor_pool` singleton was considered and rejected. The default is a single global pointer (the `dataHubRemoteExecutorPoolGlobalConfig` singleton aspect, whose only field is `defaultExecutorPoolId`) that `is_default` projects onto each pool; promoting one pool atomically demotes the prior default, and the demotion is strongly consistent (verified live 2026-07-03). Because that aspect carries no other fields, the flag is sufficient and a singleton resource would add no value. Provider uses `updateDefaultRemoteExecutorPool` (confirmed). |
 | `upsertConnection` / `connection(urn)` / `deleteConnection` | M/Q | covered | yes+OSS | `datahub_connection` resource (v0.3.0). OSS delete falls back to OpenAPI DELETE (GraphQL mutation absent in OSS). |
 | `getRemoteExecutor` (instance) | Q | LOW | yes | Read-only. Intended backing query for `datahub_ingestion_executor` data source. |
 | `listIngestionSources` / `listSecrets` / `searchAcrossEntities (DATAHUB_CONNECTION)` | Q | covered | varies | `datahub_ingestion_sources`, `datahub_secrets`, `datahub_connections` bulk-enumerate data sources (v0.3.0). Eventually consistent - acceptable for enumeration, never used in Read/ImportState. |
@@ -157,6 +157,14 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 ## Category 7: Org-level Settings (Singleton Resources)
 
 Each setting is a singleton (URN `urn:li:globalSettings:0` etc.). HashiCorp idiom: many small resources, not one fat one. Singleton shape: hard-code URN, no `Create` (just `Update`), treat as drift-correction. See `aws_default_*` for precedent.
+
+**Small-singleton pattern (to establish; `datahub_global_settings` is the first instance).** Several system-level singletons are on the horizon (this category, plus the remote-executor global config at `urn:li:dataHubRemoteExecutorGlobalConfig:primary`). Rather than hand-roll each, establish one reusable pattern with `datahub_global_settings` and reuse it. Conventions to nail once:
+
+- **Hard-coded URN, no user-facing `id`.** The singleton always conceptually exists.
+- **Update-only lifecycle.** No real `Create` (Create = read-current-then-apply-desired); `Delete` = reset-to-backend-default or no-op, *not* entity deletion. Document which, per resource.
+- **Read via the OpenAPI v3 entity endpoint** on the singleton URN (strongly consistent), never a `list*`/search query.
+- **Handle nullable fields honestly.** Some backends offer no mutation to *clear* a field (only to set it) -- e.g. the executor default pointer can be set via GraphQL but only cleared by deleting the singleton aspect via OpenAPI v3. Where a field models "unset", verify a clear path exists before modelling it as removable.
+- **Not every singleton needs its own resource.** The executor default pointer is a one-field singleton already projected onto `datahub_remote_executor_pool.is_default`; a dedicated resource would add no value. Prefer a singleton resource when the aspect carries multiple coherent fields, or when a flag-on-member would create a cross-instance ("conch") invariant that Terraform cannot enforce at plan time.
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
