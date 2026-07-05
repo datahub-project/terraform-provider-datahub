@@ -17,6 +17,7 @@ description: |-
   
   Default pool
   Setting is_default = true promotes this pool to the global default for new ingestion sources. This atomically demotes any previously-default pool on the server side. You cannot directly unset is_default to false on a default pool; set another pool as default instead, and this resource's is_default will reflect false on the next refresh.
+  The default is a single global pointer, so set is_default = true on at most one pool. If two pool resources both set is_default = true, each apply re-promotes one and demotes the other, producing a plan that never converges. When you move the default between pools, change it in one place: add is_default = true to the new pool and remove it from the old one in the same change.
   Ingestion source linkage
   To route an ingestion source to this pool, set remote_executor_id on the ingestion source resource to this pool's pool_id:
   
@@ -58,6 +59,8 @@ data "datahub_remote_executor_pool" "default" {
 ## Default pool
 
 Setting `is_default = true` promotes this pool to the global default for new ingestion sources. This atomically demotes any previously-default pool on the server side. You cannot directly unset `is_default` to `false` on a default pool; set another pool as default instead, and this resource's `is_default` will reflect `false` on the next refresh.
+
+The default is a single global pointer, so set `is_default = true` on **at most one** pool. If two pool resources both set `is_default = true`, each apply re-promotes one and demotes the other, producing a plan that never converges. When you move the default between pools, change it in one place: add `is_default = true` to the new pool and remove it from the old one in the same change.
 
 ## Ingestion source linkage
 
