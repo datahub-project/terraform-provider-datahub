@@ -29,7 +29,7 @@ This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — an
 | 1 | **Ingest** | `connection` | resource | Credentials normalization for ingestion sources. |
 | 2 | **Governance taxonomy** | `domain`, `data_product`, `glossary_node`, `glossary_term`, `tag` (definitions), `ownership_type` | resource + data source | Largest HIGH bucket; pure config; not touched by ingestion. |
 | 3 | **Schema metadata** | `structured_property`, `form` (definitions only) | resource + data source | Definitions are HIGH; *value assignments* to assets are deny-list. |
-| 4 | **RBAC / Access** | `policy`, `corp_group`, `corp_group_member`, `role_assignment`, `corp_user`, `local_user_login` shipped (v0.4.0). Remaining: `service_account` (Cloud), `oauth_authorization_server` (Cloud). | resource + data source | High leverage for ops teams; some Cloud-only. |
+| 4 | **RBAC / Access** | `policy`, `corp_group`, `corp_group_member`, `role_assignment`, `corp_user`, `local_user_login` shipped (v0.4.0). Remaining: `service_account` (OSS 1.4.0+ and Cloud), `oauth_authorization_server` (Cloud). | resource + data source | High leverage for ops teams; some Cloud-only. |
 | 5 | **Tests** | `metadata_test` | resource + data source | Declarative metadata quality rules. |
 | 6 | **Observe / Assertions** | `data_contract` (Cloud), `assertion_assignment_rule` (Cloud) | resource | Per-asset assertions are MEDIUM-at-best; rules and contracts are the leverage points. |
 | 7 | **Org settings** | `global_settings` (singleton) | resource | Singleton shape; low ceremony, high value. |
@@ -113,9 +113,9 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | `batchAssignRole` + `dataHubRole(urn)` | M | covered | no | `datahub_role_assignment` resource + `datahub_role` / `datahub_roles` data sources (v0.4.0). |
 | `ingestProposal` (corpUserInfo aspects) + `removeUser` | M | covered | no | `datahub_corp_user` resource + data source (v0.4.0). Upsert semantics via OpenAPI v3. |
 | `POST /auth/signUp` + `createNativeUserResetToken` | REST/M | covered | no | `datahub_local_user_login` resource (v0.4.0). Native-auth login provisioning; exposes single-use 24h reset URL. Works on both OSS and Cloud (see design doc for OSS vs Cloud signUp differences). |
-| `createServiceAccount` / `deleteServiceAccount` + `getServiceAccount` | M/Q | **HIGH** | yes | **New:** `datahub_service_account` resource. Write-once secret pattern — `createServiceAccount` returns credentials; provider captures into state as `sensitive`. One-shot: no re-read of credentials after creation. Mirror `datahub_secret` value handling. |
+| `createServiceAccount` / `deleteServiceAccount` + `getServiceAccount` | M/Q | **HIGH** | no (OSS 1.4.0+) | **New:** `datahub_service_account` resource. Upstreamed to OSS in DataHub Core v1.4.0 ([PR #15972](https://github.com/datahub-project/datahub/pull/15972), Jan 2026) - NOT Cloud-only. A service account is just a `corpUser` carrying a `subTypes = ["SERVICE_ACCOUNT"]` aspect under a `service_` URN prefix. `createServiceAccount` mints a UUID (`service_<uuid>`) but does nothing else - it batch-upserts three aspects (`corpUserKey`, `corpUserInfo`, `subTypes`). So, exactly like `ownership_type`/`domain`, the provider bypasses the UUID mutation and writes those aspects via OpenAPI v3 with a **user-supplied id** -> deterministic `urn:li:corpuser:service_<id>`. `createServiceAccount` returns only the account entity (no secret); the token is minted separately via the access-token flow (`createAccessToken`, write-once). See the note below. |
 | `upsertOAuthAuthorizationServer` / `deleteOAuthAuthorizationServer` + `oauthAuthorizationServer(urn)` | M/Q | **HIGH** | yes | **New:** `datahub_oauth_authorization_server` resource. Config for external OAuth IdPs. Cleanest "config" object in the access space. |
-| `updateServiceAccountDefaultView` | M | MEDIUM | yes | Single attribute on `datahub_service_account`. |
+| `updateServiceAccountDefaultView` | M | MEDIUM | no (OSS 1.4.0+) | Single attribute on `datahub_service_account`; also present in OSS `auth.graphql`. |
 | `createAccessToken` / `revokeAccessToken` + `getAccessToken` | M/Q | MEDIUM | no | Write-once tokens with TTL; rotation = constant churn. Skip unless customers ask. |
 | `service(urn)` / `listServices` | Q | MEDIUM | yes | Cloud-only registered services — data source candidate. |
 | `createInviteToken` / `sendUserInvitations` / `revokeUserInvitation` | M/Q | LOW | varies | Invite workflows; `datahub_local_user_login` handles the native-auth case. `sendUserInvitations` (Cloud-only per-user email invite) is a future follow-up. |
@@ -125,7 +125,13 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | SCIM REST endpoints | REST | LOW | no | Provisioning usually owned by IdP. |
 | SCIM-Configuration / auth-service-controller | REST | IRRELEVANT | no | Auth bootstrap surfaces. |
 
-**`datahub_service_account` note:** credentials returned once at creation; must be captured into state as `sensitive` and never shown in plan output. Import is impossible post-creation without recreating.
+**`datahub_service_account` note (revised 2026-07-05 after OSS verification):**
+- **OSS + Cloud**, not Cloud-only. Available on DataHub Core >= v1.4.0 and Cloud >= v0.3.17. Verified in `datahub-graphql-core/src/main/resources/auth.graphql` (OSS core) plus OSS resolvers, `ServiceAccountService`, and OSS smoke tests. Below the version floor the endpoints are absent, so the resource needs a graceful "not available" diagnostic (a version-floor discriminator, like `datahub_connection`'s OSS/Cloud handling).
+- **URN: use a deterministic aspect write, not the UUID mutation.** The GraphQL `createServiceAccount` mints `service_<uuid>` (non-deterministic), which would be the design-doc red flag - BUT the resolver does nothing special: it batch-upserts three corpUser aspects and returns. Verified in `CreateServiceAccountResolver.java`: `corpUserKey` (username), `corpUserInfo` (`active=true`, `displayName`, `title`=description), and `subTypes = ["SERVICE_ACCOUNT"]`. Recognition as a service account is purely that subtype (`ServiceAccountUtils.isServiceAccount` checks the `SubTypes` aspect), and `ServiceAccountUtils.buildServiceAccountUrn(name)` already defines the deterministic `service_<name>` form. So the provider takes a **user-supplied id** and writes those three aspects via OpenAPI v3 -> deterministic `urn:li:corpuser:service_<id>`, idempotent and import-clean, exactly as `ownership_type` and `domain` bypass their UUID-minting GraphQL creates. No service-layer logic is bypassed (the resolver has none beyond an auth check + UUID generation), so the "GraphQL-preferred" write rule does not apply here.
+- **Stay in lane on the shared corpUser entity.** Read/Import must verify the `SERVICE_ACCOUNT` subtype and refuse to manage a plain corpUser (human user or ingested owner-reference). This is the guard that lets a service-account resource coexist safely with the overloaded corpUser entity - the clean machine-identity subset that the parked human-user work could not achieve.
+- **Two-aspect shape, not a single write-once create.** `createServiceAccount` returns only the account entity (urn/name/description) - no secret. The write-once credential is the *token*, minted separately via `createAccessToken` (token type = service account, shown once). So the resource is really "idempotent account + optional write-once token" (the token as a separate write-once resource), not the single write-once-create originally assumed.
+- **Coexistence caveat.** UI/GraphQL-created accounts are `service_<uuid>`; TF-created ones are `service_<id>`. They coexist fine - TF manages only its own deterministic ids. Importing a UI-made UUID account is possible but leaves the uuid as the id (adopt-computed). A live acceptance test should assert a TF-created account appears in `listServiceAccounts`/`getServiceAccount`, so any future drift in the required aspect set breaks CI rather than users.
+- **Prerequisites:** Metadata Service Authentication enabled (`METADATA_SERVICE_AUTH_ENABLED=true` on gms + frontend), and the "Manage Service Accounts" platform privilege (Admin role carries it). No OAuth authenticator config is required for DataHub-issued tokens.
 
 ---
 
@@ -289,7 +295,7 @@ Before implementing any new resource, confirm the URN key strategy and that it m
 | `datahub_metadata_test` | user-supplied `id` | confirm |
 | `datahub_data_contract` | derived from dataset URN | one contract per dataset |
 | `datahub_assertion_assignment_rule` | user-supplied `id` | confirm |
-| `datahub_service_account` | user-supplied `id` | Cloud-only; confirm |
+| `datahub_service_account` | user-supplied `id` -> `service_<id>` | Deterministic via OpenAPI v3 aspect write (`corpUserKey`+`corpUserInfo`+`subTypes=[SERVICE_ACCOUNT]`), bypassing the UUID-minting `createServiceAccount` - same approach as `ownership_type`/`domain`. Read/Import subtype-guarded. OSS 1.4.0+ (not Cloud-only). |
 | `datahub_oauth_authorization_server` | user-supplied `id` | Cloud-only; confirm |
 
 ### Aspect-list ownership
@@ -347,6 +353,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | ~~8~~ | ~~`datahub_policy`~~ | resource + data source | yes | **Shipped v0.4.0** |
 | 9 | `datahub_form` | resource + data source | yes | Prompts list; `dynamicFormAssignment` as nested attr |
 | 10 | `datahub_metadata_test` | resource + data source | yes (API) | API mutations confirmed OSS; management UI is Cloud-only; no nav entry in OSS frontend |
+| 14 | `datahub_service_account` | resource + data source | yes (1.4.0+) | Moved from Tier 3 - OSS since Core v1.4.0. Deterministic aspect write (`service_<id>` + `subTypes=[SERVICE_ACCOUNT]`) like `ownership_type`/`domain`, subtype-guarded read; token is a separate write-once resource; needs Metadata Service Auth enabled |
 | ~~11~~ | ~~`datahub_ownership_type`~~ | resource + data source | yes | **Shipped ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50))** |
 
 ### Tier 3 — Cloud-only, high leverage, accept stability caveat
@@ -355,7 +362,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 |---|---|---|---|---|
 | 12 | `datahub_assertion_assignment_rule` | resource | yes | Ship before `data_contract` |
 | 13 | `datahub_data_contract` | resource | yes | No GraphQL read query; delete strategy unclear |
-| 14 | `datahub_service_account` | resource | yes | Write-once credentials; no import after create |
+| ~~14~~ | ~~`datahub_service_account`~~ | resource | ~~yes~~ | **Moved to Tier 2 - OSS since Core v1.4.0, not Cloud-only** (see revised note in Category 4) |
 | 15 | `datahub_oauth_authorization_server` | resource | yes | Stable config object |
 | ~~16~~ | ~~`datahub_corp_group` + `datahub_corp_group_member`~~ | resource + data source | yes | **Shipped v0.4.0** |
 
