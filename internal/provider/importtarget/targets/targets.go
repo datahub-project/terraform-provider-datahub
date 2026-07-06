@@ -342,6 +342,25 @@ func init() {
 		OSSCompatible: false,
 	})
 
+	// Assertion assignment rules (assertionAssignmentRule) are Cloud-only and
+	// enumerable via listAssertionAssignmentRules. The import ID is the bare
+	// rule_id (URN suffix); ImportState also accepts the full URN. The shared-
+	// instance/selective-extraction caveat applies (a shared instance may hold
+	// rules created elsewhere).
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_assertion_assignment_rule",
+		DataSourceTypeName: "datahub_assertion_assignment_rules",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListAssertionAssignmentRuleURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing assertion assignment rule URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:assertionAssignmentRule:") },
+		OSSCompatible: false,
+	})
+
 	// Remote executor pools are Cloud-only with no list API reachable via OSS
 	// GraphQL; users supply pool IDs manually when importing.
 	importtarget.Register(importtarget.Target{

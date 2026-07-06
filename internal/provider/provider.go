@@ -273,6 +273,7 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewActionPipelinesDataSource,
 		NewAssertionDataSource,
 		NewAssertionsDataSource,
+		NewAssertionAssignmentRulesDataSource,
 		NewConnectionsDataSource,
 		NewCorpGroupDataSource,
 		NewCorpGroupsDataSource,
@@ -308,6 +309,7 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewActionPipelineResource,
+		NewAssertionAssignmentRuleResource,
 		NewCustomAssertionResource,
 		NewConnectionResource,
 		NewCorpGroupResource,
