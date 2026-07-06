@@ -135,6 +135,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)
 	mux.HandleFunc("/openapi/v3/entity/glossarynode/", s.handleGlossaryNodeItem)
 	mux.HandleFunc("/openapi/v3/entity/glossaryterm/", s.handleGlossaryTermItem)
+	mux.HandleFunc("/openapi/v3/entity/structuredproperty", s.handleStructuredPropertyWrite)
 	mux.HandleFunc("/openapi/v3/entity/structuredproperty/", s.handleStructuredPropertyItem)
 	mux.HandleFunc("/openapi/v3/entity/tag", s.handleTagCollection)
 	mux.HandleFunc("/openapi/v3/entity/tag/", s.handleTagItem)
@@ -207,10 +208,6 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateParentNode(w, req.Variables)
 	case strings.Contains(q, "deleteGlossaryEntity"):
 		s.handleDeleteGlossaryEntity(w, req.Variables)
-	case strings.Contains(q, "createStructuredProperty"):
-		s.handleCreateStructuredProperty(w, req.Variables)
-	case strings.Contains(q, "updateStructuredProperty"):
-		s.handleUpdateStructuredProperty(w, req.Variables)
 	case strings.Contains(q, "deleteStructuredProperty"):
 		s.handleDeleteStructuredProperty(w, req.Variables)
 	case strings.Contains(q, "createTag"):

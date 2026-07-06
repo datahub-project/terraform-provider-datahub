@@ -99,21 +99,6 @@ type CreateStructuredPropertyInput struct {
 	Settings           *StructuredPropertySettings
 }
 
-// UpdateStructuredPropertyInput groups the fields for an in-place update.
-// Only additive/scalar changes should be sent here; shrink operations are
-// handled by resource replacement at plan time.
-type UpdateStructuredPropertyInput struct {
-	URN                    string
-	DisplayName            string
-	Description            string
-	Immutable              *bool
-	NewEntityTypes         []string       // delta: elements in plan but not in state
-	NewAllowedValues       []AllowedValue // delta: elements in plan but not in state
-	NewAllowedEntityTypes  []string       // delta: elements in plan but not in state
-	SetCardinalityMultiple bool           // true when widening SINGLE -> MULTIPLE
-	Settings               *StructuredPropertySettings
-}
-
 // structuredPropertyEntity is the OpenAPI v3 response shape for
 // GET /openapi/v3/entity/structuredproperty/{urn}.
 type structuredPropertyEntity struct {
@@ -156,50 +141,135 @@ type structuredPropertyEntity struct {
 	} `json:"structuredPropertySettings,omitempty"`
 }
 
-type createStructuredPropertyResponse struct {
-	Data struct {
-		CreateStructuredProperty struct {
-			URN string `json:"urn"`
-		} `json:"createStructuredProperty"`
-	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
+// structuredPropertyURNPrefix is the URN namespace for structured properties.
+const structuredPropertyURNPrefix = "urn:li:structuredProperty:"
+
+// allowedValuesToAspect converts allowed values to the OpenAPI aspect shape:
+// [{ "value": { "string": ... } | { "double": ... }, "description": ... }].
+func allowedValuesToAspect(avs []AllowedValue) []map[string]any {
+	out := make([]map[string]any, 0, len(avs))
+	for _, av := range avs {
+		primitive := map[string]any{}
+		if av.StringValue != nil {
+			primitive["string"] = *av.StringValue
+		}
+		if av.NumberValue != nil {
+			primitive["double"] = *av.NumberValue
+		}
+		entry := map[string]any{"value": primitive}
+		if av.Description != "" {
+			entry["description"] = av.Description
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
-// allowedValueToGQL converts an AllowedValue to the GraphQL input map.
-func allowedValueToGQL(av AllowedValue) map[string]any {
-	m := map[string]any{}
-	if av.StringValue != nil {
-		m["stringValue"] = *av.StringValue
+// structuredPropertyEntityPayload builds the OpenAPI v3 entity write body for a
+// structured property: the propertyDefinition aspect, plus the
+// structuredPropertySettings aspect when settings are supplied.
+//
+// The definition is written as a full aspect via OpenAPI rather than through
+// the GraphQL createStructuredProperty/updateStructuredProperty mutations.
+// Those mutations build a JSON Patch whose pointer path embeds each allowed
+// value unescaped (StructuredPropertyDefinitionPatchBuilder.addAllowedValue),
+// so any allowed string value containing "/" (or "~") is mis-parsed as nested
+// pointer segments and the write fails with `/allowedValues/N/value :: field
+// is required`. The OpenAPI entity write has no patch step and stores such
+// values correctly. See Linear CAT-2551.
+func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInput) []map[string]any {
+	entityTypeURNs := make([]string, len(in.EntityTypes))
+	for i, et := range in.EntityTypes {
+		entityTypeURNs[i] = entityTypeURN(et)
 	}
-	if av.NumberValue != nil {
-		m["numberValue"] = *av.NumberValue
+
+	cardinality := in.Cardinality
+	if cardinality == "" {
+		cardinality = "SINGLE"
 	}
-	if av.Description != "" {
-		m["description"] = av.Description
+
+	def := map[string]any{
+		"qualifiedName": in.ID,
+		"valueType":     dataTypeURN(in.ValueType),
+		"entityTypes":   entityTypeURNs,
+		"cardinality":   cardinality,
+		"immutable":     in.Immutable,
 	}
-	return m
+	if in.DisplayName != "" {
+		def["displayName"] = in.DisplayName
+	}
+	if in.Description != "" {
+		def["description"] = in.Description
+	}
+	if len(in.AllowedValues) > 0 {
+		def["allowedValues"] = allowedValuesToAspect(in.AllowedValues)
+	}
+	if len(in.AllowedEntityTypes) > 0 {
+		allowedTypeURNs := make([]string, len(in.AllowedEntityTypes))
+		for i, t := range in.AllowedEntityTypes {
+			allowedTypeURNs[i] = entityTypeURN(t)
+		}
+		def["typeQualifier"] = map[string]any{"allowedTypes": allowedTypeURNs}
+	}
+
+	entity := map[string]any{
+		"urn":                urn,
+		"propertyDefinition": map[string]any{"value": def},
+	}
+
+	if in.Settings != nil {
+		s := in.Settings
+		// Dependent field: when the property is not shown in the asset summary,
+		// hideInAssetSummaryWhenEmpty must be false (mirrors the server resolver).
+		hideWhenEmpty := s.HideInAssetSummaryWhenEmpty
+		if !s.ShowInAssetSummary {
+			hideWhenEmpty = false
+		}
+		entity["structuredPropertySettings"] = map[string]any{
+			"value": map[string]any{
+				"isHidden":                    s.IsHidden,
+				"showInSearchFilters":         s.ShowInSearchFilters,
+				"showInAssetSummary":          s.ShowInAssetSummary,
+				"hideInAssetSummaryWhenEmpty": hideWhenEmpty,
+				"showAsAssetBadge":            s.ShowAsAssetBadge,
+				"showInColumnsTable":          s.ShowInColumnsTable,
+			},
+		}
+	}
+
+	return []map[string]any{entity}
 }
 
-// settingsToGQL converts StructuredPropertySettings to the GraphQL input map.
-func settingsToGQL(s *StructuredPropertySettings) map[string]any {
-	if s == nil {
-		return nil
+// writeStructuredProperty writes the definition (and settings) aspect(s) via
+// the OpenAPI v3 entity endpoint. Used by both create and update: the write is
+// a full-aspect upsert, and the resource's plan modifiers force replacement
+// (not update) on any list shrink or cardinality narrowing, so sending the full
+// desired state on update is always safe.
+func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in CreateStructuredPropertyInput) error {
+	payload := structuredPropertyEntityPayload(urn, in)
+	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/structuredproperty?async=false", payload)
+	if err != nil {
+		return fmt.Errorf("building structured property write request: %w", err)
 	}
-	return map[string]any{
-		"isHidden":                    s.IsHidden,
-		"showInSearchFilters":         s.ShowInSearchFilters,
-		"showInAssetSummary":          s.ShowInAssetSummary,
-		"hideInAssetSummaryWhenEmpty": s.HideInAssetSummaryWhenEmpty,
-		"showAsAssetBadge":            s.ShowAsAssetBadge,
-		"showInColumnsTable":          s.ShowInColumnsTable,
+	res, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("structured property write request failed: %w", err)
 	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_STRUCTURED_PROPERTIES privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unexpected HTTP %d from DataHub structured property write API: %s", res.StatusCode, respBody)
+	}
+	return nil
 }
 
 // CreateStructuredProperty creates a DataHub structured property via the
-// GraphQL API and returns its URN. Always supply a non-empty ID to produce a
-// deterministic URN; omitting it causes the server to generate a random UUID.
+// OpenAPI v3 entity endpoint and returns its URN. Always supply a non-empty ID
+// to produce a deterministic URN.
 func (c *Client) CreateStructuredProperty(ctx context.Context, in CreateStructuredPropertyInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
@@ -214,78 +284,21 @@ func (c *Client) CreateStructuredProperty(ctx context.Context, in CreateStructur
 		return "", errors.New("entity_types is required and must not be empty")
 	}
 
-	const q = `
-mutation createStructuredProperty($input: CreateStructuredPropertyInput!) {
-  createStructuredProperty(input: $input) {
-    urn
-  }
-}`
+	urn := structuredPropertyURNPrefix + in.ID
 
-	// Build entity-type URNs and allowed-type URNs.
-	entityTypeURNs := make([]string, len(in.EntityTypes))
-	for i, et := range in.EntityTypes {
-		entityTypeURNs[i] = entityTypeURN(et)
-	}
-
-	input := map[string]any{
-		"id":            in.ID,
-		"qualifiedName": in.ID,
-		"valueType":     dataTypeURN(in.ValueType),
-		"entityTypes":   entityTypeURNs,
-	}
-	if in.DisplayName != "" {
-		input["displayName"] = in.DisplayName
-	}
-	if in.Description != "" {
-		input["description"] = in.Description
-	}
-	if in.Immutable {
-		input["immutable"] = true
-	}
-	cardinality := in.Cardinality
-	if cardinality == "" {
-		cardinality = "SINGLE"
-	}
-	input["cardinality"] = cardinality
-
-	if len(in.AllowedValues) > 0 {
-		avs := make([]map[string]any, len(in.AllowedValues))
-		for i, av := range in.AllowedValues {
-			avs[i] = allowedValueToGQL(av)
-		}
-		input["allowedValues"] = avs
-	}
-
-	if len(in.AllowedEntityTypes) > 0 {
-		allowedTypeURNs := make([]string, len(in.AllowedEntityTypes))
-		for i, t := range in.AllowedEntityTypes {
-			allowedTypeURNs[i] = entityTypeURN(t)
-		}
-		input["typeQualifier"] = map[string]any{
-			"allowedTypes": allowedTypeURNs,
-		}
-	}
-
-	if in.Settings != nil {
-		input["settings"] = settingsToGQL(in.Settings)
-	}
-
-	body := map[string]any{
-		"query":     q,
-		"variables": map[string]any{"input": input},
-	}
-
-	var gqlResp createStructuredPropertyResponse
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+	// The OpenAPI write is an upsert, so guard against silently overwriting a
+	// property that already exists out-of-band (the GraphQL create used to
+	// reject this server-side).
+	existing, err := c.GetStructuredPropertyByURN(ctx, urn)
+	if err != nil {
 		return "", err
 	}
-	if len(gqlResp.Errors) > 0 {
-		return "", fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	if existing != nil {
+		return "", fmt.Errorf("a structured property already exists with URN %s", urn)
 	}
 
-	urn := gqlResp.Data.CreateStructuredProperty.URN
-	if urn == "" {
-		urn = "urn:li:structuredProperty:" + in.ID
+	if err := c.writeStructuredProperty(ctx, urn, in); err != nil {
+		return "", err
 	}
 	return urn, nil
 }
@@ -398,83 +411,25 @@ func (c *Client) GetStructuredPropertyByURN(ctx context.Context, urn string) (*S
 	return sp, nil
 }
 
-// UpdateStructuredProperty updates an existing structured property via the
-// GraphQL updateStructuredProperty mutation. The update is additive for list
-// fields; shrink operations must be handled by resource replacement.
-func (c *Client) UpdateStructuredProperty(ctx context.Context, in UpdateStructuredPropertyInput) error {
+// UpdateStructuredProperty updates an existing structured property by writing
+// the full definition (and settings) aspect via the OpenAPI v3 entity endpoint.
+// The resource forces replacement (not update) on any list shrink or
+// cardinality narrowing, so the full desired state passed here is always a
+// superset or scalar change - safe to write wholesale.
+func (c *Client) UpdateStructuredProperty(ctx context.Context, urn string, in CreateStructuredPropertyInput) error {
 	if c == nil {
 		return errors.New("client is nil")
 	}
-	if in.URN == "" {
+	if urn == "" {
 		return errors.New("URN is required")
 	}
-
-	const q = `
-mutation updateStructuredProperty($input: UpdateStructuredPropertyInput!) {
-  updateStructuredProperty(input: $input) {
-    urn
-  }
-}`
-
-	input := map[string]any{
-		"urn": in.URN,
+	if in.ValueType == "" {
+		return errors.New("value_type is required")
 	}
-	if in.DisplayName != "" {
-		input["displayName"] = in.DisplayName
+	if len(in.EntityTypes) == 0 {
+		return errors.New("entity_types is required and must not be empty")
 	}
-	if in.Description != "" {
-		input["description"] = in.Description
-	}
-	if in.Immutable != nil {
-		input["immutable"] = *in.Immutable
-	}
-	if in.SetCardinalityMultiple {
-		input["setCardinalityAsMultiple"] = true
-	}
-
-	if len(in.NewEntityTypes) > 0 {
-		entityTypeURNs := make([]string, len(in.NewEntityTypes))
-		for i, et := range in.NewEntityTypes {
-			entityTypeURNs[i] = entityTypeURN(et)
-		}
-		input["newEntityTypes"] = entityTypeURNs
-	}
-
-	if len(in.NewAllowedValues) > 0 {
-		avs := make([]map[string]any, len(in.NewAllowedValues))
-		for i, av := range in.NewAllowedValues {
-			avs[i] = allowedValueToGQL(av)
-		}
-		input["newAllowedValues"] = avs
-	}
-
-	if len(in.NewAllowedEntityTypes) > 0 {
-		allowedTypeURNs := make([]string, len(in.NewAllowedEntityTypes))
-		for i, t := range in.NewAllowedEntityTypes {
-			allowedTypeURNs[i] = entityTypeURN(t)
-		}
-		input["typeQualifier"] = map[string]any{
-			"newAllowedTypes": allowedTypeURNs,
-		}
-	}
-
-	if in.Settings != nil {
-		input["settings"] = settingsToGQL(in.Settings)
-	}
-
-	body := map[string]any{
-		"query":     q,
-		"variables": map[string]any{"input": input},
-	}
-
-	var gqlResp genericGraphQLErrors
-	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return err
-	}
-	if len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
-	}
-	return nil
+	return c.writeStructuredProperty(ctx, urn, in)
 }
 
 // DeleteStructuredProperty hard-deletes a DataHub structured property by URN

@@ -41,185 +41,110 @@ type mockSPSettings struct {
 	ShowInColumnsTable          bool
 }
 
-// handleCreateStructuredProperty handles the createStructuredProperty GraphQL
-// mutation.
-func (s *mockServer) handleCreateStructuredProperty(w http.ResponseWriter, variables map[string]any) {
-	input, _ := variables["input"].(map[string]any)
-	id, _ := input["id"].(string)
-	if id == "" {
-		// Fallback to qualifiedName.
-		id, _ = input["qualifiedName"].(string)
-	}
-	urn := "urn:li:structuredProperty:" + id
-
-	sp := mockStructuredProperty{
-		URN:         urn,
-		ID:          id,
-		Cardinality: "SINGLE",
-	}
-
-	if dn, ok := input["displayName"].(string); ok {
-		sp.DisplayName = dn
-	}
-	if desc, ok := input["description"].(string); ok {
-		sp.Description = desc
-	}
-	if vt, ok := input["valueType"].(string); ok {
-		sp.ValueType = vt
-	}
-	if card, ok := input["cardinality"].(string); ok {
-		sp.Cardinality = card
-	}
-	if imm, ok := input["immutable"].(bool); ok {
-		sp.Immutable = imm
-	}
-
-	// Entity types.
-	if etRaw, ok := input["entityTypes"].([]any); ok {
-		for _, et := range etRaw {
-			if s, ok := et.(string); ok {
-				sp.EntityTypes = append(sp.EntityTypes, s)
-			}
-		}
-	}
-
-	// Allowed values.
-	if avRaw, ok := input["allowedValues"].([]any); ok {
-		for _, avAny := range avRaw {
-			av, _ := avAny.(map[string]any)
-			mav := mockAllowedValue{}
-			if sv, ok := av["stringValue"].(string); ok {
-				mav.StringValue = &sv
-			}
-			if nv, ok := av["numberValue"].(float64); ok {
-				mav.NumberValue = &nv
-			}
-			if d, ok := av["description"].(string); ok {
-				mav.Description = d
-			}
-			sp.AllowedValues = append(sp.AllowedValues, mav)
-		}
-	}
-
-	// typeQualifier.allowedTypes.
-	if tqRaw, ok := input["typeQualifier"].(map[string]any); ok {
-		if atRaw, ok := tqRaw["allowedTypes"].([]any); ok {
-			for _, at := range atRaw {
-				if s, ok := at.(string); ok {
-					sp.AllowedEntityTypes = append(sp.AllowedEntityTypes, s)
-				}
-			}
-		}
-	}
-
-	// Settings.
-	if settRaw, ok := input["settings"].(map[string]any); ok {
-		sp.Settings = extractMockSPSettings(settRaw)
-		sp.SettingsSet = true
-	}
-
-	s.mu.Lock()
-	s.structuredProperties[id] = sp
-	s.mu.Unlock()
-
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data": map[string]any{
-			"createStructuredProperty": map[string]any{"urn": urn},
-		},
-	})
-}
-
-// handleUpdateStructuredProperty handles the updateStructuredProperty GraphQL
-// mutation. Applies server append-only semantics: lists grow, scalar fields
-// are replaced, cardinality only widens.
-func (s *mockServer) handleUpdateStructuredProperty(w http.ResponseWriter, variables map[string]any) {
-	input, _ := variables["input"].(map[string]any)
-	urn, _ := input["urn"].(string)
-	id := strings.TrimPrefix(urn, "urn:li:structuredProperty:")
-
-	s.mu.Lock()
-	sp, ok := s.structuredProperties[id]
-	if !ok {
-		s.mu.Unlock()
-		http.Error(w, `{"errors":[{"message":"structured property not found"}]}`, http.StatusNotFound)
+// handleStructuredPropertyWrite serves POST /openapi/v3/entity/structuredproperty,
+// the full-aspect definition (+settings) upsert the provider performs for both
+// create and update. It fully replaces the stored entity from the payload,
+// mirroring the real OpenAPI v3 semantics - so if the provider ever dropped a
+// field from this write, the read-back would reflect the loss.
+func (s *mockServer) handleStructuredPropertyWrite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Scalar replacements.
-	if dn, ok := input["displayName"].(string); ok {
-		sp.DisplayName = dn
-	}
-	if desc, ok := input["description"].(string); ok {
-		sp.Description = desc
-	}
-	if imm, ok := input["immutable"].(bool); ok {
-		sp.Immutable = imm
-	}
-	// Cardinality: only widen.
-	if wide, ok := input["setCardinalityAsMultiple"].(bool); ok && wide {
-		sp.Cardinality = "MULTIPLE"
+	var entities []map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&entities); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
 	}
 
-	// Append-only: new entity types.
-	if etRaw, ok := input["newEntityTypes"].([]any); ok {
-		existingSet := make(map[string]bool)
-		for _, et := range sp.EntityTypes {
-			existingSet[et] = true
-		}
-		for _, et := range etRaw {
-			if s, ok := et.(string); ok && !existingSet[s] {
-				sp.EntityTypes = append(sp.EntityTypes, s)
-			}
-		}
-	}
+	s.mu.Lock()
+	for _, e := range entities {
+		urn, _ := e["urn"].(string)
+		id := strings.TrimPrefix(urn, "urn:li:structuredProperty:")
+		def := aspectValueMap(e["propertyDefinition"])
 
-	// Append-only: new allowed values.
-	if avRaw, ok := input["newAllowedValues"].([]any); ok {
-		for _, avAny := range avRaw {
-			av, _ := avAny.(map[string]any)
-			mav := mockAllowedValue{}
-			if sv, ok := av["stringValue"].(string); ok {
-				mav.StringValue = &sv
-			}
-			if nv, ok := av["numberValue"].(float64); ok {
-				mav.NumberValue = &nv
-			}
-			if d, ok := av["description"].(string); ok {
-				mav.Description = d
-			}
-			sp.AllowedValues = append(sp.AllowedValues, mav)
+		sp := mockStructuredProperty{URN: urn, ID: id, Cardinality: "SINGLE"}
+		if v, ok := def["qualifiedName"].(string); ok && v != "" {
+			sp.ID = v
 		}
-	}
+		if v, ok := def["displayName"].(string); ok {
+			sp.DisplayName = v
+		}
+		if v, ok := def["description"].(string); ok {
+			sp.Description = v
+		}
+		if v, ok := def["valueType"].(string); ok {
+			sp.ValueType = v
+		}
+		if v, ok := def["cardinality"].(string); ok && v != "" {
+			sp.Cardinality = v
+		}
+		if v, ok := def["immutable"].(bool); ok {
+			sp.Immutable = v
+		}
+		sp.EntityTypes = anySliceToStrings(def["entityTypes"])
 
-	// Append-only: new allowed entity types.
-	if tqRaw, ok := input["typeQualifier"].(map[string]any); ok {
-		if atRaw, ok := tqRaw["newAllowedTypes"].([]any); ok {
-			existingSet := make(map[string]bool)
-			for _, at := range sp.AllowedEntityTypes {
-				existingSet[at] = true
-			}
-			for _, at := range atRaw {
-				if s, ok := at.(string); ok && !existingSet[s] {
-					sp.AllowedEntityTypes = append(sp.AllowedEntityTypes, s)
+		if avRaw, ok := def["allowedValues"].([]any); ok {
+			for _, avAny := range avRaw {
+				av, _ := avAny.(map[string]any)
+				mav := mockAllowedValue{}
+				if valMap, ok := av["value"].(map[string]any); ok {
+					if sv, ok := valMap["string"].(string); ok {
+						mav.StringValue = &sv
+					}
+					if nv, ok := valMap["double"].(float64); ok {
+						mav.NumberValue = &nv
+					}
 				}
+				if d, ok := av["description"].(string); ok {
+					mav.Description = d
+				}
+				sp.AllowedValues = append(sp.AllowedValues, mav)
 			}
 		}
-	}
 
-	// Settings: full replace.
-	if settRaw, ok := input["settings"].(map[string]any); ok {
-		sp.Settings = extractMockSPSettings(settRaw)
-		sp.SettingsSet = true
-	}
+		if tqRaw, ok := def["typeQualifier"].(map[string]any); ok {
+			sp.AllowedEntityTypes = anySliceToStrings(tqRaw["allowedTypes"])
+		}
 
-	s.structuredProperties[id] = sp
+		if settVal := aspectValueMap(e["structuredPropertySettings"]); settVal != nil {
+			sp.Settings = extractMockSPSettings(settVal)
+			sp.SettingsSet = true
+		}
+
+		s.structuredProperties[sp.ID] = sp
+	}
 	s.mu.Unlock()
 
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"data": map[string]any{
-			"updateStructuredProperty": map[string]any{"urn": urn},
-		},
-	})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entities)
+}
+
+// aspectValueMap returns the inner "value" object of an OpenAPI aspect wrapper
+// ({"value": {...}}), or nil if the aspect is absent.
+func aspectValueMap(aspect any) map[string]any {
+	wrapper, ok := aspect.(map[string]any)
+	if !ok {
+		return nil
+	}
+	val, _ := wrapper["value"].(map[string]any)
+	return val
+}
+
+// anySliceToStrings converts a decoded JSON array to a []string.
+func anySliceToStrings(v any) []string {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // handleDeleteStructuredProperty handles the deleteStructuredProperty GraphQL
