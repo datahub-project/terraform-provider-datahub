@@ -8,6 +8,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
 )
@@ -21,6 +24,46 @@ func TestAssertionAssignmentRuleResource_lifecycle_mock(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.AssignmentRuleCheckDestroy,
 		Steps:                    datahubtesting.AssignmentRuleLifecycleSteps(),
+	})
+}
+
+// TestAssertionAssignmentRulesDataSource_mock exercises the plural data source
+// (Configure + Read) against the mock server: create one rule, then confirm the
+// data source enumerates its URN.
+func TestAssertionAssignmentRulesDataSource_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	const dsAddr = "data.datahub_assertion_assignment_rules.all"
+	const ruleURN = "urn:li:assertionAssignmentRule:tf-ds-test"
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: `
+provider "datahub" {}
+
+resource "datahub_assertion_assignment_rule" "test" {
+  rule_id = "tf-ds-test"
+  name    = "TF DS Test"
+  or_filters = [
+    { and = [ { field = "platform", values = ["urn:li:dataPlatform:postgres"] } ] }
+  ]
+  freshness = { source_type = "INFORMATION_SCHEMA" }
+}
+
+data "datahub_assertion_assignment_rules" "all" {
+  depends_on = [datahub_assertion_assignment_rule.test]
+}
+`,
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("urns"),
+						knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(ruleURN)})),
+				},
+			},
+		},
 	})
 }
 
