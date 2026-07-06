@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_service_account` resource: manages a DataHub service account (a non-human identity for CI/CD, ingestion, and automation). Requires DataHub Core >= 1.4.0 or DataHub Cloud, and the `Manage Users & Groups` privilege. A service account is a `corpUser` carrying a `SERVICE_ACCOUNT` subtype under a `service_` URN prefix; the resource takes a user-supplied `service_account_id` and writes the `corpUserKey`, `corpUserInfo`, and `subTypes` aspects via OpenAPI v3, yielding a deterministic `urn:li:corpuser:service_<service_account_id>`. It deliberately does not call the GraphQL `createServiceAccount` mutation, which mints a random UUID id incompatible with Terraform's declarative model (the same UUID-bypass used by `datahub_ownership_type` and `datahub_domain`). Read and import are subtype-guarded: the resource refuses to manage a `corpUser` that is not a service account. Access tokens are minted separately (Settings -> Access Tokens) and are not managed here.
+- `datahub_service_account` data source: looks up a service account by `service_account_id`, returning its URN and profile. Fails if the id resolves to a `corpUser` that is not a service account.
+- `datahub_service_accounts` data source: returns the URNs of all service accounts (via the `listServiceAccounts` GraphQL query), for feeding an `import {}` for-each block to bulk-import existing service accounts. Eventually consistent - use for enumeration, not authoritative reads.
+
 ## [0.12.0] - 2026-07-02
 
 ### Added

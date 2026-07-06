@@ -246,6 +246,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleGetInviteToken(w)
 	case strings.Contains(q, "removeUser"):
 		s.handleRemoveUser(w, req.Variables)
+	case strings.Contains(q, "listServiceAccounts"):
+		s.handleListServiceAccounts(w)
 	case strings.Contains(q, "listUsers"):
 		s.handleListUsers(w)
 	case strings.Contains(q, "removeGroup"):

@@ -1736,6 +1736,224 @@ func CorpUserCheckDestroy(s *terraform.State) error {
 }
 
 // ---------------------------------------------------------------------------
+// datahub_service_account resource + data source scenarios
+// ---------------------------------------------------------------------------
+
+// ServiceAccountLifecycleSteps covers create, in-place update, and import (by
+// bare id and by URN) for datahub_service_account.
+func ServiceAccountLifecycleSteps(id string) []resource.TestStep {
+	const addr = "datahub_service_account.test"
+	urn := "urn:li:corpuser:service_" + id
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "CI Bot"
+  description        = "Automation account"
+}
+`, id),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("service_account_id"), knownvalue.StringExact(id)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("CI Bot")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Automation account")),
+			},
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "CI Bot (updated)"
+  description        = "Updated automation account"
+}
+`, id),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("CI Bot (updated)")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Updated automation account")),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     id,
+			ImportStateVerify: true,
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateIdFunc: func(s *terraform.State) (string, error) {
+				rs, ok := s.RootModule().Resources[addr]
+				if !ok {
+					return "", fmt.Errorf("resource %s not found in state", addr)
+				}
+				return rs.Primary.Attributes["urn"], nil
+			},
+		},
+	}
+}
+
+// ServiceAccountRefuseNonSASteps verifies the resource refuses to import a
+// corpUser that is not a service account (missing the SERVICE_ACCOUNT subtype).
+// On mock, "service_faker" is a seeded service_-prefixed corpUser without the
+// subtype; on a live target it does not exist, which yields the same refusal.
+func ServiceAccountRefuseNonSASteps(id string) []resource.TestStep {
+	const addr = "datahub_service_account.probe"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "probe" {
+  service_account_id = %q
+}
+`, id),
+		},
+		{
+			ResourceName:  addr,
+			ImportState:   true,
+			ImportStateId: "service_faker",
+			ExpectError:   regexp.MustCompile(`not a service account`),
+		},
+	}
+}
+
+// ServiceAccountDataSourceSteps creates a service account and reads it back via
+// both the singular and bulk data sources in the same config. The bulk list is
+// exercised (listServiceAccounts) but its contents are not asserted because it
+// is eventually consistent on live targets; the singular lookup is strongly
+// consistent and is asserted.
+func ServiceAccountDataSourceSteps(id string) []resource.TestStep {
+	const dsAddr = "data.datahub_service_account.test"
+	urn := "urn:li:corpuser:service_" + id
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "DS Probe"
+}
+
+data "datahub_service_account" "test" {
+  service_account_id = datahub_service_account.test.service_account_id
+}
+
+data "datahub_service_accounts" "all" {
+  depends_on = [datahub_service_account.test]
+}
+`, id),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("service_account_id"), knownvalue.StringExact(id)),
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("display_name"), knownvalue.StringExact("DS Probe")),
+			},
+		},
+	}
+}
+
+// ServiceAccountCheckDestroy verifies that all datahub_service_account resources
+// have been removed from DataHub after terraform destroy.
+func ServiceAccountCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_service_account" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = rs.Primary.ID
+		}
+		sa, getErr := client.GetServiceAccountByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_service_account %q: %w", urn, getErr)
+		}
+		if sa != nil {
+			return fmt.Errorf("datahub_service_account %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
+// ServiceAccountRoleAssignmentSteps assigns a DataHub role to a service account
+// and then reads the account back via the data source. If the roleMembership
+// write had stripped the SERVICE_ACCOUNT subtype, the subtype-guarded data
+// source read would fail with "not a service account" - so a clean read proves
+// the role and subtype coexist. Mirrors the "SA disappears after adding a role"
+// customer report at the provider layer.
+func ServiceAccountRoleAssignmentSteps(id string) []resource.TestStep {
+	const dsAddr = "data.datahub_service_account.check"
+	urn := "urn:li:corpuser:service_" + id
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "Role Coexist"
+}
+
+data "datahub_role" "r" {
+  name = "Editor"
+}
+
+resource "datahub_role_assignment" "test" {
+  actor_urn = datahub_service_account.test.urn
+  role_urn  = data.datahub_role.r.urn
+}
+
+data "datahub_service_account" "check" {
+  service_account_id = datahub_service_account.test.service_account_id
+  depends_on         = [datahub_role_assignment.test]
+}
+`, id),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue("datahub_role_assignment.test", tfjsonpath.New("actor_urn"), knownvalue.StringExact(urn)),
+			},
+		},
+	}
+}
+
+// ServiceAccountAsPolicyActorSteps confirms a service account URN is accepted as
+// a datahub_policy actor - the config-modeling side of the "SA with assertion
+// privileges" scenario (the runtime 403 upserting assertions is a separate
+// DataHub backend concern, not something the provider can assert here).
+func ServiceAccountAsPolicyActorSteps(id, policyID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+	urn := "urn:li:corpuser:service_" + id
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "Policy Actor"
+}
+
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "SA Assertions Policy"
+  type       = "PLATFORM"
+  privileges = ["MANAGE_TESTS"]
+  actors = {
+    users = [datahub_service_account.test.urn]
+  }
+}
+`, id, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("actors").AtMapKey("users"),
+					knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(urn)})),
+			},
+		},
+	}
+}
+
+// ---------------------------------------------------------------------------
 // datahub_local_user_login resource scenarios
 // ---------------------------------------------------------------------------
 

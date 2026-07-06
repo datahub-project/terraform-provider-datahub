@@ -26,6 +26,7 @@ type mockUser struct {
 	HasCredentials bool
 	NativeGroups   []string
 	RoleURN        string
+	SubTypes       []string
 }
 
 // seedUsers pre-populates a couple of users so corp_user lookups, group
@@ -45,6 +46,24 @@ func (s *mockServer) seedUsers() {
 		URN:         "urn:li:corpuser:datahub",
 		Username:    "datahub",
 		DisplayName: "DataHub",
+		Active:      true,
+	}
+	// A seeded service account (corpUser + SERVICE_ACCOUNT subtype) for
+	// service-account data-source and import scenarios.
+	s.users["service_seed"] = mockUser{
+		URN:         "urn:li:corpuser:service_seed",
+		Username:    "service_seed",
+		DisplayName: "Seed Service Account",
+		Title:       "Seeded for tests",
+		Active:      true,
+		SubTypes:    []string{"SERVICE_ACCOUNT"},
+	}
+	// A service_-prefixed corpUser WITHOUT the subtype, to exercise the
+	// service-account resource's subtype guard (it must refuse to manage this).
+	s.users["service_faker"] = mockUser{
+		URN:         "urn:li:corpuser:service_faker",
+		Username:    "service_faker",
+		DisplayName: "Not Actually A Service Account",
 		Active:      true,
 	}
 }
@@ -98,6 +117,11 @@ func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) 
 			"value": map[string]any{"roles": []string{u.RoleURN}},
 		}
 	}
+	if len(u.SubTypes) > 0 {
+		entity["subTypes"] = map[string]any{
+			"value": map[string]any{"typeNames": u.SubTypes},
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
@@ -132,6 +156,11 @@ func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Req
 				Active      bool   `json:"active"`
 			} `json:"value"`
 		} `json:"corpUserInfo"`
+		SubTypes *struct {
+			Value struct {
+				TypeNames []string `json:"typeNames"`
+			} `json:"value"`
+		} `json:"subTypes"`
 	}
 	if err := json.Unmarshal(body, &entities); err != nil {
 		http.Error(w, "bad request body", http.StatusBadRequest)
@@ -160,6 +189,7 @@ func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Req
 			u.NativeGroups = existing.NativeGroups
 			u.RoleURN = existing.RoleURN
 			u.Status = existing.Status
+			u.SubTypes = existing.SubTypes
 		}
 		if e.Info != nil {
 			u.FullName = e.Info.Value.FullName
@@ -167,6 +197,9 @@ func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Req
 			u.Email = e.Info.Value.Email
 			u.Title = e.Info.Value.Title
 			u.Active = e.Info.Value.Active
+		}
+		if e.SubTypes != nil {
+			u.SubTypes = e.SubTypes.Value.TypeNames
 		}
 		s.users[username] = u
 	}
@@ -204,6 +237,35 @@ func (s *mockServer) handleListUsers(w http.ResponseWriter) {
 			"listUsers": map[string]any{
 				"total": len(users),
 				"users": users,
+			},
+		},
+	})
+}
+
+// handleListServiceAccounts handles the listServiceAccounts GraphQL query,
+// returning only corpUsers carrying the SERVICE_ACCOUNT subtype.
+func (s *mockServer) handleListServiceAccounts(w http.ResponseWriter) {
+	s.mu.Lock()
+	accounts := make([]map[string]any, 0)
+	for _, u := range s.users {
+		isSA := false
+		for _, t := range u.SubTypes {
+			if t == "SERVICE_ACCOUNT" {
+				isSA = true
+				break
+			}
+		}
+		if isSA {
+			accounts = append(accounts, map[string]any{"urn": u.URN})
+		}
+	}
+	s.mu.Unlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"listServiceAccounts": map[string]any{
+				"total":           len(accounts),
+				"serviceAccounts": accounts,
 			},
 		},
 	})
