@@ -3441,6 +3441,11 @@ resource "datahub_structured_property" "seed" {
   entity_types = ["dataset"]
   display_name = "Retention Days"
   description  = "Data retention period in days"
+
+  allowed_values = [
+    { number_value = 30,  description = "30 days" },
+    { number_value = 365, description = "1 year" },
+  ]
 }
 
 data "datahub_structured_property" "test" {
@@ -3453,6 +3458,8 @@ data "datahub_structured_property" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value_type"), knownvalue.StringExact("number")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Retention Days")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Data retention period in days")),
+				// Numeric allowed values round-trip (exercises the number/double write + read path).
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("allowed_values").AtSliceIndex(0).AtMapKey("number_value"), knownvalue.Float64Exact(30)),
 			},
 		},
 	}
@@ -3465,8 +3472,12 @@ func StructuredPropertyListSteps(propertyID string) []resource.TestStep {
 	cfg := providerBlock + fmt.Sprintf(`
 resource "datahub_structured_property" "test" {
   property_id  = %q
-  value_type   = "string"
+  value_type   = "urn"
   entity_types = ["dataset"]
+
+  # urn-typed property with a type qualifier, exercising the allowed_entity_types
+  # (typeQualifier.allowedTypes) write path.
+  allowed_entity_types = ["dataset", "dashboard"]
 }
 
 data "datahub_structured_properties" "all" {
