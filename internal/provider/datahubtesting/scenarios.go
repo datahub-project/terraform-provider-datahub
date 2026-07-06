@@ -3299,7 +3299,11 @@ func StructuredPropertyLifecycleSteps(propertyID string) []resource.TestStep {
 	return []resource.TestStep{
 		{
 			// Create: string-typed, single-valued, applies to datasets, with two
-			// allowed values and search-filter enabled.
+			// allowed values and search-filter enabled. One allowed value contains
+			// a "/" as a regression guard: the value is written via the OpenAPI v3
+			// entity endpoint, and a slash must survive the round-trip. (Writing it
+			// through the GraphQL patch mutation would fail, because the value lands
+			// unescaped in a JSON Pointer path - see the OpenAPI write path.)
 			Config: providerBlock + fmt.Sprintf(`
 resource "datahub_structured_property" "test" {
   property_id  = %q
@@ -3311,8 +3315,8 @@ resource "datahub_structured_property" "test" {
   description  = "Classifies data sensitivity"
 
   allowed_values = [
-    { string_value = "Public",   description = "Publicly accessible data" },
-    { string_value = "Internal", description = "Internal use only" },
+    { string_value = "Public",              description = "Publicly accessible data" },
+    { string_value = "Internal/Restricted", description = "Internal use only" },
   ]
 
   settings = {
@@ -3326,6 +3330,8 @@ resource "datahub_structured_property" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value_type"), knownvalue.StringExact("string")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("cardinality"), knownvalue.StringExact("SINGLE")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Data Classification")),
+				// The slash-bearing allowed value round-trips intact.
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("allowed_values").AtSliceIndex(1).AtMapKey("string_value"), knownvalue.StringExact("Internal/Restricted")),
 			},
 		},
 		{
@@ -3343,9 +3349,9 @@ resource "datahub_structured_property" "test" {
   description  = "Classifies data sensitivity and audience"
 
   allowed_values = [
-    { string_value = "Public",      description = "Publicly accessible data" },
-    { string_value = "Internal",    description = "Internal use only" },
-    { string_value = "Confidential", description = "Restricted access required" },
+    { string_value = "Public",              description = "Publicly accessible data" },
+    { string_value = "Internal/Restricted", description = "Internal use only" },
+    { string_value = "Confidential",        description = "Restricted access required" },
   ]
 
   settings = {
@@ -3378,8 +3384,8 @@ resource "datahub_structured_property" "test" {
   description  = "Classifies data sensitivity and audience"
 
   allowed_values = [
-    { string_value = "Public",   description = "Publicly accessible data" },
-    { string_value = "Internal", description = "Internal use only" },
+    { string_value = "Public",              description = "Publicly accessible data" },
+    { string_value = "Internal/Restricted", description = "Internal use only" },
   ]
 
   settings = {
