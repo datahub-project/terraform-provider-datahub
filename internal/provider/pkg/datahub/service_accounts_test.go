@@ -152,4 +152,115 @@ func TestListServiceAccountURNs(t *testing.T) {
 			t.Errorf("error = %v, want ErrServiceAccountsUnsupported", err)
 		}
 	})
+
+	t.Run("pagination", func(t *testing.T) {
+		call := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			page := [][]map[string]any{
+				{{"urn": "urn:li:corpuser:service_a"}},
+				{{"urn": "urn:li:corpuser:service_b"}},
+			}[call]
+			call++
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"listServiceAccounts": map[string]any{
+					"total": 2, "serviceAccounts": page,
+				}},
+			})
+		}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		urns, err := c.ListServiceAccountURNs(t.Context())
+		if err != nil {
+			t.Fatalf("error = %v", err)
+		}
+		if len(urns) != 2 || urns[1] != "urn:li:corpuser:service_b" {
+			t.Errorf("urns = %v, want [service_a service_b]", urns)
+		}
+	})
+
+	t.Run("forbidden", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		if _, err := c.ListServiceAccountURNs(t.Context()); err == nil {
+			t.Fatal("expected error for 403")
+		}
+	})
+
+	t.Run("server_error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		if _, err := c.ListServiceAccountURNs(t.Context()); err == nil {
+			t.Fatal("expected error for 500")
+		}
+	})
+}
+
+func TestUpsertServiceAccountErrors(t *testing.T) {
+	t.Run("subtype_unsupported", func(t *testing.T) {
+		// A pre-1.4.0 server rejects the subTypes aspect for corpUser.
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("aspect subTypes is not registered for entity corpuser"))
+		}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		_, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI", "")
+		if !errors.Is(err, ErrServiceAccountsUnsupported) {
+			t.Errorf("error = %v, want ErrServiceAccountsUnsupported", err)
+		}
+	})
+
+	t.Run("generic_error_passthrough", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+		}))
+		defer server.Close()
+		c := newTestClient(t, server)
+		_, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI", "")
+		if err == nil {
+			t.Fatal("expected error for 403")
+		}
+		if errors.Is(err, ErrServiceAccountsUnsupported) {
+			t.Errorf("403 should not map to ErrServiceAccountsUnsupported, got %v", err)
+		}
+	})
+}
+
+func TestGetServiceAccountByURNError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	c := newTestClient(t, server)
+	if _, err := c.GetServiceAccountByURN(t.Context(), "urn:li:corpuser:service_x"); err == nil {
+		t.Fatal("expected error passthrough for 403")
+	}
+}
+
+func TestIsServiceAccountsUnsupportedError(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		{"list_undefined", "Field 'listServiceAccounts' in type 'Query' is undefined", true},
+		{"fieldundefined_query_sa", "Validation error (FieldUndefined): Field 'x' in type 'Query': ServiceAccount", true},
+		{"subtypes_not_registered", "aspect subTypes is not registered for entity corpuser", true},
+		{"subtypes_unknown_aspect", "Unknown aspect subTypes", true},
+		{"unrelated", "DataHub rejected the request (HTTP 403)", false},
+		{"empty", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isServiceAccountsUnsupportedError(tc.msg); got != tc.want {
+				t.Errorf("isServiceAccountsUnsupportedError(%q) = %v, want %v", tc.msg, got, tc.want)
+			}
+		})
+	}
 }
