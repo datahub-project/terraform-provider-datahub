@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `datahub_service_account` data source: looks up a service account by `service_account_id`, returning its URN and profile. Fails if the id resolves to a `corpUser` that is not a service account.
 - `datahub_service_accounts` data source: returns the URNs of all service accounts (via the `listServiceAccounts` GraphQL query), for feeding an `import {}` for-each block to bulk-import existing service accounts. Eventually consistent - use for enumeration, not authoritative reads.
 
+### Fixed
+
+- `datahub_structured_property`: allowed values containing a `/` (or `~`) now write successfully. The create/update path previously used the GraphQL `createStructuredProperty`/`updateStructuredProperty` mutations, whose server-side JSON-Patch builder splices each allowed value into an unescaped RFC-6901 JSON Pointer path - so a value like `SITS/eVision` was parsed as nested path segments and the write failed with `Invalid format for aspect: structuredProperty ... /allowedValues/0/value :: field is required` (a DataHub server bug affecting both OSS and Cloud). The provider now writes the structured-property definition (and settings) aspect via the OpenAPI v3 entity endpoint, which has no patch step and stores such values correctly; this also aligns the write path with the resource's existing OpenAPI read path and with how `datahub_domain`, `datahub_tag`, and `datahub_data_product` are already written. The update path, previously sent as GraphQL deltas, now writes the full desired definition - safe because the plan modifiers force replacement (not update) on any list shrink or cardinality narrowing.
+
 ## [0.12.0] - 2026-07-02
 
 ### Added

@@ -496,13 +496,16 @@ func (r *structuredPropertyResource) Update(ctx context.Context, req resource.Up
 
 	urn := state.URN.ValueString()
 
-	in, diags := updateInputFromModels(ctx, urn, &plan, &state)
+	// The full desired state is written as a single OpenAPI aspect upsert (see
+	// the client). Plan modifiers force replacement on any list shrink or
+	// cardinality narrowing, so the plan here is always a superset/scalar change.
+	in, diags := createInputFromModel(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	if err := r.client.UpdateStructuredProperty(ctx, in); err != nil {
+	if err := r.client.UpdateStructuredProperty(ctx, urn, in); err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
 	}
@@ -621,96 +624,6 @@ func createInputFromModel(ctx context.Context, m *structuredPropertyResourceMode
 	}
 
 	return in, diags
-}
-
-// ---------- helper: update input from plan and state models ----------
-
-func updateInputFromModels(ctx context.Context, urn string, plan, state *structuredPropertyResourceModel) (datahub.UpdateStructuredPropertyInput, diag.Diagnostics) {
-	var diags diag.Diagnostics
-	in := datahub.UpdateStructuredPropertyInput{URN: urn}
-
-	// Scalar fields -- always send (full-replace semantics on the server).
-	in.DisplayName = strVal(plan.DisplayName)
-	in.Description = strVal(plan.Description)
-	immutable := plan.Immutable.ValueBool()
-	in.Immutable = &immutable
-
-	// Cardinality: only send the widening flag; narrowing is caught at plan time.
-	if plan.Cardinality.ValueString() == "MULTIPLE" && state.Cardinality.ValueString() == "SINGLE" {
-		in.SetCardinalityMultiple = true
-	}
-
-	// Entity types: compute delta (plan - state).
-	planEntityTypes, d := setToStrings(ctx, plan.EntityTypes)
-	diags.Append(d...)
-	stateEntityTypes, d := setToStrings(ctx, state.EntityTypes)
-	diags.Append(d...)
-	in.NewEntityTypes = setDiff(planEntityTypes, stateEntityTypes)
-
-	// Allowed values: compute delta (plan items not in state).
-	var planAVModels, stateAVModels []allowedValueModel
-	if !plan.AllowedValues.IsNull() && !plan.AllowedValues.IsUnknown() {
-		diags.Append(plan.AllowedValues.ElementsAs(ctx, &planAVModels, false)...)
-	}
-	if !state.AllowedValues.IsNull() && !state.AllowedValues.IsUnknown() {
-		diags.Append(state.AllowedValues.ElementsAs(ctx, &stateAVModels, false)...)
-	}
-	in.NewAllowedValues = allowedValueDiff(modelsToAllowedValues(planAVModels), modelsToAllowedValues(stateAVModels))
-
-	// Allowed entity types: compute delta.
-	planAllowedTypes, d := setToStrings(ctx, plan.AllowedEntityTypes)
-	diags.Append(d...)
-	stateAllowedTypes, d := setToStrings(ctx, state.AllowedEntityTypes)
-	diags.Append(d...)
-	in.NewAllowedEntityTypes = setDiff(planAllowedTypes, stateAllowedTypes)
-
-	// Settings: always send if present.
-	if plan.Settings != nil {
-		in.Settings = settingsModelToClient(plan.Settings)
-	}
-
-	return in, diags
-}
-
-// setDiff returns elements in a that are not in b.
-func setDiff(a, b []string) []string {
-	bSet := make(map[string]bool, len(b))
-	for _, v := range b {
-		bSet[v] = true
-	}
-	var result []string
-	for _, v := range a {
-		if !bSet[v] {
-			result = append(result, v)
-		}
-	}
-	return result
-}
-
-// allowedValueKey returns a canonical string key for an AllowedValue.
-func allowedValueKey(av datahub.AllowedValue) string {
-	if av.StringValue != nil {
-		return "s:" + *av.StringValue
-	}
-	if av.NumberValue != nil {
-		return fmt.Sprintf("n:%v", *av.NumberValue)
-	}
-	return "empty"
-}
-
-// allowedValueDiff returns elements in plan that are not in state (by value key).
-func allowedValueDiff(plan, state []datahub.AllowedValue) []datahub.AllowedValue {
-	stateKeys := make(map[string]bool, len(state))
-	for _, av := range state {
-		stateKeys[allowedValueKey(av)] = true
-	}
-	var result []datahub.AllowedValue
-	for _, av := range plan {
-		if !stateKeys[allowedValueKey(av)] {
-			result = append(result, av)
-		}
-	}
-	return result
 }
 
 // modelsToAllowedValues converts []allowedValueModel to []datahub.AllowedValue.
