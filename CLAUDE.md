@@ -76,6 +76,8 @@ Rationale: aligning the TF surface with DataHub's URN/aspect/OpenAPI vocabulary 
 
 The resource `datahub_ingestion_source` follows this rule: it maps to URN type `dataHubIngestionSource`, the OpenAPI path `/openapi/v3/entity/datahubingestionsource`, and the aspect names `dataHubIngestionSourceKey` / `dataHubIngestionSourceInfo`.
 
+Discretion example - `datahub_service_account`: a service account has no distinct URN entity type. It is a `corpUser` distinguished by a `subTypes` aspect containing `SERVICE_ACCOUNT`, under a `service_` URN-id prefix (`urn:li:corpuser:service_<id>`). The resource is named for the DataHub UI/product concept ("Service Accounts") rather than the underlying `corpUser` type, because naming it `datahub_corp_user_*` would obscure the feature and collide with the human-user resource. It reuses the corpUser OpenAPI v3 transport but is a separate resource with its own subtype guard.
+
 ## Build and development
 
 - Go module: `github.com/datahub-project/terraform-provider-datahub`

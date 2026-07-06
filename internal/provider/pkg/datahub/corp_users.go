@@ -23,9 +23,11 @@ type CorpUser struct {
 	DisplayName  string
 	Email        string
 	Title        string
+	InfoTitle    string // raw corpUserInfo.title, before corpUserEditableInfo shadows it
 	Active       bool
 	Status       string   // from corpUserStatus.status; empty when the aspect is absent
 	NativeGroups []string // group URNs from nativeGroupMembership
+	SubTypes     []string // typeNames from the subTypes aspect (e.g. "SERVICE_ACCOUNT")
 }
 
 // UpsertCorpUserInput carries the fields for creating or updating a corpUser
@@ -36,6 +38,10 @@ type UpsertCorpUserInput struct {
 	DisplayName string
 	Email       string
 	Title       string
+	// SubTypes, when non-empty, writes the subTypes aspect (typeNames). Used to
+	// mark a corpUser as a service account ("SERVICE_ACCOUNT"). Leave nil for
+	// ordinary human users so their subTypes aspect is untouched.
+	SubTypes []string
 }
 
 // corpUserEntity is the OpenAPI v3 response shape for
@@ -73,6 +79,11 @@ type corpUserEntity struct {
 			NativeGroups []string `json:"nativeGroups"`
 		} `json:"value"`
 	} `json:"nativeGroupMembership,omitempty"`
+	SubTypes *struct {
+		Value struct {
+			TypeNames []string `json:"typeNames"`
+		} `json:"value"`
+	} `json:"subTypes,omitempty"`
 }
 
 // GetUserByURN fetches a DataHub user directly by URN via the OpenAPI v3 entity
@@ -138,6 +149,7 @@ func (c *Client) GetUserByURN(ctx context.Context, urn string) (*CorpUser, error
 		user.DisplayName = entity.Info.Value.DisplayName
 		user.Email = entity.Info.Value.Email
 		user.Title = entity.Info.Value.Title
+		user.InfoTitle = entity.Info.Value.Title
 		user.Active = entity.Info.Value.Active
 	}
 	// editableInfo (UI edits) wins for email and title when populated.
@@ -154,6 +166,9 @@ func (c *Client) GetUserByURN(ctx context.Context, urn string) (*CorpUser, error
 	}
 	if entity.NativeGroupMembership != nil {
 		user.NativeGroups = entity.NativeGroupMembership.Value.NativeGroups
+	}
+	if entity.SubTypes != nil {
+		user.SubTypes = entity.SubTypes.Value.TypeNames
 	}
 
 	return user, nil
@@ -189,19 +204,28 @@ func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (st
 		infoValue["title"] = in.Title
 	}
 
-	entity := []map[string]any{
-		{
-			"urn": urn,
-			"corpUserKey": map[string]any{
-				"value": map[string]any{
-					"username": in.Username,
-				},
-			},
-			"corpUserInfo": map[string]any{
-				"value": infoValue,
+	aspects := map[string]any{
+		"urn": urn,
+		"corpUserKey": map[string]any{
+			"value": map[string]any{
+				"username": in.Username,
 			},
 		},
+		"corpUserInfo": map[string]any{
+			"value": infoValue,
+		},
 	}
+	// Only write the subTypes aspect when requested (service accounts). Omitting
+	// it leaves an ordinary user's subTypes untouched.
+	if len(in.SubTypes) > 0 {
+		aspects["subTypes"] = map[string]any{
+			"value": map[string]any{
+				"typeNames": in.SubTypes,
+			},
+		}
+	}
+
+	entity := []map[string]any{aspects}
 
 	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/corpuser?async=false", entity)
 	if err != nil {

@@ -384,6 +384,24 @@ func init() {
 		OSSCompatible:      true,
 	})
 
+	// Service accounts are corpUsers carrying the SERVICE_ACCOUNT subtype;
+	// enumerated via listServiceAccounts. OSS-compatible on DataHub Core >= 1.4.0.
+	// The import ID is the service_-prefixed username (corpuser prefix stripped);
+	// ImportState re-forms the URN and the resource records the bare id.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_service_account",
+		DataSourceTypeName: "datahub_service_accounts",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListServiceAccountURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing service account URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:corpuser:") },
+		OSSCompatible: true,
+	})
+
 	// --- Required+WriteOnly: must be registered LAST (see ordering note above) ---
 
 	importtarget.Register(importtarget.Target{
