@@ -37,3 +37,31 @@ func TestAcc_ServiceAccount_RefuseNonServiceAccount(t *testing.T) {
 		Steps:                    datahubtesting.ServiceAccountRefuseNonSASteps(id),
 	})
 }
+
+// TestAcc_ServiceAccount_RoleAssignmentCoexist assigns a role to a service
+// account and confirms it is still recognized as a service account afterward
+// (subtype and roleMembership coexist).
+func TestAcc_ServiceAccount_RoleAssignmentCoexist(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	id := tg.Name("tfprovider-sa-role")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.ServiceAccountCheckDestroy,
+		Steps:                    datahubtesting.ServiceAccountRoleAssignmentSteps(id),
+	})
+}
+
+// TestAcc_ServiceAccount_AsPolicyActor confirms a service account URN is
+// accepted as a datahub_policy actor.
+func TestAcc_ServiceAccount_AsPolicyActor(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	id := tg.Name("tfprovider-sa-pol")
+	policyID := tg.Name("tf-example-sa-policy")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.ServiceAccountCheckDestroy,
+		Steps:                    datahubtesting.ServiceAccountAsPolicyActorSteps(id, policyID),
+	})
+}

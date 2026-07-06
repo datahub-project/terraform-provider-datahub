@@ -243,6 +243,79 @@ func TestGetServiceAccountByURNError(t *testing.T) {
 	}
 }
 
+// TestServiceAccountSubtypePreservedAcrossCorpUserUpdate is the provider-level
+// analogue of the "service account disappears / stops being an SA after another
+// operation" class of customer bug. It uses a stateful server that models
+// OpenAPI v3 per-aspect merge (a POST updates only the aspects it carries;
+// others are preserved). It asserts that a later corpUserInfo-only write to the
+// same URN -- a UI edit, or a human-user-style update -- does NOT strip the
+// SERVICE_ACCOUNT subtype, because our UpsertCorpUser only sends the subTypes
+// aspect when it is explicitly set.
+func TestServiceAccountSubtypePreservedAcrossCorpUserUpdate(t *testing.T) {
+	store := map[string]map[string]json.RawMessage{} // urn -> aspectName -> raw {"value":...}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			var ents []map[string]json.RawMessage
+			_ = json.Unmarshal(body, &ents)
+			for _, e := range ents {
+				var urn string
+				_ = json.Unmarshal(e["urn"], &urn)
+				cur := store[urn]
+				if cur == nil {
+					cur = map[string]json.RawMessage{}
+				}
+				for k, v := range e {
+					if k == "urn" {
+						continue
+					}
+					cur[k] = v // merge: only aspects present in the payload change
+				}
+				store[urn] = cur
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("[]"))
+			return
+		}
+		urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/corpuser/")
+		cur, ok := store[urn]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		out := map[string]any{"urn": urn}
+		for k, v := range cur {
+			out[k] = v
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	}))
+	defer server.Close()
+	c := newTestClient(t, server)
+
+	// 1. Create the service account (writes corpUserKey + corpUserInfo + subTypes).
+	if _, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI Bot", "desc"); err != nil {
+		t.Fatalf("UpsertServiceAccount: %v", err)
+	}
+	// 2. An unrelated corpUserInfo-only write to the same URN, with no subTypes.
+	if _, err := c.UpsertCorpUser(t.Context(), UpsertCorpUserInput{
+		Username:    "service_ci-bot",
+		DisplayName: "Changed Externally",
+	}); err != nil {
+		t.Fatalf("UpsertCorpUser: %v", err)
+	}
+	// 3. Still recognized as a service account, with the external change applied.
+	sa, err := c.GetServiceAccountByURN(t.Context(), "urn:li:corpuser:service_ci-bot")
+	if err != nil {
+		t.Fatalf("GetServiceAccountByURN: %v", err)
+	}
+	if sa == nil {
+		t.Fatal("service account lost its SERVICE_ACCOUNT subtype after a corpUserInfo-only update")
+	}
+	if sa.DisplayName != "Changed Externally" {
+		t.Errorf("displayName = %q, want Changed Externally", sa.DisplayName)
+	}
+}
+
 func TestIsServiceAccountsUnsupportedError(t *testing.T) {
 	cases := []struct {
 		name string

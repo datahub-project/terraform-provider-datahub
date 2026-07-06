@@ -1879,6 +1879,80 @@ func ServiceAccountCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// ServiceAccountRoleAssignmentSteps assigns a DataHub role to a service account
+// and then reads the account back via the data source. If the roleMembership
+// write had stripped the SERVICE_ACCOUNT subtype, the subtype-guarded data
+// source read would fail with "not a service account" - so a clean read proves
+// the role and subtype coexist. Mirrors the "SA disappears after adding a role"
+// customer report at the provider layer.
+func ServiceAccountRoleAssignmentSteps(id string) []resource.TestStep {
+	const dsAddr = "data.datahub_service_account.check"
+	urn := "urn:li:corpuser:service_" + id
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "Role Coexist"
+}
+
+data "datahub_role" "r" {
+  name = "Editor"
+}
+
+resource "datahub_role_assignment" "test" {
+  actor_urn = datahub_service_account.test.urn
+  role_urn  = data.datahub_role.r.urn
+}
+
+data "datahub_service_account" "check" {
+  service_account_id = datahub_service_account.test.service_account_id
+  depends_on         = [datahub_role_assignment.test]
+}
+`, id),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(dsAddr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue("datahub_role_assignment.test", tfjsonpath.New("actor_urn"), knownvalue.StringExact(urn)),
+			},
+		},
+	}
+}
+
+// ServiceAccountAsPolicyActorSteps confirms a service account URN is accepted as
+// a datahub_policy actor - the config-modeling side of the "SA with assertion
+// privileges" scenario (the runtime 403 upserting assertions is a separate
+// DataHub backend concern, not something the provider can assert here).
+func ServiceAccountAsPolicyActorSteps(id, policyID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+	urn := "urn:li:corpuser:service_" + id
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "Policy Actor"
+}
+
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "SA Assertions Policy"
+  type       = "PLATFORM"
+  privileges = ["MANAGE_TESTS"]
+  actors = {
+    users = [datahub_service_account.test.urn]
+  }
+}
+`, id, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("actors").AtMapKey("users"),
+					knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact(urn)})),
+			},
+		},
+	}
+}
+
 // ---------------------------------------------------------------------------
 // datahub_local_user_login resource scenarios
 // ---------------------------------------------------------------------------
