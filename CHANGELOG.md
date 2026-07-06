@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-06
+
 ### Added
 
 - `datahub_service_account` resource: manages a DataHub service account (a non-human identity for CI/CD, ingestion, and automation). Requires DataHub Core >= 1.4.0 or DataHub Cloud, and the `Manage Users & Groups` privilege. A service account is a `corpUser` carrying a `SERVICE_ACCOUNT` subtype under a `service_` URN prefix; the resource takes a user-supplied `service_account_id` and writes the `corpUserKey`, `corpUserInfo`, and `subTypes` aspects via OpenAPI v3, yielding a deterministic `urn:li:corpuser:service_<service_account_id>`. It deliberately does not call the GraphQL `createServiceAccount` mutation, which mints a random UUID id incompatible with Terraform's declarative model (the same UUID-bypass used by `datahub_ownership_type` and `datahub_domain`). Read and import are subtype-guarded: the resource refuses to manage a `corpUser` that is not a service account. Access tokens are minted separately (Settings -> Access Tokens) and are not managed here.
@@ -243,7 +245,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.9.0...v0.10.0
