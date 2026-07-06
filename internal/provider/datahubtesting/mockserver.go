@@ -84,6 +84,7 @@ type mockServer struct {
 	dataProducts         map[string]mockDataProduct
 	assertions           map[string]mockAssertion
 	actionPipelines      map[string]mockActionPipeline
+	assignmentRules      map[string]mockAssignmentRule
 	defaultPoolID        string
 	inviteToken          string
 	resetTokens          map[string]string
@@ -115,6 +116,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		dataProducts:         make(map[string]mockDataProduct),
 		assertions:           make(map[string]mockAssertion),
 		actionPipelines:      make(map[string]mockActionPipeline),
+		assignmentRules:      make(map[string]mockAssignmentRule),
 		inviteToken:          "mock-invite-token-001",
 		resetTokens:          make(map[string]string),
 		failDeleteFor:        make(map[string]struct{}),
@@ -142,6 +144,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/dataproduct/", s.handleDataProductItem)
 	mux.HandleFunc("/openapi/v3/entity/assertion/", s.handleAssertionItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubaction/", s.handleActionPipelineItem)
+	mux.HandleFunc("/openapi/v3/entity/assertionassignmentrule/", s.handleAssignmentRuleItem)
 	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
@@ -284,6 +287,14 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleListActionPipelines(w, req.Variables)
 	case strings.Contains(q, "getAssertionMonitor"):
 		s.handleGetAssertionMonitor(w, req.Variables)
+	case strings.Contains(q, "createAssertionAssignmentRule"):
+		s.handleCreateAssignmentRule(w, req.Variables)
+	case strings.Contains(q, "updateAssertionAssignmentRule"):
+		s.handleUpdateAssignmentRule(w, req.Variables)
+	case strings.Contains(q, "deleteAssertionAssignmentRule"):
+		s.handleDeleteAssignmentRule(w, req.Variables)
+	case strings.Contains(q, "listAssertionAssignmentRules"):
+		s.handleListAssignmentRules(w)
 	case strings.Contains(q, "deleteAssertion"):
 		s.handleDeleteAssertion(w, req.Variables)
 	case strings.Contains(q, "createRemoteExecutorPool"):

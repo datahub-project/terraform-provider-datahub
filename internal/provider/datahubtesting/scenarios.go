@@ -4912,3 +4912,99 @@ resource "datahub_volume_assertion" "test" {
 		{Config: cfg},
 	}
 }
+
+// AssignmentRuleLifecycleSteps returns test steps for an assertion assignment
+// rule: create a freshness-only rule targeting a platform, update it to add a
+// volume config and flip the mode to DISABLED, then import and verify.
+func AssignmentRuleLifecycleSteps() []resource.TestStep {
+	const addr = "datahub_assertion_assignment_rule.test"
+	const ruleURN = datahub.AssertionAssignmentRuleURNPrefix + "tf-example-postgres-monitors"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_assertion_assignment_rule" "test" {
+  rule_id = "tf-example-postgres-monitors"
+  name    = "TF Example - Postgres Monitors"
+  or_filters = [
+    {
+      and = [
+        { field = "platform", values = ["urn:li:dataPlatform:postgres"] }
+      ]
+    }
+  ]
+  freshness = {
+    source_type        = "INFORMATION_SCHEMA"
+    on_failure_actions = ["RAISE_INCIDENT"]
+  }
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(ruleURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("rule_id"), knownvalue.StringExact("tf-example-postgres-monitors")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("mode"), knownvalue.StringExact("ENABLED")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("query"), knownvalue.StringExact("*")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("or_filters").AtSliceIndex(0).AtMapKey("and").AtSliceIndex(0).AtMapKey("condition"), knownvalue.StringExact("EQUAL")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume"), knownvalue.Null()),
+			},
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_assertion_assignment_rule" "test" {
+  rule_id = "tf-example-postgres-monitors"
+  name    = "TF Example - Postgres Monitors"
+  mode    = "DISABLED"
+  or_filters = [
+    {
+      and = [
+        { field = "platform", values = ["urn:li:dataPlatform:postgres"] }
+      ]
+    }
+  ]
+  freshness = {
+    source_type        = "INFORMATION_SCHEMA"
+    on_failure_actions = ["RAISE_INCIDENT"]
+  }
+  volume = {
+    source_type = "INFORMATION_SCHEMA"
+  }
+}
+`,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("mode"), knownvalue.StringExact("DISABLED")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume").AtMapKey("source_type"), knownvalue.StringExact("INFORMATION_SCHEMA")),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// AssignmentRuleCheckDestroy verifies every datahub_assertion_assignment_rule is removed.
+func AssignmentRuleCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_assertion_assignment_rule" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = datahub.AssertionAssignmentRuleURNPrefix + rs.Primary.Attributes["rule_id"]
+		}
+		info, getErr := client.GetAssertionAssignmentRuleByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking assignment rule %q: %w", urn, getErr)
+		}
+		if info != nil {
+			return fmt.Errorf("assertion assignment rule %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
