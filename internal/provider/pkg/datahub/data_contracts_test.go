@@ -101,6 +101,74 @@ func TestUpsertDataContract_DerivesID(t *testing.T) {
 	}
 }
 
+// TestGetDataContractByURN_EmptyEntity verifies that a 200 response with neither
+// key nor properties (an entity that exists only as a tombstone) reads as nil.
+func TestGetDataContractByURN_EmptyEntity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"urn":"urn:li:dataContract:x"}`))
+	}))
+	defer server.Close()
+
+	dc, err := newTestClient(t, server).GetDataContractByURN(t.Context(), "urn:li:dataContract:x")
+	if err != nil {
+		t.Fatalf("GetDataContractByURN() error = %v", err)
+	}
+	if dc != nil {
+		t.Errorf("GetDataContractByURN() = %+v, want nil for empty entity", dc)
+	}
+}
+
+// TestGetDataContractByURN_ServerError verifies a 5xx surfaces an error.
+func TestGetDataContractByURN_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server).GetDataContractByURN(t.Context(), "urn:li:dataContract:x")
+	if err == nil {
+		t.Error("GetDataContractByURN() error = nil, want error for HTTP 500")
+	}
+}
+
+// TestDeleteDataContract verifies the OpenAPI DELETE is idempotent (404 -> nil)
+// and surfaces other HTTP errors.
+func TestDeleteDataContract(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodDelete {
+				t.Errorf("method = %s, want DELETE", r.Method)
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+		if err := newTestClient(t, server).DeleteDataContract(t.Context(), "urn:li:dataContract:x"); err != nil {
+			t.Errorf("DeleteDataContract() error = %v", err)
+		}
+	})
+
+	t.Run("not found is idempotent", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.NotFound(w, nil)
+		}))
+		defer server.Close()
+		if err := newTestClient(t, server).DeleteDataContract(t.Context(), "urn:li:dataContract:x"); err != nil {
+			t.Errorf("DeleteDataContract() error = %v, want nil for 404", err)
+		}
+	})
+
+	t.Run("server error surfaces", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+		if err := newTestClient(t, server).DeleteDataContract(t.Context(), "urn:li:dataContract:x"); err == nil {
+			t.Error("DeleteDataContract() error = nil, want error for HTTP 500")
+		}
+	})
+}
+
 // TestUpsertDataContract_APIError verifies a GraphQL error is surfaced.
 func TestUpsertDataContract_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

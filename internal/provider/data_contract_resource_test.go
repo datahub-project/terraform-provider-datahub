@@ -5,6 +5,7 @@ package provider_test
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 
@@ -81,6 +82,47 @@ resource "datahub_data_contract" "test" {
 				ResourceName:      addr,
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+// TestDataContractResource_recreateOnDrift_mock verifies that when a contract is
+// deleted out-of-band, Read detects the 404 and removes it from state, so the
+// next plan is non-empty (a recreate).
+func TestDataContractResource_recreateOnDrift_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	wantURN := mustContractURN(t, mockDataset)
+	cfg := fmt.Sprintf(`
+provider "datahub" {}
+
+resource "datahub_data_contract" "test" {
+  dataset_urn                 = %q
+  data_quality_assertion_urns = ["urn:li:assertion:tf-example-dq"]
+}
+`, mockDataset)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: cfg},
+			{
+				// Delete the contract directly on the mock, then refresh: the
+				// provider must drop it from state and plan a recreate.
+				PreConfig: func() {
+					req, _ := http.NewRequestWithContext(t.Context(), http.MethodDelete,
+						server.URL+"/openapi/v3/entity/datacontract/"+wantURN, nil)
+					resp, err := http.DefaultClient.Do(req)
+					if err != nil {
+						t.Fatalf("out-of-band delete failed: %v", err)
+					}
+					_ = resp.Body.Close()
+				},
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
 			},
 		},
 	})
