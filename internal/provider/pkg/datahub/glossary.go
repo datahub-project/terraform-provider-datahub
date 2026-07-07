@@ -15,22 +15,24 @@ import (
 
 // GlossaryNode is the read-shape returned by GetGlossaryNodeByURN.
 type GlossaryNode struct {
-	URN        string
-	ID         string
-	Name       string
-	Definition string // mapped to "description" in the Terraform schema
-	ParentNode string // full glossaryNode URN, or ""
-	Domain     string // full domain URN, or ""
+	URN              string
+	ID               string
+	Name             string
+	Definition       string // mapped to "description" in the Terraform schema
+	ParentNode       string // full glossaryNode URN, or ""
+	Domain           string // full domain URN, or ""
+	CustomProperties map[string]string
 }
 
 // GlossaryTerm is the read-shape returned by GetGlossaryTermByURN.
 type GlossaryTerm struct {
-	URN        string
-	ID         string
-	Name       string
-	Definition string // mapped to "description" in the Terraform schema
-	ParentNode string // full glossaryNode URN, or ""
-	Domain     string // full domain URN, or ""
+	URN              string
+	ID               string
+	Name             string
+	Definition       string // mapped to "description" in the Terraform schema
+	ParentNode       string // full glossaryNode URN, or ""
+	Domain           string // full domain URN, or ""
+	CustomProperties map[string]string
 }
 
 // CreateGlossaryEntityInput groups the inputs for creating a DataHub glossary
@@ -74,9 +76,10 @@ type glossaryNodeEntity struct {
 	} `json:"glossaryNodeKey,omitempty"`
 	Info *struct {
 		Value struct {
-			Name       string `json:"name"`
-			Definition string `json:"definition"`
-			ParentNode string `json:"parentNode"`
+			Name             string            `json:"name"`
+			Definition       string            `json:"definition"`
+			ParentNode       string            `json:"parentNode"`
+			CustomProperties map[string]string `json:"customProperties"`
 		} `json:"value"`
 	} `json:"glossaryNodeInfo,omitempty"`
 	Domains *domainsAspect `json:"domains,omitempty"`
@@ -94,9 +97,10 @@ type glossaryTermEntity struct {
 	} `json:"glossaryTermKey,omitempty"`
 	Info *struct {
 		Value struct {
-			Name       string `json:"name"`
-			Definition string `json:"definition"`
-			ParentNode string `json:"parentNode"`
+			Name             string            `json:"name"`
+			Definition       string            `json:"definition"`
+			ParentNode       string            `json:"parentNode"`
+			CustomProperties map[string]string `json:"customProperties"`
 		} `json:"value"`
 	} `json:"glossaryTermInfo,omitempty"`
 	Domains *domainsAspect `json:"domains,omitempty"`
@@ -175,6 +179,92 @@ func (c *Client) CreateGlossaryTerm(ctx context.Context, in CreateGlossaryEntity
 	return c.createGlossaryEntity(ctx, "createGlossaryTerm", "urn:li:glossaryTerm:", in)
 }
 
+// setGlossaryProperties writes the glossaryNodeInfo/glossaryTermInfo aspect for a
+// glossary entity via the OpenAPI v3 entity endpoint. This is how
+// customProperties reaches DataHub: the GraphQL createGlossaryNode/
+// createGlossaryTerm mutations do not carry customProperties.
+//
+// The write replaces the whole info aspect, so every field the aspect owns must
+// be passed through or it is clobbered. name and definition are always sent
+// (definition is a required field of both aspects). parentNode is sent when
+// non-empty. extra carries aspect-specific required fields (glossaryTermInfo has
+// a required termSource with no GraphQL-create analog, supplied as "INTERNAL").
+// The domains aspect is separate (setDomain), so it is not touched here.
+func (c *Client) setGlossaryProperties(ctx context.Context, entityPath, aspectName, urn, name, definition, parentNode string, extra map[string]any, customProperties map[string]string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	urn = strings.TrimSpace(urn)
+	name = strings.TrimSpace(name)
+	if urn == "" {
+		return errors.New("URN is required")
+	}
+	if name == "" {
+		return errors.New("name is required")
+	}
+
+	infoValue := map[string]any{
+		"name": name,
+		// definition is a required field of the info aspect; always send it (even
+		// empty) so the aspect write validates.
+		"definition": definition,
+	}
+	if parentNode != "" {
+		infoValue["parentNode"] = parentNode
+	}
+	for k, v := range extra {
+		infoValue[k] = v
+	}
+	// Always include customProperties (even empty) so that clearing the map
+	// overwrites a previously-set value rather than leaving it in place.
+	if customProperties == nil {
+		customProperties = map[string]string{}
+	}
+	infoValue["customProperties"] = customProperties
+
+	entity := map[string]any{
+		"urn":      urn,
+		aspectName: map[string]any{"value": infoValue},
+	}
+	payload := []map[string]any{entity}
+
+	path := fmt.Sprintf("/openapi/v3/entity/%s?async=false", entityPath)
+	req, err := c.NewRequest(ctx, http.MethodPost, path, payload)
+	if err != nil {
+		return fmt.Errorf("building glossary properties write request: %w", err)
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return fmt.Errorf("glossary properties write request failed: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_GLOSSARIES privilege", res.StatusCode)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("unexpected HTTP %d from DataHub glossary write API: %s", res.StatusCode, respBody)
+	}
+	return nil
+}
+
+// SetGlossaryNodeProperties writes the glossaryNodeInfo aspect (carrying
+// customProperties) for a glossary node. name/definition/parentNode are passed
+// through to avoid clobbering the values the GraphQL mutations set.
+func (c *Client) SetGlossaryNodeProperties(ctx context.Context, urn, name, definition, parentNode string, customProperties map[string]string) error {
+	return c.setGlossaryProperties(ctx, "glossarynode", "glossaryNodeInfo", urn, name, definition, parentNode, nil, customProperties)
+}
+
+// SetGlossaryTermProperties writes the glossaryTermInfo aspect (carrying
+// customProperties) for a glossary term. glossaryTermInfo has a required
+// termSource field with no GraphQL-create analog (the server defaults it to
+// INTERNAL), so it is supplied explicitly here to satisfy the full-aspect write.
+func (c *Client) SetGlossaryTermProperties(ctx context.Context, urn, name, definition, parentNode string, customProperties map[string]string) error {
+	return c.setGlossaryProperties(ctx, "glossaryterm", "glossaryTermInfo", urn, name, definition, parentNode, map[string]any{"termSource": "INTERNAL"}, customProperties)
+}
+
 // GetGlossaryNodeByURN fetches a DataHub glossary node directly by URN via the
 // OpenAPI v3 entity endpoint (MySQL, strongly consistent). Returns nil (no
 // error) on 404.
@@ -232,6 +322,9 @@ func (c *Client) GetGlossaryNodeByURN(ctx context.Context, urn string) (*Glossar
 		node.Name = entity.Info.Value.Name
 		node.Definition = entity.Info.Value.Definition
 		node.ParentNode = entity.Info.Value.ParentNode
+		if len(entity.Info.Value.CustomProperties) > 0 {
+			node.CustomProperties = entity.Info.Value.CustomProperties
+		}
 	}
 	return node, nil
 }
@@ -293,6 +386,9 @@ func (c *Client) GetGlossaryTermByURN(ctx context.Context, urn string) (*Glossar
 		term.Name = entity.Info.Value.Name
 		term.Definition = entity.Info.Value.Definition
 		term.ParentNode = entity.Info.Value.ParentNode
+		if len(entity.Info.Value.CustomProperties) > 0 {
+			term.CustomProperties = entity.Info.Value.CustomProperties
+		}
 	}
 	return term, nil
 }

@@ -55,15 +55,16 @@ func corpUserIsServiceAccount(u *CorpUser) bool {
 }
 
 // UpsertServiceAccount creates or updates a service account by writing the
-// corpUser key, info (active, displayName, title=description), and subTypes
-// ([SERVICE_ACCOUNT]) aspects via OpenAPI v3. id is the bare id; the "service_"
-// prefix is applied here. Returns the deterministic URN.
-func (c *Client) UpsertServiceAccount(ctx context.Context, id, displayName, description string) (string, error) {
+// corpUser key, info (active, displayName, title=description, customProperties),
+// and subTypes ([SERVICE_ACCOUNT]) aspects via OpenAPI v3. id is the bare id; the
+// "service_" prefix is applied here. Returns the deterministic URN.
+func (c *Client) UpsertServiceAccount(ctx context.Context, id, displayName, description string, customProperties map[string]string) (string, error) {
 	urn, err := c.UpsertCorpUser(ctx, UpsertCorpUserInput{
-		Username:    serviceAccountUsernamePrefix + id,
-		DisplayName: displayName,
-		Title:       description,
-		SubTypes:    []string{serviceAccountSubType},
+		Username:         serviceAccountUsernamePrefix + id,
+		DisplayName:      displayName,
+		Title:            description,
+		SubTypes:         []string{serviceAccountSubType},
+		CustomProperties: customProperties,
 	})
 	if err != nil {
 		if isServiceAccountsUnsupportedError(err.Error()) {

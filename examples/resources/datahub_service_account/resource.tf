@@ -8,6 +8,13 @@ resource "datahub_service_account" "ci_bot" {
   service_account_id = "ci-bot" # becomes urn:li:corpuser:service_ci-bot
   display_name       = "CI Bot"
   description        = "Automation account for the CI/CD pipeline"
+
+  # Terraform owns the complete map; keys added outside Terraform are removed
+  # on the next apply.
+  custom_properties = {
+    team  = "platform"
+    scope = "ingestion"
+  }
 }
 
 output "ci_bot_urn" {

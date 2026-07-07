@@ -24,6 +24,30 @@ func TestAcc_GlossaryNode_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_GlossaryNode_CustomProperties covers custom_properties set at create,
+// updated, imported, and cleared, with the name/description clobber guard.
+func TestAcc_GlossaryNode_CustomProperties(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	nodeID := tg.Name("tfprovider-gnode-cp")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.GlossaryNodeCheckDestroy,
+		Steps:                    datahubtesting.GlossaryNodeCustomPropertiesSteps(nodeID),
+	})
+}
+
+// TestAcc_GlossaryNode_CustomPropertiesValidation asserts invalid
+// custom_properties inputs are rejected at plan time by the schema validator.
+func TestAcc_GlossaryNode_CustomPropertiesValidation(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.GlossaryNodeCustomPropertiesValidationSteps(),
+	})
+}
+
 // TestAcc_GlossaryNode_ParentChild exercises parent-child creation and
 // in-place reparenting via updateParentNode for datahub_glossary_node.
 func TestAcc_GlossaryNode_ParentChild(t *testing.T) {

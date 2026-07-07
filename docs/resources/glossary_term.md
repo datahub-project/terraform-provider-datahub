@@ -41,12 +41,18 @@ resource "datahub_glossary_node" "finance" {
   description = "Financial metrics and KPIs"
 }
 
-# A glossary term beneath the Finance term group.
+# A glossary term beneath the Finance term group, with custom properties.
+# Terraform owns the complete map; keys added outside Terraform are removed on
+# the next apply.
 resource "datahub_glossary_term" "revenue" {
   term_id     = "revenue"
   name        = "Revenue"
   description = "Total revenue recognised in the reporting period"
   parent_node = datahub_glossary_node.finance.urn
+  custom_properties = {
+    steward = "finance"
+    tier    = "gold"
+  }
 }
 ```
 
@@ -60,6 +66,7 @@ resource "datahub_glossary_term" "revenue" {
 
 ### Optional
 
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the term (the `customProperties` field of the `glossaryTermInfo` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
 - `description` (String) Definition of the term's meaning and scope.
 - `domain` (String) Full URN of the DataHub domain to associate with this term (e.g. `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` so Terraform's dependency graph creates the domain before the term. Changing this updates the association in place without forcing replacement.
 - `parent_node` (String) Full URN of the parent glossary node (Term Group), e.g. `urn:li:glossaryNode:finance`. Set to `datahub_glossary_node.<name>.urn` (not a raw string) so Terraform's dependency graph orders creation and destruction correctly. The parent must be a glossary node -- terms cannot be parents of other terms. Omit to place the term at the root level. Changing this value reparents the term in place without forcing replacement.

@@ -26,6 +26,30 @@ func TestAcc_CorpUser_Lifecycle(t *testing.T) {
 
 // TestAcc_CorpUser_Drift verifies that an out-of-band user deletion is detected
 // and the user is re-created on the next apply.
+// TestAcc_CorpUser_CustomProperties covers custom_properties set at create,
+// updated, imported, and cleared, with the display_name/email clobber guard.
+func TestAcc_CorpUser_CustomProperties(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	username := tg.Name("tfprovider-user-cp")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.CorpUserCheckDestroy,
+		Steps:                    datahubtesting.CorpUserCustomPropertiesSteps(username),
+	})
+}
+
+// TestAcc_CorpUser_CustomPropertiesValidation asserts invalid custom_properties
+// inputs are rejected at plan time by the schema validator.
+func TestAcc_CorpUser_CustomPropertiesValidation(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.CorpUserCustomPropertiesValidationSteps(),
+	})
+}
+
 func TestAcc_CorpUser_Drift(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	username := tg.Name("tfprovider-user-drift")

@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -30,13 +31,14 @@ type glossaryNodeResource struct {
 }
 
 type glossaryNodeResourceModel struct {
-	ID          types.String `tfsdk:"id"`
-	URN         types.String `tfsdk:"urn"`
-	NodeID      types.String `tfsdk:"node_id"`
-	Name        types.String `tfsdk:"name"`
-	Description types.String `tfsdk:"description"`
-	ParentNode  types.String `tfsdk:"parent_node"`
-	Domain      types.String `tfsdk:"domain"`
+	ID               types.String `tfsdk:"id"`
+	URN              types.String `tfsdk:"urn"`
+	NodeID           types.String `tfsdk:"node_id"`
+	Name             types.String `tfsdk:"name"`
+	Description      types.String `tfsdk:"description"`
+	ParentNode       types.String `tfsdk:"parent_node"`
+	Domain           types.String `tfsdk:"domain"`
+	CustomProperties types.Map    `tfsdk:"custom_properties"`
 }
 
 func NewGlossaryNodeResource() resource.Resource {
@@ -128,6 +130,18 @@ func (r *glossaryNodeResource) Schema(_ context.Context, _ resource.SchemaReques
 					"Terraform's dependency graph creates the domain before the term group. " +
 					"Changing this updates the association in place without forcing replacement.",
 			},
+			"custom_properties": schema.MapAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "Arbitrary key-value metadata attached to the term group (the " +
+					"`customProperties` field of the `glossaryNodeInfo` aspect). Terraform owns the " +
+					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
+					"values must be non-empty strings, and values must not be null. Omit the attribute " +
+					"entirely (do not set an empty map) to attach no custom properties.",
+				Validators: []validator.Map{
+					nonEmptyStringMapValidator{},
+				},
+			},
 		},
 	}
 }
@@ -140,6 +154,12 @@ func (r *glossaryNodeResource) Create(ctx context.Context, req resource.CreateRe
 
 	var plan glossaryNodeResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -160,6 +180,16 @@ func (r *glossaryNodeResource) Create(ctx context.Context, req resource.CreateRe
 
 	if domain := strVal(plan.Domain); domain != "" {
 		if err := r.client.SetEntityDomain(ctx, urn, domain); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
+	// custom_properties is not carried by the GraphQL createGlossaryNode mutation,
+	// so write it via the OpenAPI v3 entity endpoint (carrying name/definition/
+	// parentNode to avoid clobbering what createGlossaryNode just set).
+	if len(customProps) > 0 {
+		if err := r.client.SetGlossaryNodeProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentNode), customProps); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
 		}
@@ -249,6 +279,22 @@ func (r *glossaryNodeResource) Update(ctx context.Context, req resource.UpdateRe
 		}
 	}
 
+	// Write custom_properties via OpenAPI v3 when it changed (including clearing
+	// it: an empty map overwrites a previously-set value). Pass the plan's
+	// name/definition/parentNode so the glossaryNodeInfo aspect write does not
+	// clobber the values the GraphQL mutations above just applied.
+	if !plan.CustomProperties.Equal(state.CustomProperties) {
+		customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+		resp.Diagnostics.Append(d...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		if err := r.client.SetGlossaryNodeProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentNode), customProps); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
 	plan.ID = state.ID
 	plan.URN = state.URN
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -333,4 +379,5 @@ func applyGlossaryNodeToModel(node *datahub.GlossaryNode, m *glossaryNodeResourc
 	m.Description = nullIfEmpty(node.Definition)
 	m.ParentNode = nullIfEmpty(node.ParentNode)
 	m.Domain = nullIfEmpty(node.Domain)
+	m.CustomProperties = stringMapToTfMap(node.CustomProperties)
 }

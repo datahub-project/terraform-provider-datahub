@@ -15,18 +15,19 @@ import (
 // RoleURN reflects the single roleMembership entry (maintained by role
 // assignment mutations).
 type mockUser struct {
-	URN            string
-	Username       string
-	FullName       string
-	DisplayName    string
-	Email          string
-	Title          string
-	Active         bool
-	Status         string
-	HasCredentials bool
-	NativeGroups   []string
-	RoleURN        string
-	SubTypes       []string
+	URN              string
+	Username         string
+	FullName         string
+	DisplayName      string
+	Email            string
+	Title            string
+	Active           bool
+	Status           string
+	HasCredentials   bool
+	NativeGroups     []string
+	RoleURN          string
+	SubTypes         []string
+	CustomProperties map[string]string
 }
 
 // seedUsers pre-populates a couple of users so corp_user lookups, group
@@ -68,6 +69,23 @@ func (s *mockServer) seedUsers() {
 	}
 }
 
+// corpUserInfoValue builds the corpUserInfo aspect value, including
+// customProperties only when present (matching the real endpoint, which omits
+// an empty map).
+func corpUserInfoValue(u mockUser) map[string]any {
+	v := map[string]any{
+		"fullName":    u.FullName,
+		"displayName": u.DisplayName,
+		"email":       u.Email,
+		"title":       u.Title,
+		"active":      u.Active,
+	}
+	if len(u.CustomProperties) > 0 {
+		v["customProperties"] = u.CustomProperties
+	}
+	return v
+}
+
 // handleCorpUserItem serves GET /openapi/v3/entity/corpuser/{urn}, returning the
 // same aspect shape as the real OpenAPI v3 endpoint.
 func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) {
@@ -93,13 +111,7 @@ func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) 
 			"value": map[string]any{"username": u.Username},
 		},
 		"corpUserInfo": map[string]any{
-			"value": map[string]any{
-				"fullName":    u.FullName,
-				"displayName": u.DisplayName,
-				"email":       u.Email,
-				"title":       u.Title,
-				"active":      u.Active,
-			},
+			"value": corpUserInfoValue(u),
 		},
 	}
 	if u.Status != "" {
@@ -149,11 +161,12 @@ func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Req
 		} `json:"corpUserKey"`
 		Info *struct {
 			Value struct {
-				FullName    string `json:"fullName"`
-				DisplayName string `json:"displayName"`
-				Email       string `json:"email"`
-				Title       string `json:"title"`
-				Active      bool   `json:"active"`
+				FullName         string            `json:"fullName"`
+				DisplayName      string            `json:"displayName"`
+				Email            string            `json:"email"`
+				Title            string            `json:"title"`
+				Active           bool              `json:"active"`
+				CustomProperties map[string]string `json:"customProperties"`
 			} `json:"value"`
 		} `json:"corpUserInfo"`
 		SubTypes *struct {
@@ -197,6 +210,7 @@ func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Req
 			u.Email = e.Info.Value.Email
 			u.Title = e.Info.Value.Title
 			u.Active = e.Info.Value.Active
+			u.CustomProperties = e.Info.Value.CustomProperties
 		}
 		if e.SubTypes != nil {
 			u.SubTypes = e.SubTypes.Value.TypeNames

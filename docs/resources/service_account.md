@@ -53,6 +53,13 @@ resource "datahub_service_account" "ci_bot" {
   service_account_id = "ci-bot" # becomes urn:li:corpuser:service_ci-bot
   display_name       = "CI Bot"
   description        = "Automation account for the CI/CD pipeline"
+
+  # Terraform owns the complete map; keys added outside Terraform are removed
+  # on the next apply.
+  custom_properties = {
+    team  = "platform"
+    scope = "ingestion"
+  }
 }
 
 output "ci_bot_urn" {
@@ -69,6 +76,7 @@ output "ci_bot_urn" {
 
 ### Optional
 
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the service account (the `customProperties` field of the `corpUserInfo` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
 - `description` (String) Description of the service account's purpose (stored as the corpUser title).
 - `display_name` (String) Human-readable display name shown throughout the DataHub UI.
 
