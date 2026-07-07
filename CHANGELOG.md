@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_structured_property_assignment` resource: assigns a structured property's value(s) to a target entity. Each resource is one `(entity, property)` edge (`entity_urn`, `structured_property_urn`, `values`), so multiple assignments can target the same entity - one per property - without clobbering each other: writes go through the per-property MERGE `upsertStructuredProperties` mutation, deletes through `removeStructuredProperties`, and read-back through the strongly-consistent OpenAPI v3 entity endpoint. This is the DataHub-native way to attach visible, governed metadata to platform entities (notably domains, which surface structured properties rather than custom properties). Values are string-typed in config; for a `number` property give the number in minimal string form (e.g. `"30"`). The value union, cardinality, and allowed-values are validated server-side. Supported targets are the platform-governance entities `domain`, `glossaryNode`, `glossaryTerm`, and `dataProduct`; other types (ingested data assets) are rejected at plan time - both because per-asset enrichment is out of the provider's scope and because DataHub silently no-ops such writes. The property definition's `entity_types` applicability is also enforced client-side at apply, since DataHub does not enforce it server-side.
+
 ## [0.13.0] - 2026-07-06
 
 ### Added

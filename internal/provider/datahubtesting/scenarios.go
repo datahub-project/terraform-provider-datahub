@@ -5025,3 +5025,198 @@ func AssignmentRuleCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// StructuredPropertyAssignmentSteps exercises the datahub_structured_property_assignment
+// lifecycle: create two assignments on one domain (distinct properties), update
+// one in place (asserting no replace and that the other is untouched -- merge
+// isolation), and import by composite id.
+func StructuredPropertyAssignmentSteps(propertyID, domainID string) []resource.TestStep {
+	const addrA = "datahub_structured_property_assignment.a"
+	const addrB = "datahub_structured_property_assignment.b"
+	classPropID := propertyID
+	tierPropID := propertyID + "-tier"
+	domainURN := "urn:li:domain:" + domainID
+	classURN := "urn:li:structuredProperty:" + classPropID
+	importID := domainURN + "|" + classURN
+
+	cfg := func(classValue string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "SP Assignment Domain"
+}
+
+resource "datahub_structured_property" "classification" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["domain"]
+  allowed_values = [
+    { string_value = "Public" },
+    { string_value = "Confidential" },
+  ]
+}
+
+resource "datahub_structured_property" "tier" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["domain"]
+  allowed_values = [
+    { string_value = "Gold" },
+    { string_value = "Silver" },
+  ]
+}
+
+resource "datahub_structured_property_assignment" "a" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.classification.urn
+  values                  = [%q]
+}
+
+resource "datahub_structured_property_assignment" "b" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.tier.urn
+  values                  = ["Gold"]
+}
+`, domainID, classPropID, tierPropID, classValue)
+	}
+
+	return []resource.TestStep{
+		{
+			Config: cfg("Public"),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("entity_urn"), knownvalue.StringExact(domainURN)),
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("structured_property_urn"), knownvalue.StringExact(classURN)),
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("id"), knownvalue.StringExact(importID)),
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Public")),
+				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Gold")),
+			},
+		},
+		{
+			// Update A's value in place (not a replace); B must be a no-op (merge
+			// isolation: assignments to different properties on the same entity
+			// do not clobber each other).
+			Config: cfg("Confidential"),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addrA, plancheck.ResourceActionUpdate),
+					plancheck.ExpectResourceAction(addrB, plancheck.ResourceActionNoop),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Confidential")),
+				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Gold")),
+			},
+		},
+		{
+			// Import by composite id: <entity_urn>|<structured_property_urn>.
+			ResourceName:      addrA,
+			ImportState:       true,
+			ImportStateVerify: true,
+			ImportStateId:     importID,
+		},
+	}
+}
+
+// StructuredPropertyAssignmentUnsupportedTargetSteps asserts guard #1 (CAT-2562):
+// an entity_urn of an unsupported type (dataset) is rejected at plan time.
+func StructuredPropertyAssignmentUnsupportedTargetSteps() []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_structured_property_assignment" "bad" {
+  entity_urn              = "urn:li:dataset:(urn:li:dataPlatform:hive,foo.bar,PROD)"
+  structured_property_urn = "urn:li:structuredProperty:whatever"
+  values                  = ["x"]
+}
+`,
+			ExpectError: regexp.MustCompile(`(?i)not a supported structured-property assignment target|supported types`),
+		},
+	}
+}
+
+// StructuredPropertyAssignmentTypeMismatchSteps asserts guard #2 (CAT-2563): a
+// property whose definition's entity_types does not include the target's type is
+// rejected at apply time (the server would otherwise accept it silently).
+func StructuredPropertyAssignmentTypeMismatchSteps(propertyID, domainID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Mismatch Domain"
+}
+
+resource "datahub_structured_property" "ds_only" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["dataset"]
+}
+
+resource "datahub_structured_property_assignment" "bad" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.ds_only.urn
+  values                  = ["x"]
+}
+`, domainID, propertyID),
+			ExpectError: regexp.MustCompile(`(?i)not applicable|entity_types`),
+		},
+	}
+}
+
+// StructuredPropertyAssignmentNumberSteps assigns a number-typed property and
+// asserts the value round-trips in minimal string form ("30").
+func StructuredPropertyAssignmentNumberSteps(propertyID, domainID string) []resource.TestStep {
+	const addr = "datahub_structured_property_assignment.num"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Number SP Domain"
+}
+
+resource "datahub_structured_property" "retention" {
+  property_id  = %q
+  value_type   = "number"
+  entity_types = ["domain"]
+}
+
+resource "datahub_structured_property_assignment" "num" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.retention.urn
+  values                  = ["30"]
+}
+`, domainID, propertyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("30")),
+			},
+		},
+	}
+}
+
+// StructuredPropertyAssignmentCheckDestroy verifies every
+// datahub_structured_property_assignment in the post-destroy state has had its
+// value cleared in DataHub.
+func StructuredPropertyAssignmentCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_structured_property_assignment" {
+			continue
+		}
+		entityURN := rs.Primary.Attributes["entity_urn"]
+		propURN := rs.Primary.Attributes["structured_property_urn"]
+		_, found, getErr := client.GetStructuredPropertyValues(ctx, entityURN, propURN)
+		if getErr != nil {
+			// The target entity may already be destroyed, which clears assignments.
+			continue
+		}
+		if found {
+			return fmt.Errorf("structured property assignment %s|%s still exists after destroy", entityURN, propURN)
+		}
+	}
+	return nil
+}

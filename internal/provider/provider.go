@@ -332,6 +332,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewSchemaAssertionResource,
 		NewSQLAssertionResource,
 		NewStructuredPropertyResource,
+		NewStructuredPropertyAssignmentResource,
 		NewTagResource,
 		NewVolumeAssertionResource,
 	}

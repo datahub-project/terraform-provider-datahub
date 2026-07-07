@@ -151,6 +151,9 @@ func (s *mockServer) handleDataProductItem(w http.ResponseWriter, r *http.Reques
 			},
 		}
 	}
+	if aspect := s.structuredPropertiesAspect(dp.URN); aspect != nil {
+		entity["structuredProperties"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
