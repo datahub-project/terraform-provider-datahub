@@ -5429,6 +5429,32 @@ func AssignmentRuleCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// DataContractCheckDestroy verifies every datahub_data_contract is removed.
+func DataContractCheckDestroy(s *terraform.State) error {
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: failed to build DataHub client: %w", err)
+	}
+	ctx := context.Background()
+	for _, rs := range s.RootModule().Resources {
+		if rs.Type != "datahub_data_contract" {
+			continue
+		}
+		urn := rs.Primary.Attributes["urn"]
+		if urn == "" {
+			urn = datahub.DataContractURNPrefix + rs.Primary.Attributes["id"]
+		}
+		dc, getErr := client.GetDataContractByURN(ctx, urn)
+		if getErr != nil {
+			return fmt.Errorf("CheckDestroy: unexpected error checking data contract %q: %w", urn, getErr)
+		}
+		if dc != nil {
+			return fmt.Errorf("data contract %q still exists after destroy", urn)
+		}
+	}
+	return nil
+}
+
 // StructuredPropertyAssignmentSteps exercises the datahub_structured_property_assignment
 // lifecycle: create two assignments on one domain (distinct properties), update
 // one in place (asserting no replace and that the other is untouched -- merge

@@ -170,6 +170,23 @@ func init() {
 		OSSCompatible: true,
 	})
 
+	// Data contracts (dataContract) are OSS+Cloud, enumerated via
+	// searchAcrossEntities. One contract per dataset; the import ID is the bare
+	// contract id (a hash of the dataset URN), with the full URN also accepted.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_data_contract",
+		DataSourceTypeName: "datahub_data_contracts",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListDataContractURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing data contract URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:dataContract:") },
+		OSSCompatible: true,
+	})
+
 	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_ownership_type",
 		DataSourceTypeName: "datahub_ownership_types",
