@@ -1735,6 +1735,104 @@ func CorpUserCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// CorpUserCustomPropertiesSteps covers custom_properties on a corp user. The map
+// rides along in the single corpUserInfo upsert (no separate write), so the
+// clobber guard asserts display_name/email survive alongside the map.
+func CorpUserCustomPropertiesSteps(username string) []resource.TestStep {
+	const addr = "datahub_corp_user.test"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "Alice Smith"
+  email        = "alice@example.com"
+  custom_properties = {
+    department = "platform"
+    location   = "remote"
+  }
+}
+`, username),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"department": knownvalue.StringExact("platform"),
+					"location":   knownvalue.StringExact("remote"),
+				})),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("Alice Smith")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("email"), knownvalue.StringExact("alice@example.com")),
+			},
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "Alice Smith"
+  email        = "alice@example.com"
+  custom_properties = {
+    department = "data"
+    location   = "remote"
+    cost_center = "CC-42"
+  }
+}
+`, username),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"department":  knownvalue.StringExact("data"),
+					"location":    knownvalue.StringExact("remote"),
+					"cost_center": knownvalue.StringExact("CC-42"),
+				})),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     username,
+			ImportStateVerify: true,
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "Alice Smith"
+  email        = "alice@example.com"
+}
+`, username),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// CorpUserCustomPropertiesValidationSteps asserts invalid custom_properties
+// inputs are rejected at plan time by the shared schema validator.
+func CorpUserCustomPropertiesValidationSteps() []resource.TestStep {
+	cfg := func(cp string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_corp_user" "test" {
+  username          = "tf-acc-user-cp-validation"
+  custom_properties = %s
+}
+`, cp)
+	}
+	return []resource.TestStep{
+		{Config: cfg(`{}`), ExpectError: regexp.MustCompile(`Empty map not allowed`)},
+		{Config: cfg(`{ "" = "x" }`), ExpectError: regexp.MustCompile(`Empty key not allowed`)},
+		{Config: cfg(`{ department = null }`), ExpectError: regexp.MustCompile(`Null value not allowed`)},
+		{Config: cfg(`{ department = "" }`), ExpectError: regexp.MustCompile(`Empty value not allowed`)},
+	}
+}
+
 // ---------------------------------------------------------------------------
 // datahub_service_account resource + data source scenarios
 // ---------------------------------------------------------------------------
@@ -1885,6 +1983,104 @@ func ServiceAccountCheckDestroy(s *terraform.State) error {
 // source read would fail with "not a service account" - so a clean read proves
 // the role and subtype coexist. Mirrors the "SA disappears after adding a role"
 // customer report at the provider layer.
+// ServiceAccountCustomPropertiesSteps covers custom_properties on a service
+// account. It rides along in the same corpUserInfo upsert as display_name and
+// description (title), so the clobber guard asserts those survive.
+func ServiceAccountCustomPropertiesSteps(id string) []resource.TestStep {
+	const addr = "datahub_service_account.test"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "CI Bot"
+  description        = "Automation account"
+  custom_properties = {
+    team  = "platform"
+    scope = "ingestion"
+  }
+}
+`, id),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"team":  knownvalue.StringExact("platform"),
+					"scope": knownvalue.StringExact("ingestion"),
+				})),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("display_name"), knownvalue.StringExact("CI Bot")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Automation account")),
+			},
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "CI Bot"
+  description        = "Automation account"
+  custom_properties = {
+    team  = "data"
+    scope = "ingestion"
+    owner = "de-team"
+  }
+}
+`, id),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"team":  knownvalue.StringExact("data"),
+					"scope": knownvalue.StringExact("ingestion"),
+					"owner": knownvalue.StringExact("de-team"),
+				})),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     id,
+			ImportStateVerify: true,
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "CI Bot"
+  description        = "Automation account"
+}
+`, id),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// ServiceAccountCustomPropertiesValidationSteps asserts invalid custom_properties
+// inputs are rejected at plan time by the shared schema validator.
+func ServiceAccountCustomPropertiesValidationSteps() []resource.TestStep {
+	cfg := func(cp string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_service_account" "test" {
+  service_account_id = "tf-acc-sa-cp-validation"
+  custom_properties  = %s
+}
+`, cp)
+	}
+	return []resource.TestStep{
+		{Config: cfg(`{}`), ExpectError: regexp.MustCompile(`Empty map not allowed`)},
+		{Config: cfg(`{ "" = "x" }`), ExpectError: regexp.MustCompile(`Empty key not allowed`)},
+		{Config: cfg(`{ team = null }`), ExpectError: regexp.MustCompile(`Null value not allowed`)},
+		{Config: cfg(`{ team = "" }`), ExpectError: regexp.MustCompile(`Empty value not allowed`)},
+	}
+}
+
 func ServiceAccountRoleAssignmentSteps(id string) []resource.TestStep {
 	const dsAddr = "data.datahub_service_account.check"
 	urn := "urn:li:corpuser:service_" + id
@@ -3100,6 +3296,213 @@ func GlossaryTermCheckDestroy(s *terraform.State) error {
 		}
 	}
 	return nil
+}
+
+// GlossaryNodeCustomPropertiesSteps covers custom_properties on a glossary node:
+// set at create (SetGlossaryNodeProperties is called right after
+// createGlossaryNode), updated in place, round-tripped through import, and
+// cleared. Each mutating step asserts name/description survive the
+// glossaryNodeInfo aspect write (the clobber guard).
+func GlossaryNodeCustomPropertiesSteps(nodeID string) []resource.TestStep {
+	const addr = "datahub_glossary_node.test"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id     = %q
+  name        = "Finance"
+  description = "Finance term group"
+  custom_properties = {
+    steward = "data-office"
+    tier    = "gold"
+  }
+}
+`, nodeID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"steward": knownvalue.StringExact("data-office"),
+					"tier":    knownvalue.StringExact("gold"),
+				})),
+				// Clobber guard: the aspect write must preserve name/definition.
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Finance")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Finance term group")),
+			},
+		},
+		{
+			// Change one key, keep one, add one.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id     = %q
+  name        = "Finance"
+  description = "Finance term group"
+  custom_properties = {
+    steward = "governance"
+    tier    = "gold"
+    scope   = "enterprise"
+  }
+}
+`, nodeID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"steward": knownvalue.StringExact("governance"),
+					"tier":    knownvalue.StringExact("gold"),
+					"scope":   knownvalue.StringExact("enterprise"),
+				})),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     nodeID,
+			ImportStateVerify: true,
+		},
+		{
+			// Clear custom_properties: omitting the block removes all keys and
+			// normalises to null (no lingering drift).
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id     = %q
+  name        = "Finance"
+  description = "Finance term group"
+}
+`, nodeID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// GlossaryNodeCustomPropertiesValidationSteps asserts invalid custom_properties
+// inputs are rejected at plan time by the shared schema validator.
+func GlossaryNodeCustomPropertiesValidationSteps() []resource.TestStep {
+	cfg := func(cp string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id           = "tf-acc-node-cp-validation"
+  name              = "CP Validation"
+  custom_properties = %s
+}
+`, cp)
+	}
+	return []resource.TestStep{
+		{Config: cfg(`{}`), ExpectError: regexp.MustCompile(`Empty map not allowed`)},
+		{Config: cfg(`{ "" = "x" }`), ExpectError: regexp.MustCompile(`Empty key not allowed`)},
+		{Config: cfg(`{ steward = null }`), ExpectError: regexp.MustCompile(`Null value not allowed`)},
+		{Config: cfg(`{ steward = "" }`), ExpectError: regexp.MustCompile(`Empty value not allowed`)},
+	}
+}
+
+// GlossaryTermCustomPropertiesSteps covers custom_properties on a glossary term.
+// The clobber guard is especially important here: glossaryTermInfo has a
+// required termSource field with no GraphQL-create analog, so the aspect write
+// must supply it (and definition) or the write fails / drops the description.
+func GlossaryTermCustomPropertiesSteps(termID string) []resource.TestStep {
+	const addr = "datahub_glossary_term.test"
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "Revenue"
+  description = "Recognised revenue"
+  custom_properties = {
+    steward = "finance"
+    tier    = "gold"
+  }
+}
+`, termID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"steward": knownvalue.StringExact("finance"),
+					"tier":    knownvalue.StringExact("gold"),
+				})),
+				// Clobber guard: the aspect write must preserve name/definition
+				// (and, on a live target, the required termSource).
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("Revenue")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Recognised revenue")),
+			},
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "Revenue"
+  description = "Recognised revenue"
+  custom_properties = {
+    steward = "governance"
+    tier    = "gold"
+    scope   = "enterprise"
+  }
+}
+`, termID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"steward": knownvalue.StringExact("governance"),
+					"tier":    knownvalue.StringExact("gold"),
+					"scope":   knownvalue.StringExact("enterprise"),
+				})),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     termID,
+			ImportStateVerify: true,
+		},
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "Revenue"
+  description = "Recognised revenue"
+}
+`, termID),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// GlossaryTermCustomPropertiesValidationSteps asserts invalid custom_properties
+// inputs are rejected at plan time by the shared schema validator.
+func GlossaryTermCustomPropertiesValidationSteps() []resource.TestStep {
+	cfg := func(cp string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_term" "test" {
+  term_id           = "tf-acc-term-cp-validation"
+  name              = "CP Validation"
+  custom_properties = %s
+}
+`, cp)
+	}
+	return []resource.TestStep{
+		{Config: cfg(`{}`), ExpectError: regexp.MustCompile(`Empty map not allowed`)},
+		{Config: cfg(`{ "" = "x" }`), ExpectError: regexp.MustCompile(`Empty key not allowed`)},
+		{Config: cfg(`{ steward = null }`), ExpectError: regexp.MustCompile(`Null value not allowed`)},
+		{Config: cfg(`{ steward = "" }`), ExpectError: regexp.MustCompile(`Empty value not allowed`)},
+	}
 }
 
 // ---------------------------------------------------------------------------

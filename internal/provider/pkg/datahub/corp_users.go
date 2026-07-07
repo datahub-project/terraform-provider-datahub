@@ -17,17 +17,18 @@ import (
 // metadata for a DataHub user. Login credentials are never exposed by the read
 // path.
 type CorpUser struct {
-	URN          string
-	Username     string
-	FullName     string
-	DisplayName  string
-	Email        string
-	Title        string
-	InfoTitle    string // raw corpUserInfo.title, before corpUserEditableInfo shadows it
-	Active       bool
-	Status       string   // from corpUserStatus.status; empty when the aspect is absent
-	NativeGroups []string // group URNs from nativeGroupMembership
-	SubTypes     []string // typeNames from the subTypes aspect (e.g. "SERVICE_ACCOUNT")
+	URN              string
+	Username         string
+	FullName         string
+	DisplayName      string
+	Email            string
+	Title            string
+	InfoTitle        string // raw corpUserInfo.title, before corpUserEditableInfo shadows it
+	Active           bool
+	Status           string   // from corpUserStatus.status; empty when the aspect is absent
+	NativeGroups     []string // group URNs from nativeGroupMembership
+	SubTypes         []string // typeNames from the subTypes aspect (e.g. "SERVICE_ACCOUNT")
+	CustomProperties map[string]string
 }
 
 // UpsertCorpUserInput carries the fields for creating or updating a corpUser
@@ -42,6 +43,9 @@ type UpsertCorpUserInput struct {
 	// mark a corpUser as a service account ("SERVICE_ACCOUNT"). Leave nil for
 	// ordinary human users so their subTypes aspect is untouched.
 	SubTypes []string
+	// CustomProperties is written to corpUserInfo.customProperties. Always sent
+	// (even empty) so clearing the map overwrites a previously-set value.
+	CustomProperties map[string]string
 }
 
 // corpUserEntity is the OpenAPI v3 response shape for
@@ -56,11 +60,12 @@ type corpUserEntity struct {
 	} `json:"corpUserKey,omitempty"`
 	Info *struct {
 		Value struct {
-			FullName    string `json:"fullName"`
-			DisplayName string `json:"displayName"`
-			Email       string `json:"email"`
-			Title       string `json:"title"`
-			Active      bool   `json:"active"`
+			FullName         string            `json:"fullName"`
+			DisplayName      string            `json:"displayName"`
+			Email            string            `json:"email"`
+			Title            string            `json:"title"`
+			Active           bool              `json:"active"`
+			CustomProperties map[string]string `json:"customProperties"`
 		} `json:"value"`
 	} `json:"corpUserInfo,omitempty"`
 	EditableInfo *struct {
@@ -151,6 +156,9 @@ func (c *Client) GetUserByURN(ctx context.Context, urn string) (*CorpUser, error
 		user.Title = entity.Info.Value.Title
 		user.InfoTitle = entity.Info.Value.Title
 		user.Active = entity.Info.Value.Active
+		if len(entity.Info.Value.CustomProperties) > 0 {
+			user.CustomProperties = entity.Info.Value.CustomProperties
+		}
 	}
 	// editableInfo (UI edits) wins for email and title when populated.
 	if entity.EditableInfo != nil {
@@ -203,6 +211,14 @@ func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (st
 	if in.Title != "" {
 		infoValue["title"] = in.Title
 	}
+	// Always include customProperties (even empty) so that clearing the map
+	// overwrites a previously-set value rather than leaving it in place. This
+	// write owns the whole corpUserInfo aspect; only corp_user and
+	// service_account call it, and both own custom_properties.
+	if in.CustomProperties == nil {
+		in.CustomProperties = map[string]string{}
+	}
+	infoValue["customProperties"] = in.CustomProperties
 
 	aspects := map[string]any{
 		"urn": urn,

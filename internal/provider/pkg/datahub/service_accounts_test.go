@@ -38,7 +38,7 @@ func TestUpsertServiceAccount(t *testing.T) {
 	defer server.Close()
 
 	c := newTestClient(t, server)
-	urn, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI Bot", "Automation")
+	urn, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI Bot", "Automation", map[string]string{"team": "platform"})
 	if err != nil {
 		t.Fatalf("UpsertServiceAccount() error = %v", err)
 	}
@@ -63,6 +63,10 @@ func TestUpsertServiceAccount(t *testing.T) {
 	}
 	if !strings.Contains(string(gotBody), "service_ci-bot") {
 		t.Errorf("body missing service_ci-bot username: %s", gotBody)
+	}
+	// customProperties passed through to the corpUserInfo aspect.
+	if !strings.Contains(string(gotBody), "customProperties") || !strings.Contains(string(gotBody), "platform") {
+		t.Errorf("body missing customProperties: %s", gotBody)
 	}
 }
 
@@ -210,7 +214,7 @@ func TestUpsertServiceAccountErrors(t *testing.T) {
 		}))
 		defer server.Close()
 		c := newTestClient(t, server)
-		_, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI", "")
+		_, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI", "", nil)
 		if !errors.Is(err, ErrServiceAccountsUnsupported) {
 			t.Errorf("error = %v, want ErrServiceAccountsUnsupported", err)
 		}
@@ -222,7 +226,7 @@ func TestUpsertServiceAccountErrors(t *testing.T) {
 		}))
 		defer server.Close()
 		c := newTestClient(t, server)
-		_, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI", "")
+		_, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI", "", nil)
 		if err == nil {
 			t.Fatal("expected error for 403")
 		}
@@ -293,7 +297,7 @@ func TestServiceAccountSubtypePreservedAcrossCorpUserUpdate(t *testing.T) {
 	c := newTestClient(t, server)
 
 	// 1. Create the service account (writes corpUserKey + corpUserInfo + subTypes).
-	if _, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI Bot", "desc"); err != nil {
+	if _, err := c.UpsertServiceAccount(t.Context(), "ci-bot", "CI Bot", "desc", nil); err != nil {
 		t.Fatalf("UpsertServiceAccount: %v", err)
 	}
 	// 2. An unrelated corpUserInfo-only write to the same URN, with no subTypes.

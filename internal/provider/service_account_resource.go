@@ -82,6 +82,7 @@ type serviceAccountResourceModel struct {
 	ServiceAccountID types.String `tfsdk:"service_account_id"`
 	DisplayName      types.String `tfsdk:"display_name"`
 	Description      types.String `tfsdk:"description"`
+	CustomProperties types.Map    `tfsdk:"custom_properties"`
 }
 
 func NewServiceAccountResource() resource.Resource {
@@ -169,6 +170,18 @@ func (r *serviceAccountResource) Schema(_ context.Context, _ resource.SchemaRequ
 				Optional:            true,
 				MarkdownDescription: "Description of the service account's purpose (stored as the corpUser title).",
 			},
+			"custom_properties": schema.MapAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "Arbitrary key-value metadata attached to the service account (the " +
+					"`customProperties` field of the `corpUserInfo` aspect). Terraform owns the " +
+					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
+					"values must be non-empty strings, and values must not be null. Omit the attribute " +
+					"entirely (do not set an empty map) to attach no custom properties.",
+				Validators: []validator.Map{
+					nonEmptyStringMapValidator{},
+				},
+			},
 		},
 	}
 }
@@ -185,7 +198,13 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 
-	urn, err := r.client.UpsertServiceAccount(ctx, plan.ServiceAccountID.ValueString(), strVal(plan.DisplayName), strVal(plan.Description))
+	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	urn, err := r.client.UpsertServiceAccount(ctx, plan.ServiceAccountID.ValueString(), strVal(plan.DisplayName), strVal(plan.Description), customProps)
 	if err != nil {
 		if errors.Is(err, datahub.ErrServiceAccountsUnsupported) {
 			resp.Diagnostics.AddError("Service accounts not supported", err.Error())
@@ -245,7 +264,13 @@ func (r *serviceAccountResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	if _, err := r.client.UpsertServiceAccount(ctx, plan.ServiceAccountID.ValueString(), strVal(plan.DisplayName), strVal(plan.Description)); err != nil {
+	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if _, err := r.client.UpsertServiceAccount(ctx, plan.ServiceAccountID.ValueString(), strVal(plan.DisplayName), strVal(plan.Description), customProps); err != nil {
 		if errors.Is(err, datahub.ErrServiceAccountsUnsupported) {
 			resp.Diagnostics.AddError("Service accounts not supported", err.Error())
 		} else {
@@ -337,4 +362,5 @@ func applyServiceAccountToModel(sa *datahub.CorpUser, m *serviceAccountResourceM
 	m.ServiceAccountID = types.StringValue(datahub.ServiceAccountIDFromURN(sa.URN))
 	m.DisplayName = nullIfEmpty(sa.DisplayName)
 	m.Description = nullIfEmpty(sa.InfoTitle)
+	m.CustomProperties = stringMapToTfMap(sa.CustomProperties)
 }

@@ -27,6 +27,31 @@ func TestAcc_GlossaryTerm_Lifecycle(t *testing.T) {
 
 // TestAcc_GlossaryTerm_Reparent exercises in-place reparenting (removing
 // parent_node) via updateParentNode for datahub_glossary_term.
+// TestAcc_GlossaryTerm_CustomProperties covers custom_properties set at create,
+// updated, imported, and cleared. The clobber guard is load-bearing here:
+// glossaryTermInfo has a required termSource the aspect write must supply.
+func TestAcc_GlossaryTerm_CustomProperties(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	termID := tg.Name("tfprovider-gterm-cp")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.GlossaryTermCheckDestroy,
+		Steps:                    datahubtesting.GlossaryTermCustomPropertiesSteps(termID),
+	})
+}
+
+// TestAcc_GlossaryTerm_CustomPropertiesValidation asserts invalid
+// custom_properties inputs are rejected at plan time by the schema validator.
+func TestAcc_GlossaryTerm_CustomPropertiesValidation(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.GlossaryTermCustomPropertiesValidationSteps(),
+	})
+}
+
 func TestAcc_GlossaryTerm_Reparent(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	nodeID := tg.Name("tfprovider-gnode-rp")

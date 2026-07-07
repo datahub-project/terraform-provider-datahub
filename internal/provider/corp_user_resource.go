@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -28,13 +29,14 @@ type corpUserResource struct {
 }
 
 type corpUserResourceModel struct {
-	ID          types.String `tfsdk:"id"`
-	URN         types.String `tfsdk:"urn"`
-	Username    types.String `tfsdk:"username"`
-	DisplayName types.String `tfsdk:"display_name"`
-	FullName    types.String `tfsdk:"full_name"`
-	Email       types.String `tfsdk:"email"`
-	Title       types.String `tfsdk:"title"`
+	ID               types.String `tfsdk:"id"`
+	URN              types.String `tfsdk:"urn"`
+	Username         types.String `tfsdk:"username"`
+	DisplayName      types.String `tfsdk:"display_name"`
+	FullName         types.String `tfsdk:"full_name"`
+	Email            types.String `tfsdk:"email"`
+	Title            types.String `tfsdk:"title"`
+	CustomProperties types.Map    `tfsdk:"custom_properties"`
 }
 
 func NewCorpUserResource() resource.Resource {
@@ -116,6 +118,18 @@ func (r *corpUserResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 				Optional:            true,
 				MarkdownDescription: "Job title of the user.",
 			},
+			"custom_properties": schema.MapAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "Arbitrary key-value metadata attached to the user (the " +
+					"`customProperties` field of the `corpUserInfo` aspect). Terraform owns the " +
+					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
+					"values must be non-empty strings, and values must not be null. Omit the attribute " +
+					"entirely (do not set an empty map) to attach no custom properties.",
+				Validators: []validator.Map{
+					nonEmptyStringMapValidator{},
+				},
+			},
 		},
 	}
 }
@@ -132,12 +146,19 @@ func (r *corpUserResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
+	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	urn, err := r.client.UpsertCorpUser(ctx, datahub.UpsertCorpUserInput{
-		Username:    plan.Username.ValueString(),
-		DisplayName: strVal(plan.DisplayName),
-		FullName:    strVal(plan.FullName),
-		Email:       strVal(plan.Email),
-		Title:       strVal(plan.Title),
+		Username:         plan.Username.ValueString(),
+		DisplayName:      strVal(plan.DisplayName),
+		FullName:         strVal(plan.FullName),
+		Email:            strVal(plan.Email),
+		Title:            strVal(plan.Title),
+		CustomProperties: customProps,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
@@ -193,12 +214,19 @@ func (r *corpUserResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
+	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	_, err := r.client.UpsertCorpUser(ctx, datahub.UpsertCorpUserInput{
-		Username:    plan.Username.ValueString(),
-		DisplayName: strVal(plan.DisplayName),
-		FullName:    strVal(plan.FullName),
-		Email:       strVal(plan.Email),
-		Title:       strVal(plan.Title),
+		Username:         plan.Username.ValueString(),
+		DisplayName:      strVal(plan.DisplayName),
+		FullName:         strVal(plan.FullName),
+		Email:            strVal(plan.Email),
+		Title:            strVal(plan.Title),
+		CustomProperties: customProps,
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
@@ -287,4 +315,5 @@ func applyCorpUserToModel(user *datahub.CorpUser, m *corpUserResourceModel) {
 	m.FullName = nullIfEmpty(user.FullName)
 	m.Email = nullIfEmpty(user.Email)
 	m.Title = nullIfEmpty(user.Title)
+	m.CustomProperties = stringMapToTfMap(user.CustomProperties)
 }

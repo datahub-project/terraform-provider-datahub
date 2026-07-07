@@ -42,6 +42,13 @@ resource "datahub_corp_user" "alice" {
   full_name    = "Alice Jane Smith"
   email        = "alice@example.com"
   title        = "Data Engineer"
+
+  # Terraform owns the complete map; keys added outside Terraform are removed
+  # on the next apply.
+  custom_properties = {
+    department = "platform"
+    location   = "remote"
+  }
 }
 
 output "alice_urn" {
@@ -58,6 +65,7 @@ output "alice_urn" {
 
 ### Optional
 
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the user (the `customProperties` field of the `corpUserInfo` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
 - `display_name` (String) Human-readable display name shown throughout the DataHub UI.
 - `email` (String) Email address of the user.
 - `full_name` (String) Full legal name of the user.

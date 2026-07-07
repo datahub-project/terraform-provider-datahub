@@ -27,6 +27,31 @@ func TestAcc_ServiceAccount_Lifecycle(t *testing.T) {
 
 // TestAcc_ServiceAccount_RefuseNonServiceAccount verifies the resource refuses
 // to import a corpUser that lacks the SERVICE_ACCOUNT subtype.
+// TestAcc_ServiceAccount_CustomProperties covers custom_properties set at
+// create, updated, imported, and cleared, with the display_name/description
+// clobber guard.
+func TestAcc_ServiceAccount_CustomProperties(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	id := tg.Name("tfprovider-sa-cp")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.ServiceAccountCheckDestroy,
+		Steps:                    datahubtesting.ServiceAccountCustomPropertiesSteps(id),
+	})
+}
+
+// TestAcc_ServiceAccount_CustomPropertiesValidation asserts invalid
+// custom_properties inputs are rejected at plan time by the schema validator.
+func TestAcc_ServiceAccount_CustomPropertiesValidation(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.ServiceAccountCustomPropertiesValidationSteps(),
+	})
+}
+
 func TestAcc_ServiceAccount_RefuseNonServiceAccount(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	id := tg.Name("tfprovider-sa-probe")
