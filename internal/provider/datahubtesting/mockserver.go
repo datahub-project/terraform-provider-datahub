@@ -89,6 +89,7 @@ type mockServer struct {
 	assertions            map[string]mockAssertion
 	actionPipelines       map[string]mockActionPipeline
 	assignmentRules       map[string]mockAssignmentRule
+	dataContracts         map[string]mockDataContract
 	defaultPoolID         string
 	inviteToken           string
 	resetTokens           map[string]string
@@ -122,6 +123,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		assertions:            make(map[string]mockAssertion),
 		actionPipelines:       make(map[string]mockActionPipeline),
 		assignmentRules:       make(map[string]mockAssignmentRule),
+		dataContracts:         make(map[string]mockDataContract),
 		inviteToken:           "mock-invite-token-001",
 		resetTokens:           make(map[string]string),
 		failDeleteFor:         make(map[string]struct{}),
@@ -152,6 +154,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/dataproduct/", s.handleDataProductItem)
 	mux.HandleFunc("/openapi/v3/entity/assertion/", s.handleAssertionItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubaction/", s.handleActionPipelineItem)
+	mux.HandleFunc("/openapi/v3/entity/datacontract/", s.handleDataContractItem)
 	mux.HandleFunc("/openapi/v3/entity/assertionassignmentrule/", s.handleAssignmentRuleItem)
 	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
@@ -287,6 +290,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpsertSchemaAssertion(w, req.Variables)
 	case strings.Contains(q, "upsertDatasetFieldAssertionMonitor"):
 		s.handleUpsertFieldAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertDataContract"):
+		s.handleUpsertDataContract(w, req.Variables)
 	case strings.Contains(q, "upsertActionPipeline"):
 		s.handleUpsertActionPipeline(w, req.Variables)
 	case strings.Contains(q, "deleteActionPipeline"):
@@ -512,6 +517,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": dp.URN,
+					},
+				})
+			}
+		case "DATA_CONTRACT":
+			for id := range s.dataContracts {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": mockDataContractURNPrefix + id,
 					},
 				})
 			}

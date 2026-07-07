@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_data_contract` resource: create and manage a DataHub data contract -- a per-dataset bundle that groups existing assertions into freshness, schema, and data-quality guarantees plus a lifecycle `state` (`ACTIVE`/`PENDING`). It is the declarative "this dataset's SLA is X" object; it references assertions authored by the typed `datahub_*_assertion` resources (via `freshness_assertion_urns`/`schema_assertion_urns`/`data_quality_assertion_urns`) rather than creating them, and owns the complete lists (assertions removed here are unbound on the next apply). Works on both OSS DataHub and DataHub Cloud. There is one contract per dataset: the URN is `urn:li:dataContract:<id>` where `id` defaults to a deterministic hash of `dataset_urn` matching the DataHub Python SDK, so a Terraform-managed contract and an SDK-created one for the same dataset are the same entity. Written via the GraphQL `upsertDataContract` mutation; read from the strongly-consistent OpenAPI v3 entity endpoint; deleted via the OpenAPI v3 entity DELETE (no `deleteDataContract` mutation exists), which is a clean hard delete.
+- `datahub_data_contracts` data source: return the URNs of all data contracts for bulk import via `for_each` into `import {}` blocks. Backed by `searchAcrossEntities`.
+
 ### Fixed
 
 - `datahub_structured_property_assignment`: assigning several structured properties to the **same** entity in a single apply could silently drop some of the values. DataHub's `upsertStructuredProperties` mutation is a non-atomic read-modify-write of the entity's single structured-properties aspect, so the provider's per-property writes - which Terraform runs in parallel - raced server-side and lost updates, returning success with no error. The provider now serializes structured-property writes per target entity within a run, which removes the race; assignments to different entities still run fully in parallel. A server-side fix is tracked upstream.
