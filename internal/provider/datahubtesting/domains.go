@@ -168,6 +168,9 @@ func (s *mockServer) handleDomainItem(w http.ResponseWriter, r *http.Request) {
 			"value": propsValue,
 		},
 	}
+	if aspect := s.structuredPropertiesAspect(d.URN); aspect != nil {
+		entity["structuredProperties"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)

@@ -80,15 +80,19 @@ type mockServer struct {
 	glossaryTerms        map[string]mockGlossaryTerm
 	tags                 map[string]mockTag
 	structuredProperties map[string]mockStructuredProperty
-	ownershipTypes       map[string]mockOwnershipType
-	dataProducts         map[string]mockDataProduct
-	assertions           map[string]mockAssertion
-	actionPipelines      map[string]mockActionPipeline
-	assignmentRules      map[string]mockAssignmentRule
-	defaultPoolID        string
-	inviteToken          string
-	resetTokens          map[string]string
-	ossSignUpMode        bool
+	// entityStructuredProps holds assigned structured-property VALUES per target
+	// entity: entityURN -> propertyURN -> values. Distinct from structuredProperties
+	// (which holds property DEFINITIONS).
+	entityStructuredProps map[string]map[string][]spMockValue
+	ownershipTypes        map[string]mockOwnershipType
+	dataProducts          map[string]mockDataProduct
+	assertions            map[string]mockAssertion
+	actionPipelines       map[string]mockActionPipeline
+	assignmentRules       map[string]mockAssignmentRule
+	defaultPoolID         string
+	inviteToken           string
+	resetTokens           map[string]string
+	ossSignUpMode         bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -100,26 +104,27 @@ type mockServer struct {
 func NewServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	s := &mockServer{
-		ingestionSources:     make(map[string]mockIngestionSource),
-		secrets:              make(map[string]mockSecret),
-		pools:                make(map[string]mockExecutorPool),
-		connections:          make(map[string]mockConnection),
-		groups:               make(map[string]mockGroup),
-		users:                make(map[string]mockUser),
-		policies:             make(map[string]mockPolicy),
-		domains:              make(map[string]mockDomain),
-		glossaryNodes:        make(map[string]mockGlossaryNode),
-		glossaryTerms:        make(map[string]mockGlossaryTerm),
-		tags:                 make(map[string]mockTag),
-		structuredProperties: make(map[string]mockStructuredProperty),
-		ownershipTypes:       make(map[string]mockOwnershipType),
-		dataProducts:         make(map[string]mockDataProduct),
-		assertions:           make(map[string]mockAssertion),
-		actionPipelines:      make(map[string]mockActionPipeline),
-		assignmentRules:      make(map[string]mockAssignmentRule),
-		inviteToken:          "mock-invite-token-001",
-		resetTokens:          make(map[string]string),
-		failDeleteFor:        make(map[string]struct{}),
+		ingestionSources:      make(map[string]mockIngestionSource),
+		secrets:               make(map[string]mockSecret),
+		pools:                 make(map[string]mockExecutorPool),
+		connections:           make(map[string]mockConnection),
+		groups:                make(map[string]mockGroup),
+		users:                 make(map[string]mockUser),
+		policies:              make(map[string]mockPolicy),
+		domains:               make(map[string]mockDomain),
+		glossaryNodes:         make(map[string]mockGlossaryNode),
+		glossaryTerms:         make(map[string]mockGlossaryTerm),
+		tags:                  make(map[string]mockTag),
+		structuredProperties:  make(map[string]mockStructuredProperty),
+		entityStructuredProps: make(map[string]map[string][]spMockValue),
+		ownershipTypes:        make(map[string]mockOwnershipType),
+		dataProducts:          make(map[string]mockDataProduct),
+		assertions:            make(map[string]mockAssertion),
+		actionPipelines:       make(map[string]mockActionPipeline),
+		assignmentRules:       make(map[string]mockAssignmentRule),
+		inviteToken:           "mock-invite-token-001",
+		resetTokens:           make(map[string]string),
+		failDeleteFor:         make(map[string]struct{}),
 	}
 	s.seedUsers()
 	mux := http.NewServeMux()
@@ -208,6 +213,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpdateParentNode(w, req.Variables)
 	case strings.Contains(q, "deleteGlossaryEntity"):
 		s.handleDeleteGlossaryEntity(w, req.Variables)
+	case strings.Contains(q, "upsertStructuredProperties"):
+		s.handleUpsertStructuredProperties(w, req.Variables)
+	case strings.Contains(q, "removeStructuredProperties"):
+		s.handleRemoveStructuredProperties(w, req.Variables)
 	case strings.Contains(q, "deleteStructuredProperty"):
 		s.handleDeleteStructuredProperty(w, req.Variables)
 	case strings.Contains(q, "createTag"):
