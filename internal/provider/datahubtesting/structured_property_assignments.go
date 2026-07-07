@@ -5,7 +5,9 @@ package datahubtesting
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 )
 
 // spMockValue is one assigned structured-property value (string or number).
@@ -22,10 +24,11 @@ func (s *mockServer) handleUpsertStructuredProperties(w http.ResponseWriter, var
 	assetURN, _ := input["assetUrn"].(string)
 	params, _ := input["structuredPropertyInputParams"].([]any)
 
-	s.mu.Lock()
-	if s.entityStructuredProps[assetURN] == nil {
-		s.entityStructuredProps[assetURN] = make(map[string][]spMockValue)
+	type parsedParam struct {
+		propURN string
+		vals    []spMockValue
 	}
+	items := make([]parsedParam, 0, len(params))
 	for _, p := range params {
 		param, _ := p.(map[string]any)
 		propURN, _ := param["structuredPropertyUrn"].(string)
@@ -42,7 +45,56 @@ func (s *mockServer) handleUpsertStructuredProperties(w http.ResponseWriter, var
 			}
 			vals = append(vals, mv)
 		}
-		s.entityStructuredProps[assetURN][propURN] = vals
+		items = append(items, parsedParam{propURN: propURN, vals: vals})
+	}
+
+	s.mu.Lock()
+	// Mirror the server's StructuredPropertiesValidator: reject values that
+	// violate the property definition's cardinality or allowed values. This is
+	// what makes the provider's error-surfacing path testable in-mock.
+	for _, it := range items {
+		id := strings.TrimPrefix(it.propURN, "urn:li:structuredProperty:")
+		def, ok := s.structuredProperties[id]
+		if !ok {
+			continue
+		}
+		if def.Cardinality == "SINGLE" && len(it.vals) > 1 {
+			s.mu.Unlock()
+			writeSPMockError(w, fmt.Sprintf("Property: %s has cardinality 1, but multiple values were assigned: %d", it.propURN, len(it.vals)))
+			return
+		}
+		if len(def.AllowedValues) > 0 {
+			allowed := make(map[string]bool)
+			for _, av := range def.AllowedValues {
+				if av.StringValue != nil {
+					allowed["s:"+*av.StringValue] = true
+				}
+				if av.NumberValue != nil {
+					allowed[fmt.Sprintf("n:%v", *av.NumberValue)] = true
+				}
+			}
+			for _, v := range it.vals {
+				key, display := "", ""
+				switch {
+				case v.String != nil:
+					key, display = "s:"+*v.String, *v.String
+				case v.Double != nil:
+					key, display = fmt.Sprintf("n:%v", *v.Double), fmt.Sprintf("%v", *v.Double)
+				}
+				if !allowed[key] {
+					s.mu.Unlock()
+					writeSPMockError(w, fmt.Sprintf("Property: %s, value: %s should be one of the allowed values", it.propURN, display))
+					return
+				}
+			}
+		}
+	}
+
+	if s.entityStructuredProps[assetURN] == nil {
+		s.entityStructuredProps[assetURN] = make(map[string][]spMockValue)
+	}
+	for _, it := range items {
+		s.entityStructuredProps[assetURN][it.propURN] = it.vals
 	}
 	s.mu.Unlock()
 
@@ -50,6 +102,14 @@ func (s *mockServer) handleUpsertStructuredProperties(w http.ResponseWriter, var
 		"data": map[string]any{
 			"upsertStructuredProperties": map[string]any{"properties": []any{}},
 		},
+	})
+}
+
+// writeSPMockError writes a GraphQL-style errors response (HTTP 200 with an
+// errors array), the shape the client inspects for API errors.
+func writeSPMockError(w http.ResponseWriter, msg string) {
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"errors": []map[string]any{{"message": msg}},
 	})
 }
 

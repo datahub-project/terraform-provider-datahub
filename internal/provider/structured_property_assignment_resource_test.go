@@ -46,6 +46,49 @@ func TestAcc_StructuredPropertyAssignment_TypeMismatch(t *testing.T) {
 	})
 }
 
+func TestAcc_StructuredPropertyAssignment_NonAllowedValue(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-spa-av")
+	domainID := tg.Name("tfprovider-spa-av-dom")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.StructuredPropertyAssignmentNonAllowedValueSteps(propertyID, domainID),
+	})
+}
+
+func TestAcc_StructuredPropertyAssignment_Cardinality(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-spa-card")
+	domainID := tg.Name("tfprovider-spa-card-dom")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.StructuredPropertyAssignmentCardinalitySteps(propertyID, domainID),
+	})
+}
+
+func TestAcc_StructuredPropertyAssignment_PropertyNotFound(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spa-missing-dom")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.StructuredPropertyAssignmentPropertyNotFoundSteps(domainID),
+	})
+}
+
+func TestAcc_StructuredPropertyAssignment_InvalidNumber(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-spa-badnum")
+	domainID := tg.Name("tfprovider-spa-badnum-dom")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.StructuredPropertyAssignmentInvalidNumberSteps(propertyID, domainID),
+	})
+}
+
 func TestAcc_StructuredPropertyAssignment_NumberValues(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	propertyID := tg.Name("tfprovider-spa-num")

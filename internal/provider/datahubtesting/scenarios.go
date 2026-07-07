@@ -5220,3 +5220,114 @@ func StructuredPropertyAssignmentCheckDestroy(s *terraform.State) error {
 	}
 	return nil
 }
+
+// StructuredPropertyAssignmentNonAllowedValueSteps asserts a value outside the
+// property's allowed_values is rejected (server-side; mirrored by the mock).
+func StructuredPropertyAssignmentNonAllowedValueSteps(propertyID, domainID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Allowed Values Domain"
+}
+
+resource "datahub_structured_property" "classification" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["domain"]
+  allowed_values = [
+    { string_value = "Public" },
+    { string_value = "Confidential" },
+  ]
+}
+
+resource "datahub_structured_property_assignment" "bad" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.classification.urn
+  values                  = ["Secret"]
+}
+`, domainID, propertyID),
+			ExpectError: regexp.MustCompile(`(?i)should be one of|allowed value`),
+		},
+	}
+}
+
+// StructuredPropertyAssignmentCardinalitySteps asserts assigning multiple values
+// to a SINGLE-cardinality property is rejected (server-side; mirrored by the mock).
+func StructuredPropertyAssignmentCardinalitySteps(propertyID, domainID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Cardinality Domain"
+}
+
+resource "datahub_structured_property" "single" {
+  property_id  = %q
+  value_type   = "string"
+  cardinality  = "SINGLE"
+  entity_types = ["domain"]
+}
+
+resource "datahub_structured_property_assignment" "toomany" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.single.urn
+  values                  = ["a", "b"]
+}
+`, domainID, propertyID),
+			ExpectError: regexp.MustCompile(`(?i)cardinality`),
+		},
+	}
+}
+
+// StructuredPropertyAssignmentPropertyNotFoundSteps asserts a clear error when
+// the referenced structured property definition does not exist.
+func StructuredPropertyAssignmentPropertyNotFoundSteps(domainID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Missing Property Domain"
+}
+
+resource "datahub_structured_property_assignment" "bad" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = "urn:li:structuredProperty:does-not-exist"
+  values                  = ["x"]
+}
+`, domainID),
+			ExpectError: regexp.MustCompile(`(?i)structured property not found`),
+		},
+	}
+}
+
+// StructuredPropertyAssignmentInvalidNumberSteps asserts a non-numeric value for
+// a number-typed property is rejected client-side before the write.
+func StructuredPropertyAssignmentInvalidNumberSteps(propertyID, domainID string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Invalid Number Domain"
+}
+
+resource "datahub_structured_property" "retention" {
+  property_id  = %q
+  value_type   = "number"
+  entity_types = ["domain"]
+}
+
+resource "datahub_structured_property_assignment" "bad" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.retention.urn
+  values                  = ["not-a-number"]
+}
+`, domainID, propertyID),
+			ExpectError: regexp.MustCompile(`(?i)not a valid number`),
+		},
+	}
+}
