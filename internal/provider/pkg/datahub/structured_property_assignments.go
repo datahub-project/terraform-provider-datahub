@@ -79,6 +79,24 @@ func structuredPropertyValueParams(valueType string, values []string) ([]map[str
 	return out, nil
 }
 
+// lockEntityStructuredProps serializes structuredProperties-aspect writes to a
+// single entity within this provider process, returning an unlock function
+// (unlock := c.lockEntityStructuredProps(urn); defer unlock()).
+//
+// CAT-2568: upsertStructuredProperties / removeStructuredProperties perform a
+// non-atomic read-modify-write of the entity's single structuredProperties
+// aspect server-side, so concurrent writes to the SAME entity -- even for
+// different properties -- silently lose updates (last-writer-wins, HTTP 200, no
+// error). The provider models each assignment as its own resource, so Terraform
+// fires these mutations in parallel at its default parallelism; without
+// serialization, multi-property assignments to one entity drop values.
+// Serializing per entity URN removes the race while leaving writes to different
+// entities fully parallel. Remove this workaround once CAT-2568 is fixed
+// server-side (atomic merge or optimistic-concurrency conflict).
+func (c *Client) lockEntityStructuredProps(entityURN string) func() {
+	return c.structuredPropLocks.lock(entityURN)
+}
+
 // SetStructuredPropertyValues assigns values for one structured property on one
 // entity via the upsertStructuredProperties mutation. This is a per-property
 // MERGE: values for other properties already on the entity are left intact, and
@@ -97,6 +115,10 @@ func (c *Client) SetStructuredPropertyValues(ctx context.Context, entityURN, pro
 	if _, _, err := AssignmentTargetType(entityURN); err != nil {
 		return err
 	}
+
+	// CAT-2568: serialize writes to this entity's structuredProperties aspect.
+	unlock := c.lockEntityStructuredProps(entityURN)
+	defer unlock()
 
 	valueParams, err := structuredPropertyValueParams(valueType, values)
 	if err != nil {
@@ -140,6 +162,10 @@ func (c *Client) RemoveStructuredProperty(ctx context.Context, entityURN, proper
 	if entityURN == "" || propertyURN == "" {
 		return errors.New("entityURN and propertyURN are required")
 	}
+
+	// CAT-2568: serialize writes to this entity's structuredProperties aspect.
+	unlock := c.lockEntityStructuredProps(entityURN)
+	defer unlock()
 
 	const q = `
 mutation removeStructuredProperties($input: RemoveStructuredPropertiesInput!) {
