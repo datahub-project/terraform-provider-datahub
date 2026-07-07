@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `datahub_structured_property_assignment`: assigning several structured properties to the **same** entity in a single apply could silently drop some of the values. DataHub's `upsertStructuredProperties` mutation is a non-atomic read-modify-write of the entity's single structured-properties aspect, so the provider's per-property writes - which Terraform runs in parallel - raced server-side and lost updates, returning success with no error. The provider now serializes structured-property writes per target entity within a run, which removes the race; assignments to different entities still run fully in parallel. A server-side fix is tracked upstream.
+
 ## [0.14.0] - 2026-07-07
 
 ### Added

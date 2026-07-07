@@ -28,6 +28,11 @@ type Client struct {
 	authHeader     string
 	httpClient     *http.Client
 	cachedIdentity *MeIdentity
+
+	// structuredPropLocks serializes structuredProperties-aspect writes per
+	// target entity URN (CAT-2568 workaround; see lockEntityStructuredProps).
+	// The zero value is ready to use, so NewClient needs no explicit init.
+	structuredPropLocks keyedMutex
 }
 
 // NewClient creates a new Datahub API client.
