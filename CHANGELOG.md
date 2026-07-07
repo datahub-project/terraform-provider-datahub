@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-07
+
 ### Added
 
 - `custom_properties` on `datahub_glossary_node`, `datahub_glossary_term`, `datahub_corp_user`, and `datahub_service_account`: a key-value string map stored on each entity's info aspect (`glossaryNodeInfo`/`glossaryTermInfo`/`corpUserInfo`), matching the `custom_properties` already on `datahub_domain` and `datahub_data_product`. Glossary nodes and terms render these properties in the DataHub UI, so the attribute gives a first-class home for governance metadata that previously had to be forced into the description. Terraform owns the complete map (keys added elsewhere are removed on the next apply), and the shared validator rejects empty maps, empty keys, and null or empty-string values at plan time. For glossary, the GraphQL create mutations do not carry `customProperties`, so the map is written via the OpenAPI v3 entity endpoint, passing the required aspect fields (`name`/`definition`, and `termSource` for terms) through so they are not clobbered; for users and service accounts it rides along in the existing `corpUserInfo` OpenAPI upsert.
@@ -250,7 +252,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.10.0...v0.11.0
