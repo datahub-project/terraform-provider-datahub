@@ -136,3 +136,12 @@ resource "datahub_structured_property_assignment" "tier_term" {
 
   depends_on = [datahub_structured_property_assignment.regions_term]
 }
+
+# DataHub Provider and/or DataHub (but see CAT-2563) should block this assignment
+resource "datahub_structured_property_assignment" "tier_term_for_glossary_node" {
+  entity_urn              = datahub_glossary_node.governance.urn
+  structured_property_urn = datahub_structured_property.tier.urn
+  values                  = ["Gold"]
+
+  depends_on = [datahub_structured_property_assignment.tier_term]
+}
