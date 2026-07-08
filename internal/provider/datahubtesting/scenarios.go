@@ -5516,8 +5516,8 @@ resource "datahub_structured_property_assignment" "b" {
 				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("entity_urn"), knownvalue.StringExact(domainURN)),
 				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("structured_property_urn"), knownvalue.StringExact(classURN)),
 				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("id"), knownvalue.StringExact(importID)),
-				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Public")),
-				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Gold")),
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("values"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("Public")})),
+				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("values"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("Gold")})),
 			},
 		},
 		{
@@ -5532,8 +5532,8 @@ resource "datahub_structured_property_assignment" "b" {
 				},
 			},
 			ConfigStateChecks: []statecheck.StateCheck{
-				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Confidential")),
-				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("Gold")),
+				statecheck.ExpectKnownValue(addrA, tfjsonpath.New("values"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("Confidential")})),
+				statecheck.ExpectKnownValue(addrB, tfjsonpath.New("values"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("Gold")})),
 			},
 		},
 		{
@@ -5617,7 +5617,7 @@ resource "datahub_structured_property_assignment" "num" {
 }
 `, domainID, propertyID),
 			ConfigStateChecks: []statecheck.StateCheck{
-				statecheck.ExpectKnownValue(addr, tfjsonpath.New("values").AtSliceIndex(0), knownvalue.StringExact("30")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("values"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("30")})),
 			},
 		},
 	}
@@ -5707,6 +5707,57 @@ resource "datahub_structured_property_assignment" "toomany" {
 }
 `, domainID, propertyID),
 			ExpectError: regexp.MustCompile(`(?i)cardinality`),
+		},
+	}
+}
+
+// StructuredPropertyAssignmentReorderSteps asserts that reordering the values of
+// a MULTIPLE-cardinality assignment produces no diff. Values are modelled as an
+// unordered set (DataHub does not preserve value ordering), so {a,b,c} and
+// {c,a,b} are equal. This locks in the list->set change: with an ordered list,
+// the second step would plan a spurious in-place update.
+func StructuredPropertyAssignmentReorderSteps(propertyID, domainID string) []resource.TestStep {
+	base := func(values string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Reorder Domain"
+}
+
+resource "datahub_structured_property" "multi" {
+  property_id  = %q
+  value_type   = "string"
+  cardinality  = "MULTIPLE"
+  entity_types = ["domain"]
+}
+
+resource "datahub_structured_property_assignment" "multi" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.multi.urn
+  values                  = %s
+}
+`, domainID, propertyID, values)
+	}
+	const addr = "datahub_structured_property_assignment.multi"
+	return []resource.TestStep{
+		{
+			Config: base(`["a", "b", "c"]`),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("values"), knownvalue.SetExact([]knownvalue.Check{
+					knownvalue.StringExact("a"),
+					knownvalue.StringExact("b"),
+					knownvalue.StringExact("c"),
+				})),
+			},
+		},
+		{
+			// Same values, different order -- must be a no-op, not an update.
+			Config: base(`["c", "a", "b"]`),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectEmptyPlan(),
+				},
+			},
 		},
 	}
 }

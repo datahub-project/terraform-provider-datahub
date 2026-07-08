@@ -60,7 +60,7 @@ type structuredPropertyAssignmentResourceModel struct {
 	ID                    types.String `tfsdk:"id"`
 	EntityURN             types.String `tfsdk:"entity_urn"`
 	StructuredPropertyURN types.String `tfsdk:"structured_property_urn"`
-	Values                types.List   `tfsdk:"values"`
+	Values                types.Set    `tfsdk:"values"`
 }
 
 func NewStructuredPropertyAssignmentResource() resource.Resource {
@@ -129,10 +129,10 @@ func (r *structuredPropertyAssignmentResource) Schema(_ context.Context, _ resou
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"values": schema.ListAttribute{
+			"values": schema.SetAttribute{
 				Required:            true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "The value(s) to assign. A `SINGLE`-cardinality property takes exactly one; a `MULTIPLE` property takes several. All values are strings; for a `number`-typed property give the number in minimal string form (e.g. `\"30\"`). Can be changed in place.",
+				MarkdownDescription: "The value(s) to assign, as an unordered set. A `SINGLE`-cardinality property takes exactly one; a `MULTIPLE` property takes several. All values are strings; for a `number`-typed property give the number in minimal string form (e.g. `\"30\"`). Can be changed in place. DataHub does not preserve value ordering, so this is modelled as a set: reordering the values produces no diff.",
 			},
 		},
 	}
@@ -210,12 +210,12 @@ func (r *structuredPropertyAssignmentResource) Read(ctx context.Context, req res
 		return
 	}
 
-	valuesList, diags := types.ListValueFrom(ctx, types.StringType, values)
+	valuesSet, diags := types.SetValueFrom(ctx, types.StringType, values)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	state.Values = valuesList
+	state.Values = valuesSet
 	state.ID = types.StringValue(spAssignmentID(entityURN, propertyURN))
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -304,7 +304,7 @@ func (r *structuredPropertyAssignmentResource) ImportState(ctx context.Context, 
 		return
 	}
 
-	valuesList, diags := types.ListValueFrom(ctx, types.StringType, values)
+	valuesSet, diags := types.SetValueFrom(ctx, types.StringType, values)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -314,7 +314,7 @@ func (r *structuredPropertyAssignmentResource) ImportState(ctx context.Context, 
 		ID:                    types.StringValue(spAssignmentID(entityURN, propertyURN)),
 		EntityURN:             types.StringValue(entityURN),
 		StructuredPropertyURN: types.StringValue(propertyURN),
-		Values:                valuesList,
+		Values:                valuesSet,
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

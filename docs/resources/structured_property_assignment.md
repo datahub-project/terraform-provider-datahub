@@ -61,7 +61,7 @@ resource "datahub_structured_property_assignment" "finance_classification" {
 
 - `entity_urn` (String) URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, or `dataProduct` URN. Changing this forces a new resource.
 - `structured_property_urn` (String) URN of the structured property to assign (e.g. `urn:li:structuredProperty:<id>`). Changing this forces a new resource.
-- `values` (List of String) The value(s) to assign. A `SINGLE`-cardinality property takes exactly one; a `MULTIPLE` property takes several. All values are strings; for a `number`-typed property give the number in minimal string form (e.g. `"30"`). Can be changed in place.
+- `values` (Set of String) The value(s) to assign, as an unordered set. A `SINGLE`-cardinality property takes exactly one; a `MULTIPLE` property takes several. All values are strings; for a `number`-typed property give the number in minimal string form (e.g. `"30"`). Can be changed in place. DataHub does not preserve value ordering, so this is modelled as a set: reordering the values produces no diff.
 
 ### Read-Only
 
