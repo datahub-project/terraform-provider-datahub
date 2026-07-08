@@ -33,19 +33,6 @@ func TestAcc_StructuredPropertyAssignment_UnsupportedTarget(t *testing.T) {
 	})
 }
 
-func TestAcc_StructuredPropertyAssignment_TypeMismatch(t *testing.T) {
-	// Guard #2 (CAT-2563): property not applicable to the target entity type,
-	// rejected at apply time.
-	tg := datahubtesting.SetupTarget(t)
-	propertyID := tg.Name("tfprovider-spa-mismatch")
-	domainID := tg.Name("tfprovider-spa-mismatch-dom")
-
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps:                    datahubtesting.StructuredPropertyAssignmentTypeMismatchSteps(propertyID, domainID),
-	})
-}
-
 func TestAcc_StructuredPropertyAssignment_Reorder(t *testing.T) {
 	// values is an unordered set: reordering must not produce a diff.
 	tg := datahubtesting.SetupTarget(t)

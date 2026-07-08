@@ -313,9 +313,8 @@ func (r *structuredPropertyAssignmentResource) ImportState(ctx context.Context, 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// assertApplicable fetches the property definition and enforces that its
-// entityTypes include the target entity's type. It returns the property's value
-// type (for value routing) and false if a diagnostic was raised.
+// assertApplicable fetches the property definition and returns its value type
+// (for value routing). It returns false if a diagnostic was raised.
 func (r *structuredPropertyAssignmentResource) assertApplicable(ctx context.Context, entityURN, propertyURN string, addError func(string, string)) (string, bool) {
 	def, err := r.client.GetStructuredPropertyByURN(ctx, propertyURN)
 	if err != nil {
@@ -330,29 +329,8 @@ func (r *structuredPropertyAssignmentResource) assertApplicable(ctx context.Cont
 		return "", false
 	}
 
-	_, entityType, err := datahub.AssignmentTargetType(entityURN)
-	if err != nil {
+	if _, _, err := datahub.AssignmentTargetType(entityURN); err != nil {
 		addError("Unsupported assignment target", err.Error())
-		return "", false
-	}
-
-	// CAT-2563: DataHub does not enforce a property definition's entityTypes at
-	// assignment time -- a mismatched property is accepted and even displayed --
-	// so only the provider can prevent a misapplied assignment. Verify here.
-	applicable := false
-	for _, et := range def.EntityTypes {
-		if et == entityType {
-			applicable = true
-			break
-		}
-	}
-	if !applicable {
-		addError(
-			"Structured property not applicable to this entity type",
-			fmt.Sprintf("Structured property %q declares entity_types %v, which does not include %q (the type of %s). "+
-				"Assign it only to entities of a declared type, or add %q to the property's entity_types.",
-				propertyURN, def.EntityTypes, entityType, entityURN, entityType),
-		)
 		return "", false
 	}
 

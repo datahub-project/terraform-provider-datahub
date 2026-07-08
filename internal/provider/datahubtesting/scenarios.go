@@ -5563,35 +5563,6 @@ resource "datahub_structured_property_assignment" "bad" {
 	}
 }
 
-// StructuredPropertyAssignmentTypeMismatchSteps asserts guard #2 (CAT-2563): a
-// property whose definition's entity_types does not include the target's type is
-// rejected at apply time (the server would otherwise accept it silently).
-func StructuredPropertyAssignmentTypeMismatchSteps(propertyID, domainID string) []resource.TestStep {
-	return []resource.TestStep{
-		{
-			Config: providerBlock + fmt.Sprintf(`
-resource "datahub_domain" "test" {
-  domain_id = %q
-  name      = "Mismatch Domain"
-}
-
-resource "datahub_structured_property" "ds_only" {
-  property_id  = %q
-  value_type   = "string"
-  entity_types = ["dataset"]
-}
-
-resource "datahub_structured_property_assignment" "bad" {
-  entity_urn              = datahub_domain.test.urn
-  structured_property_urn = datahub_structured_property.ds_only.urn
-  values                  = ["x"]
-}
-`, domainID, propertyID),
-			ExpectError: regexp.MustCompile(`(?i)not applicable|entity_types`),
-		},
-	}
-}
-
 // StructuredPropertyAssignmentNumberSteps assigns a number-typed property and
 // asserts the value round-trips in minimal string form ("30").
 func StructuredPropertyAssignmentNumberSteps(propertyID, domainID string) []resource.TestStep {
