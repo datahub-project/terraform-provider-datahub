@@ -34,7 +34,7 @@ If you use [mise](https://mise.jdx.dev), add the following to your `mise.toml` a
 
 ```toml
 [tools]
-"ubi:datahub-project/terraform-provider-datahub" = { version = "0.14.0", exe = "datahub-tf-extract", matching = "tools-datahub-tf-extract" }
+"ubi:datahub-project/terraform-provider-datahub" = { version = "0.15.0", exe = "datahub-tf-extract", matching = "tools-datahub-tf-extract" }
 ```
 
 This pins the CLI to a specific version, keeps it in sync with the provider version your project uses, and requires no manual PATH management.
@@ -44,8 +44,8 @@ This pins the CLI to a specific version, keeps it in sync with the provider vers
 Download the `tools-datahub-tf-extract_<version>_<os>_<arch>.zip` archive for your platform from the [GitHub releases page](https://github.com/datahub-project/terraform-provider-datahub/releases), unzip it, and move the binary to a directory on your PATH:
 
 ```shell
-unzip tools-datahub-tf-extract_0.14.0_darwin_arm64.zip
-mv datahub-tf-extract_v0.14.0 /usr/local/bin/datahub-tf-extract
+unzip tools-datahub-tf-extract_0.15.0_darwin_arm64.zip
+mv datahub-tf-extract_v0.15.0 /usr/local/bin/datahub-tf-extract
 ```
 
 **Option 3: build from source**
