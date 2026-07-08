@@ -84,7 +84,15 @@ func (r *glossaryTermResource) Schema(_ context.Context, _ resource.SchemaReques
 			"`term_id` becomes the URN suffix (`urn:li:glossaryTerm:<term_id>`). Supplying " +
 			"an explicit, deterministic id avoids the random UUID that the DataHub UI assigns, " +
 			"keeps the URN stable and predictable, and prevents duplicate entities when " +
-			"coexisting with SDK-created terms. The DataHub model caps the id at 56 characters.",
+			"coexisting with SDK-created terms. The DataHub model caps the id at 56 characters.\n\n" +
+			"## Orphaned-husk repair\n\n" +
+			"A DataHub server bug can leave an invisible, empty \"husk\" entity behind when a " +
+			"structured property and entities carrying it are deleted around the same time " +
+			"(e.g. one `terraform destroy`), which then blocks re-creation with an " +
+			"\"already exists\" error. When create hits that error and the blocking entity is " +
+			"provably such a husk (no info aspect, no data beyond an empty structured-properties " +
+			"aspect), the provider removes the husk, retries the create, and reports a warning. " +
+			"Entities with any real content are never touched.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -167,7 +175,7 @@ func (r *glossaryTermResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	urn, err := r.client.CreateGlossaryTerm(ctx, datahub.CreateGlossaryEntityInput{
+	urn, repairedHusk, err := r.client.CreateGlossaryTerm(ctx, datahub.CreateGlossaryEntityInput{
 		ID:         plan.TermID.ValueString(),
 		Name:       plan.Name.ValueString(),
 		Definition: strVal(plan.Description),
@@ -176,6 +184,14 @@ func (r *glossaryTermResource) Create(ctx context.Context, req resource.CreateRe
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+	if repairedHusk {
+		resp.Diagnostics.AddWarning(
+			"Repaired orphaned glossary term",
+			fmt.Sprintf("An empty glossary term husk existed at %s - debris left by DataHub's "+
+				"structured-property cleanup writing to a hard-deleted entity (CAT-2583). "+
+				"The provider removed it and created the term normally.", urn),
+		)
 	}
 
 	plan.ID = types.StringValue(urn)
