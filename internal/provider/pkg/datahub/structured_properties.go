@@ -443,6 +443,15 @@ func (c *Client) UpdateStructuredProperty(ctx context.Context, urn string, in Cr
 var (
 	structuredPropertySettleTimeout  = 60 * time.Second
 	structuredPropertySettleInterval = 2 * time.Second
+	// structuredPropertySettleZeroStreak is how many consecutive zero-count
+	// polls are required before the index is considered settled. A single
+	// zero is not sufficient: OpenSearch reads are not monotonic across
+	// queries (replica divergence, refresh timing), and a live test showed
+	// the server-side cleanup hook finding an entity ~250ms after one
+	// barrier poll returned zero. Requiring a streak of zeros spread over
+	// several seconds makes a stale read surviving the whole window
+	// unlikely.
+	structuredPropertySettleZeroStreak = 3
 )
 
 // structuredPropertySearchField returns the search-index field name DataHub
@@ -519,9 +528,12 @@ query countEntitiesWithStructuredProperty($input: SearchAcrossEntitiesInput!) {
 // hard-deleted; the patch against a hard-deleted entity resurrects it as an
 // empty husk (key aspect + empty structuredProperties aspect) that is
 // invisible in the UI but blocks re-creation with "already exists". Waiting
-// for the same EXISTS query the side effect uses to reach zero before issuing
-// the delete guarantees the side effect finds nothing to patch. Remove this
-// barrier once CAT-2583 is fixed upstream.
+// for the same EXISTS query the side effect uses to return zero (several
+// consecutive times, since index reads are not monotonic) before issuing the
+// delete leaves the side effect nothing to patch. This narrows the window
+// substantially but cannot close it by construction - the side effect runs
+// asynchronously against a replicated index - so it is a mitigation, not a
+// guarantee. Remove this barrier once CAT-2583 is fixed upstream.
 //
 // Failures here never block the delete: on lookup errors or budget
 // exhaustion the delete proceeds and the (small) resurrection window remains.
@@ -533,10 +545,19 @@ func (c *Client) settleStructuredPropertyAssignments(ctx context.Context, urn st
 	field := structuredPropertySearchField(sp.QualifiedName, sp.Version, sp.ValueType)
 
 	deadline := time.Now().Add(structuredPropertySettleTimeout)
+	zeroStreak := 0
 	for {
 		total, err := c.countEntitiesWithStructuredProperty(ctx, field)
-		if err != nil || total == 0 {
+		if err != nil {
 			return
+		}
+		if total == 0 {
+			zeroStreak++
+			if zeroStreak >= structuredPropertySettleZeroStreak {
+				return
+			}
+		} else {
+			zeroStreak = 0
 		}
 		if time.Now().After(deadline) {
 			tflog.Warn(ctx, "structured property still assigned in the search index after settle timeout; "+

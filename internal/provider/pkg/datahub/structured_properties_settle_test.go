@@ -160,13 +160,17 @@ func spSettleDefinition(qualifiedName string) map[string]any {
 // the delete mutation must not be issued while the search index still lists
 // entities carrying the property, because the server-side
 // PropertyDefinitionDeleteSideEffect patches every stale hit and resurrects
-// concurrently hard-deleted entities.
+// concurrently hard-deleted entities. A single zero is not enough - index
+// reads are not monotonic - so the barrier requires a streak of consecutive
+// zeros, and a non-zero read resets the streak.
 func TestDeleteStructuredProperty_SettleBarrier(t *testing.T) {
 	shortenSettleBudget(t, 5*time.Second, 5*time.Millisecond)
 
+	// Totals include a zero followed by a stale non-zero read: the streak must
+	// reset, so the delete may only fire after the trailing three zeros.
 	ts := &settleTestServer{
 		definition:   spSettleDefinition("tf-example.governance.regions"),
-		searchTotals: []int{2, 1, 0},
+		searchTotals: []int{2, 0, 1, 0, 0, 0},
 	}
 	srv := httptest.NewServer(ts.handler())
 	defer srv.Close()
@@ -178,11 +182,11 @@ func TestDeleteStructuredProperty_SettleBarrier(t *testing.T) {
 
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	if ts.searchCalls != 3 {
-		t.Errorf("expected 3 settle polls (totals 2, 1, 0), got %d", ts.searchCalls)
+	if ts.searchCalls != 6 {
+		t.Errorf("expected 6 settle polls (streak reset by the stale non-zero), got %d", ts.searchCalls)
 	}
-	if ts.deleteCalls != 1 || len(ts.deleteAfter) != 1 || ts.deleteAfter[0] != 3 {
-		t.Errorf("expected exactly one delete after the third poll, got deletes=%d after polls %v", ts.deleteCalls, ts.deleteAfter)
+	if ts.deleteCalls != 1 || len(ts.deleteAfter) != 1 || ts.deleteAfter[0] != 6 {
+		t.Errorf("expected exactly one delete after the sixth poll, got deletes=%d after polls %v", ts.deleteCalls, ts.deleteAfter)
 	}
 	for _, f := range ts.searchFields {
 		if f != "structuredProperties.tf-example_governance_regions" {
