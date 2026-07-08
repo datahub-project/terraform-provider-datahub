@@ -46,6 +46,19 @@ func TestAcc_StructuredPropertyAssignment_TypeMismatch(t *testing.T) {
 	})
 }
 
+func TestAcc_StructuredPropertyAssignment_Reorder(t *testing.T) {
+	// values is an unordered set: reordering must not produce a diff.
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-spa-reorder")
+	domainID := tg.Name("tfprovider-spa-reorder-dom")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.StructuredPropertyAssignmentCheckDestroy,
+		Steps:                    datahubtesting.StructuredPropertyAssignmentReorderSteps(propertyID, domainID),
+	})
+}
+
 func TestAcc_StructuredPropertyAssignment_NonAllowedValue(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	propertyID := tg.Name("tfprovider-spa-av")
