@@ -95,7 +95,7 @@ Discretion example - `datahub_service_account`: a service account has no distinc
 
 Dependabot has no `mise` ecosystem support — tool versions pinned in `mise.toml` are a blind spot not covered by any automated process.
 
-Before cutting a release (or if `mise.toml` has not changed in a long time), check and update pinned tools:
+Bump pinned tools **right after cutting a release**, not before. A tool upgrade can introduce a regression, and doing it immediately before tagging leaves no buffer to catch one -- it risks derailing a release that is otherwise ready. Running it just after a release means any breakage surfaces at the start of the next development cycle, with a full cycle to shake out, and the release you just shipped is unaffected. (Also run it any time `mise.toml` has not changed in a long time.) Check and update pinned tools with:
 
 ```bash
 mise outdated --local --bump   # check what is stale (--local scopes to this project only)
