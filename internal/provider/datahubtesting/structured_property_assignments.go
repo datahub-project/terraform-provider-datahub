@@ -140,6 +140,61 @@ func (s *mockServer) handleRemoveStructuredProperties(w http.ResponseWriter, var
 	})
 }
 
+// spExistsFilterField extracts the field name from a searchAcrossEntities
+// input whose orFilters contain a single EXISTS criterion on a
+// "structuredProperties." index field, or "" when the input is any other
+// search. This is the query shape the provider's delete settle-barrier sends.
+func spExistsFilterField(input map[string]any) string {
+	orFilters, _ := input["orFilters"].([]any)
+	for _, ofAny := range orFilters {
+		of, _ := ofAny.(map[string]any)
+		ands, _ := of["and"].([]any)
+		for _, cAny := range ands {
+			criterion, _ := cAny.(map[string]any)
+			field, _ := criterion["field"].(string)
+			condition, _ := criterion["condition"].(string)
+			if condition == "EXISTS" && strings.HasPrefix(field, "structuredProperties.") {
+				return field
+			}
+		}
+	}
+	return ""
+}
+
+// handleSearchEntitiesWithStructuredProperty answers the settle-barrier's
+// EXISTS query: it counts stored assignments whose property URN maps to the
+// requested index field (qualified name with dots replaced by underscores).
+func (s *mockServer) handleSearchEntitiesWithStructuredProperty(w http.ResponseWriter, field string) {
+	fieldName := strings.TrimPrefix(field, "structuredProperties.")
+
+	s.mu.Lock()
+	var results []map[string]any
+	for entityURN, props := range s.entityStructuredProps {
+		for propURN := range props {
+			id := strings.TrimPrefix(propURN, "urn:li:structuredProperty:")
+			if strings.ReplaceAll(id, ".", "_") == fieldName {
+				results = append(results, map[string]any{
+					"entity": map[string]any{"urn": entityURN},
+				})
+				break
+			}
+		}
+	}
+	s.mu.Unlock()
+
+	if results == nil {
+		results = []map[string]any{}
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{
+			"searchAcrossEntities": map[string]any{
+				"total":         len(results),
+				"searchResults": results,
+			},
+		},
+	})
+}
+
 // structuredPropertiesAspect returns the OpenAPI v3 structuredProperties aspect
 // for a target entity, or nil when the entity has no assignments. Takes its own
 // lock; call it from item handlers AFTER they have released s.mu.

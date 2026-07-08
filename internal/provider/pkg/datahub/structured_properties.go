@@ -11,6 +11,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 const (
@@ -71,6 +74,7 @@ type StructuredProperty struct {
 	URN                string
 	ID                 string
 	QualifiedName      string
+	Version            string // optional definition version (e.g. "20240614"); empty for un-versioned properties
 	DisplayName        string
 	Description        string
 	ValueType          string // short name, e.g. "number"
@@ -111,6 +115,7 @@ type structuredPropertyEntity struct {
 	PropDef *struct {
 		Value struct {
 			QualifiedName string   `json:"qualifiedName"`
+			Version       string   `json:"version"`
 			DisplayName   string   `json:"displayName"`
 			Description   string   `json:"description"`
 			ValueType     string   `json:"valueType"`
@@ -360,6 +365,7 @@ func (c *Client) GetStructuredPropertyByURN(ctx context.Context, urn string) (*S
 	if entity.PropDef != nil {
 		v := entity.PropDef.Value
 		sp.QualifiedName = v.QualifiedName
+		sp.Version = v.Version
 		if sp.ID == "" {
 			sp.ID = v.QualifiedName
 		}
@@ -432,10 +438,126 @@ func (c *Client) UpdateStructuredProperty(ctx context.Context, urn string, in Cr
 	return c.writeStructuredProperty(ctx, urn, in)
 }
 
+// Settle-barrier tunables for DeleteStructuredProperty. Variables (not
+// constants) so tests can shorten them.
+var (
+	structuredPropertySettleTimeout  = 60 * time.Second
+	structuredPropertySettleInterval = 2 * time.Second
+)
+
+// structuredPropertySearchField returns the search-index field name DataHub
+// derives for a structured property's assigned values, mirroring the server's
+// StructuredPropertyUtils.toElasticsearchFieldName: the qualified name with
+// dots replaced by underscores, under the "structuredProperties." prefix.
+// Versioned definitions use the "_versioned.<name>.<version>.<type>" form,
+// where <type> is the short value type (e.g. "string").
+func structuredPropertySearchField(qualifiedName, version, shortValueType string) string {
+	name := strings.ReplaceAll(qualifiedName, ".", "_")
+	if version == "" {
+		return "structuredProperties." + name
+	}
+	return "structuredProperties._versioned." + name + "." + version + "." + shortValueType
+}
+
+// countEntitiesWithStructuredProperty returns the number of entities the
+// search index currently lists as carrying a value for the given structured
+// property search field.
+func (c *Client) countEntitiesWithStructuredProperty(ctx context.Context, field string) (int, error) {
+	const q = `
+query countEntitiesWithStructuredProperty($input: SearchAcrossEntitiesInput!) {
+  searchAcrossEntities(input: $input) {
+    total
+  }
+}`
+	body := map[string]any{
+		"query": q,
+		"variables": map[string]any{
+			"input": map[string]any{
+				"types": []string{},
+				"query": "*",
+				"start": 0,
+				"count": 1,
+				"orFilters": []map[string]any{
+					{"and": []map[string]any{
+						{"field": field, "condition": "EXISTS", "values": []string{}},
+					}},
+				},
+				"searchFlags": map[string]any{"skipCache": true},
+			},
+		},
+	}
+
+	var gqlResp struct {
+		Data struct {
+			SearchAcrossEntities struct {
+				Total int `json:"total"`
+			} `json:"searchAcrossEntities"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+		return 0, err
+	}
+	if len(gqlResp.Errors) > 0 {
+		return 0, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+	}
+	return gqlResp.Data.SearchAcrossEntities.Total, nil
+}
+
+// settleStructuredPropertyAssignments waits until the search index shows zero
+// entities carrying the given structured property, or until the settle budget
+// is exhausted.
+//
+// Server-bug workaround, tracked upstream as CAT-2583: deleting a
+// structured property triggers the server-side
+// PropertyDefinitionDeleteSideEffect, which scrolls the (eventually
+// consistent) search index for entities carrying the property and emits a
+// JSON-PATCH REMOVE of the value against each hit. A stale index can list
+// entities whose assignments were just removed or that were just
+// hard-deleted; the patch against a hard-deleted entity resurrects it as an
+// empty husk (key aspect + empty structuredProperties aspect) that is
+// invisible in the UI but blocks re-creation with "already exists". Waiting
+// for the same EXISTS query the side effect uses to reach zero before issuing
+// the delete guarantees the side effect finds nothing to patch. Remove this
+// barrier once CAT-2583 is fixed upstream.
+//
+// Failures here never block the delete: on lookup errors or budget
+// exhaustion the delete proceeds and the (small) resurrection window remains.
+func (c *Client) settleStructuredPropertyAssignments(ctx context.Context, urn string) {
+	sp, err := c.GetStructuredPropertyByURN(ctx, urn)
+	if err != nil || sp == nil || sp.QualifiedName == "" {
+		return
+	}
+	field := structuredPropertySearchField(sp.QualifiedName, sp.Version, sp.ValueType)
+
+	deadline := time.Now().Add(structuredPropertySettleTimeout)
+	for {
+		total, err := c.countEntitiesWithStructuredProperty(ctx, field)
+		if err != nil || total == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			tflog.Warn(ctx, "structured property still assigned in the search index after settle timeout; "+
+				"proceeding with delete - concurrently hard-deleted entities may be resurrected (CAT-2583)",
+				map[string]any{"urn": urn, "remaining": total})
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(structuredPropertySettleInterval):
+		}
+	}
+}
+
 // DeleteStructuredProperty hard-deletes a DataHub structured property by URN
 // via the deleteStructuredProperty GraphQL mutation. Deletion also asynchronously
 // removes applied values from all assets. Structured properties are flat (no
-// children), so no child-guard or retry logic is needed.
+// children), so no child-guard or retry logic is needed; however, the delete
+// waits for the search index to stop listing assignees first (see
+// settleStructuredPropertyAssignments / CAT-2583).
 func (c *Client) DeleteStructuredProperty(ctx context.Context, urn string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -444,6 +566,8 @@ func (c *Client) DeleteStructuredProperty(ctx context.Context, urn string) error
 	if urn == "" {
 		return errors.New("URN is required")
 	}
+
+	c.settleStructuredPropertyAssignments(ctx, urn)
 
 	const q = `
 mutation deleteStructuredProperty($input: DeleteStructuredPropertyInput!) {
