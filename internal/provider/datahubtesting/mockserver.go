@@ -457,6 +457,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 		}
 	}
 
+	// The structured-property delete settle-barrier searches by an EXISTS
+	// filter on the property's index field rather than by entity type; answer
+	// it from the stored assignments.
+	if field := spExistsFilterField(input); field != "" {
+		s.handleSearchEntitiesWithStructuredProperty(w, field)
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

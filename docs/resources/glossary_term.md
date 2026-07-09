@@ -11,6 +11,8 @@ description: |-
   Note: unlike domains, DataHub does not refuse to delete a glossary node that still has children -- the server will succeed, leaving terms parentless. Correct parent_node = datahub_glossary_node.<name>.urn references are the only thing that guarantees safe destroy ordering.
   Naming
   term_id becomes the URN suffix (urn:li:glossaryTerm:<term_id>). Supplying an explicit, deterministic id avoids the random UUID that the DataHub UI assigns, keeps the URN stable and predictable, and prevents duplicate entities when coexisting with SDK-created terms. The DataHub model caps the id at 56 characters.
+  Orphaned-husk repair
+  A DataHub server bug can leave an invisible, empty "husk" entity behind when a structured property and entities carrying it are deleted around the same time (e.g. one terraform destroy), which then blocks re-creation with an "already exists" error. When create hits that error and the blocking entity is provably such a husk (no info aspect, no data beyond an empty structured-properties aspect), the provider removes the husk, retries the create, and reports a warning. Entities with any real content are never touched.
 ---
 
 # datahub_glossary_term (Resource)
@@ -30,6 +32,10 @@ Set `parent_node` to the `.urn` attribute of a `datahub_glossary_node` resource 
 ## Naming
 
 `term_id` becomes the URN suffix (`urn:li:glossaryTerm:<term_id>`). Supplying an explicit, deterministic id avoids the random UUID that the DataHub UI assigns, keeps the URN stable and predictable, and prevents duplicate entities when coexisting with SDK-created terms. The DataHub model caps the id at 56 characters.
+
+## Orphaned-husk repair
+
+A DataHub server bug can leave an invisible, empty "husk" entity behind when a structured property and entities carrying it are deleted around the same time (e.g. one `terraform destroy`), which then blocks re-creation with an "already exists" error. When create hits that error and the blocking entity is provably such a husk (no info aspect, no data beyond an empty structured-properties aspect), the provider removes the husk, retries the create, and reports a warning. Entities with any real content are never touched.
 
 ## Example Usage
 
