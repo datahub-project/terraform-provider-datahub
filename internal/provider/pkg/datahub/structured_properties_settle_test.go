@@ -55,11 +55,11 @@ func TestStructuredPropertySearchField(t *testing.T) {
 
 // shortenSettleBudget shrinks the settle-barrier tunables for the duration of
 // a test and restores them afterwards.
-func shortenSettleBudget(t *testing.T, timeout, interval time.Duration) {
+func shortenSettleBudget(t *testing.T, timeout time.Duration) {
 	t.Helper()
 	prevTimeout, prevInterval := structuredPropertySettleTimeout, structuredPropertySettleInterval
 	structuredPropertySettleTimeout = timeout
-	structuredPropertySettleInterval = interval
+	structuredPropertySettleInterval = 5 * time.Millisecond
 	t.Cleanup(func() {
 		structuredPropertySettleTimeout = prevTimeout
 		structuredPropertySettleInterval = prevInterval
@@ -74,6 +74,8 @@ type settleTestServer struct {
 	mu           sync.Mutex
 	definition   map[string]any // nil => respond 404
 	searchTotals []int
+	searchErr    bool // searchAcrossEntities returns a GraphQL error
+	deleteErr    bool // deleteStructuredProperty returns a GraphQL error
 	searchCalls  int
 	searchFields []string
 	deleteCalls  int
@@ -113,6 +115,12 @@ func (s *settleTestServer) handler() http.HandlerFunc {
 		switch {
 		case strings.Contains(req.Query, "searchAcrossEntities"):
 			s.mu.Lock()
+			if s.searchErr {
+				s.searchCalls++
+				s.mu.Unlock()
+				_, _ = w.Write([]byte(`{"errors":[{"message":"search unavailable"}]}`))
+				return
+			}
 			idx := s.searchCalls
 			if idx >= len(s.searchTotals) {
 				idx = len(s.searchTotals) - 1
@@ -132,7 +140,12 @@ func (s *settleTestServer) handler() http.HandlerFunc {
 			s.mu.Lock()
 			s.deleteCalls++
 			s.deleteAfter = append(s.deleteAfter, s.searchCalls)
+			fails := s.deleteErr
 			s.mu.Unlock()
+			if fails {
+				_, _ = w.Write([]byte(`{"errors":[{"message":"Unauthorized to delete this property"}]}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"data":{"deleteStructuredProperty":true}}`))
 		default:
 			http.Error(w, `{"errors":[{"message":"unexpected query"}]}`, http.StatusBadRequest)
@@ -164,7 +177,7 @@ func spSettleDefinition(qualifiedName string) map[string]any {
 // reads are not monotonic - so the barrier requires a streak of consecutive
 // zeros, and a non-zero read resets the streak.
 func TestDeleteStructuredProperty_SettleBarrier(t *testing.T) {
-	shortenSettleBudget(t, 5*time.Second, 5*time.Millisecond)
+	shortenSettleBudget(t, 5*time.Second)
 
 	// Totals include a zero followed by a stale non-zero read: the streak must
 	// reset, so the delete may only fire after the trailing three zeros.
@@ -199,7 +212,7 @@ func TestDeleteStructuredProperty_SettleBarrier(t *testing.T) {
 // best-effort: when the index never settles within the budget, the delete
 // still goes through rather than failing the destroy.
 func TestDeleteStructuredProperty_SettleTimeoutProceeds(t *testing.T) {
-	shortenSettleBudget(t, 20*time.Millisecond, 5*time.Millisecond)
+	shortenSettleBudget(t, 20*time.Millisecond)
 
 	ts := &settleTestServer{
 		definition:   spSettleDefinition("tf-example.governance.tier"),
@@ -223,11 +236,66 @@ func TestDeleteStructuredProperty_SettleTimeoutProceeds(t *testing.T) {
 	}
 }
 
+// TestDeleteStructuredProperty_GuardsAndMutationError covers the input
+// guards and verifies a delete-mutation failure surfaces as an error.
+func TestDeleteStructuredProperty_GuardsAndMutationError(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+
+	ts := &settleTestServer{
+		definition: nil, // skip the barrier; this test targets the mutation path
+		deleteErr:  true,
+	}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	if err := c.DeleteStructuredProperty(context.Background(), "  "); err == nil {
+		t.Error("expected error for empty URN")
+	}
+	var nilClient *Client
+	if err := nilClient.DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:x"); err == nil {
+		t.Error("expected error for nil client")
+	}
+	err := c.DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+	if err == nil || !strings.Contains(err.Error(), "Unauthorized") {
+		t.Errorf("expected the mutation error to surface, got %v", err)
+	}
+}
+
+// TestDeleteStructuredProperty_SearchErrorProceeds verifies the barrier's
+// best-effort contract from the other side: a failing settle query must
+// abort the barrier and let the delete proceed, never fail the destroy.
+func TestDeleteStructuredProperty_SearchErrorProceeds(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+
+	ts := &settleTestServer{
+		definition:   spSettleDefinition("tf-example.governance.tier"),
+		searchTotals: []int{1},
+		searchErr:    true,
+	}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	if err := c.DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier"); err != nil {
+		t.Fatalf("DeleteStructuredProperty: %v", err)
+	}
+
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.searchCalls != 1 {
+		t.Errorf("expected the barrier to abort after one failing poll, got %d", ts.searchCalls)
+	}
+	if ts.deleteCalls != 1 {
+		t.Errorf("expected the delete to proceed despite the search failure, got %d", ts.deleteCalls)
+	}
+}
+
 // TestDeleteStructuredProperty_DefinitionGoneSkipsBarrier verifies that a
 // property whose definition cannot be read (already deleted out-of-band) is
 // deleted without any settle polling.
 func TestDeleteStructuredProperty_DefinitionGoneSkipsBarrier(t *testing.T) {
-	shortenSettleBudget(t, 5*time.Second, 5*time.Millisecond)
+	shortenSettleBudget(t, 5*time.Second)
 
 	ts := &settleTestServer{
 		definition:   nil, // 404 on the definition read
