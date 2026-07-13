@@ -263,8 +263,15 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		"version": p.version,
 	})
 
+	// Data sources receive the bare client; resources additionally receive
+	// the provider-level defaults configuration. The provider schema for
+	// defaults is introduced together with the first consuming resources, so
+	// the defaults are currently always empty.
 	resp.DataSourceData = client
-	resp.ResourceData = client
+	resp.ResourceData = &providerData{
+		Client:   client,
+		defaults: emptyEntityDefaults(p.version),
+	}
 }
 
 // DataSources defines the data sources implemented in the provider.
