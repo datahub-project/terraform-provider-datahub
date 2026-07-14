@@ -46,17 +46,11 @@ func NewGlossaryTermResource() resource.Resource {
 }
 
 func (r *glossaryTermResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
+	pd := resourceProviderData(req, resp)
+	if pd == nil {
 		return
 	}
-	client, ok := req.ProviderData.(*datahub.Client)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *datahub.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return
-	}
+	client := pd.Client
 	r.client = client
 }
 

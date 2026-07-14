@@ -92,3 +92,49 @@ func (v enumListValidator) ValidateList(_ context.Context, req validator.ListReq
 		}
 	}
 }
+
+// enumSetValidator applies enum membership to every element of a string set.
+// An empty set is valid (used e.g. by auto_properties, where [] means
+// "disable").
+type enumSetValidator struct {
+	allowed []string
+}
+
+func enumSet(allowed ...string) enumSetValidator {
+	return enumSetValidator{allowed: allowed}
+}
+
+func (v enumSetValidator) Description(_ context.Context) string {
+	return fmt.Sprintf("each element must be one of: %s", strings.Join(v.allowed, ", "))
+}
+
+func (v enumSetValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v enumSetValidator) ValidateSet(_ context.Context, req validator.SetRequest, resp *validator.SetResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	for _, elem := range req.ConfigValue.Elements() {
+		sv, ok := elem.(types.String)
+		if !ok || sv.IsNull() || sv.IsUnknown() {
+			continue
+		}
+		got := sv.ValueString()
+		valid := false
+		for _, a := range v.allowed {
+			if got == a {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			resp.Diagnostics.AddAttributeError(
+				req.Path,
+				"Invalid value",
+				fmt.Sprintf("%q is not valid; expected one of: %s", got, strings.Join(v.allowed, ", ")),
+			)
+		}
+	}
+}
