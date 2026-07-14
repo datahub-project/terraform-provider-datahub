@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"gopkg.in/yaml.v3"
@@ -86,9 +87,12 @@ func New(version string) func() provider.Provider {
 
 // datahubProviderModel describes the provider data model.
 type datahubProviderModel struct {
-	GmsURL      types.String `tfsdk:"gms_url"`
-	GmsToken    types.String `tfsdk:"gms_token"`
-	FrontendURL types.String `tfsdk:"frontend_url"`
+	GmsURL               types.String `tfsdk:"gms_url"`
+	GmsToken             types.String `tfsdk:"gms_token"`
+	FrontendURL          types.String `tfsdk:"frontend_url"`
+	Defaults             types.Object `tfsdk:"defaults"`
+	AutoProperties       types.Set    `tfsdk:"auto_properties"`
+	AutoPropertyStrategy types.String `tfsdk:"auto_property_strategy"`
 }
 
 // Metadata returns the provider type name.
@@ -135,6 +139,55 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 					"or derives it from `gms_url` by stripping any `/gms` suffix and replacing " +
 					"port 8080 with 9002. Only needed when using `datahub_local_user_login`.",
 				Optional: true,
+			},
+			"defaults": schema.SingleNestedAttribute{
+				Optional: true,
+				MarkdownDescription: "Default labels attached to every resource this provider manages, " +
+					"wherever the underlying DataHub entity type supports them (similar in spirit to the " +
+					"AWS provider's `default_tags`). Resource-level values win over provider defaults on a " +
+					"per-key basis; a differing value raises a plan-time warning. Resources whose entity " +
+					"type supports no default mechanism (for example `datahub_ingestion_source`, " +
+					"`datahub_secret`, `datahub_policy`) are unaffected.",
+				Attributes: map[string]schema.Attribute{
+					"custom_properties": schema.MapAttribute{
+						Optional:    true,
+						ElementType: types.StringType,
+						MarkdownDescription: "Custom properties merged into the `custom_properties` of " +
+							"every resource whose entity type supports them: `datahub_domain`, " +
+							"`datahub_glossary_term`, `datahub_glossary_node`, `datahub_corp_user`, " +
+							"`datahub_service_account`, and `datahub_data_product`. Resource-level keys " +
+							"win; the provider owns the complete server-side map on managed entities, so " +
+							"properties added outside Terraform are removed on the next apply. The " +
+							"effective merged map is exposed on each resource as the computed " +
+							"`custom_properties_all` attribute.",
+						Validators: []validator.Map{nonEmptyStringMapValidator{}},
+					},
+				},
+			},
+			"auto_properties": schema.SetAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				MarkdownDescription: "Provenance markers automatically added to the custom properties of " +
+					"every managed resource whose entity type supports custom properties (same resource " +
+					"list as `defaults.custom_properties`). Allowed markers: `managed-by` (writes " +
+					"`managed-by = \"terraform\"`) and `provider-version` (writes " +
+					"`provider-version = \"<provider version>\"`). Defaults to `[\"managed-by\"]`; set to " +
+					"`[]` to disable. Removing a marker from this list removes the property from all " +
+					"managed entities on the next apply, regardless of `auto_property_strategy`. " +
+					"Explicitly configured keys of the same name (in `defaults.custom_properties` or a " +
+					"resource's `custom_properties`) always take precedence over markers.",
+				Validators: []validator.Set{enumSet(autoPropertyManagedBy, autoPropertyProviderVersion)},
+			},
+			"auto_property_strategy": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "When auto properties are stamped. `CREATION_ONLY` (default): markers " +
+					"are added only when an entity is created and their values are frozen at creation, so " +
+					"upgrading the provider never produces diffs on existing resources. `PROACTIVE`: " +
+					"markers and their current values are enforced on every managed entity on every apply. " +
+					"Use `PROACTIVE` once to converge an estate created before this feature (or with " +
+					"earlier provider versions), or leave it on to keep `provider-version` current at the " +
+					"cost of diffs after every provider upgrade.",
+				Validators: []validator.String{enumString(autoPropertyStrategyCreationOnly, autoPropertyStrategyProactive)},
 			},
 		},
 	}
@@ -263,14 +316,18 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		"version": p.version,
 	})
 
+	defaults, defaultsDiags := parseEntityDefaults(ctx, config.Defaults, config.AutoProperties, config.AutoPropertyStrategy, p.version)
+	resp.Diagnostics.Append(defaultsDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	// Data sources receive the bare client; resources additionally receive
-	// the provider-level defaults configuration. The provider schema for
-	// defaults is introduced together with the first consuming resources, so
-	// the defaults are currently always empty.
+	// the provider-level defaults configuration.
 	resp.DataSourceData = client
 	resp.ResourceData = &providerData{
 		Client:   client,
-		defaults: emptyEntityDefaults(p.version),
+		defaults: defaults,
 	}
 }
 

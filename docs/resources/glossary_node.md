@@ -71,13 +71,14 @@ resource "datahub_glossary_node" "finance" {
 
 ### Optional
 
-- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the term group (the `customProperties` field of the `glossaryNodeInfo` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the term group (the `customProperties` field of the `glossaryNodeInfo` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties. Provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in automatically; the effective written map is the computed `custom_properties_all`.
 - `description` (String) Description of the term group's scope and purpose.
 - `domain` (String) Full URN of the DataHub domain to associate with this term group (e.g. `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` so Terraform's dependency graph creates the domain before the term group. Changing this updates the association in place without forcing replacement.
 - `parent_node` (String) Full URN of the parent glossary node (e.g. `urn:li:glossaryNode:finance`). Set to `datahub_glossary_node.<name>.urn` (not a raw string) so Terraform's dependency graph orders creation and destruction correctly. Omit for a root-level term group. Changing this value reparents the node in place without forcing replacement.
 
 ### Read-Only
 
+- `custom_properties_all` (Map of String) The complete custom-properties map written to DataHub: the merge of provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) with this resource's `custom_properties`, resource values winning per key. The provider owns the complete server-side map; entries added outside Terraform show as drift here and are removed on the next apply.
 - `id` (String) The ID of this resource.
 - `urn` (String) Full DataHub URN for this glossary node (e.g. `urn:li:glossaryNode:finance`).
 

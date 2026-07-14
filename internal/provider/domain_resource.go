@@ -25,20 +25,23 @@ var (
 	_ resource.Resource                = &domainResource{}
 	_ resource.ResourceWithConfigure   = &domainResource{}
 	_ resource.ResourceWithImportState = &domainResource{}
+	_ resource.ResourceWithModifyPlan  = &domainResource{}
 )
 
 type domainResource struct {
-	client *datahub.Client
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type domainResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	URN              types.String `tfsdk:"urn"`
-	DomainID         types.String `tfsdk:"domain_id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	ParentDomain     types.String `tfsdk:"parent_domain"`
-	CustomProperties types.Map    `tfsdk:"custom_properties"`
+	ID                  types.String `tfsdk:"id"`
+	URN                 types.String `tfsdk:"urn"`
+	DomainID            types.String `tfsdk:"domain_id"`
+	Name                types.String `tfsdk:"name"`
+	Description         types.String `tfsdk:"description"`
+	ParentDomain        types.String `tfsdk:"parent_domain"`
+	CustomProperties    types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
 }
 
 func NewDomainResource() resource.Resource {
@@ -50,8 +53,15 @@ func (r *domainResource) Configure(_ context.Context, req resource.ConfigureRequ
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *domainResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planCustomPropertiesAll(ctx, r.defaults, req, resp)
 }
 
 func (r *domainResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -118,11 +128,14 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 					"`customProperties` field of the `domainProperties` aspect). Terraform owns the " +
 					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
 					"values must be non-empty strings, and values must not be null. Omit the attribute " +
-					"entirely (do not set an empty map) to attach no custom properties.",
+					"entirely (do not set an empty map) to attach no custom properties. Provider-level " +
+					"defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in " +
+					"automatically; the effective written map is the computed `custom_properties_all`.",
 				Validators: []validator.Map{
 					nonEmptyStringMapValidator{},
 				},
 			},
+			"custom_properties_all": customPropertiesAllSchema(),
 		},
 	}
 }
@@ -139,11 +152,12 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, types.MapNull(types.StringType), true)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	urn, err := r.client.CreateDomain(ctx, datahub.CreateDomainInput{
 		ID:           plan.DomainID.ValueString(),
@@ -238,16 +252,18 @@ func (r *domainResource) Update(ctx context.Context, req resource.UpdateRequest,
 		}
 	}
 
-	// Write custom_properties via OpenAPI v3 when it changed (including clearing
-	// it: an empty map overwrites a previously-set value). Pass the plan's
-	// name/description/parentDomain so the domainProperties aspect write does not
-	// clobber the values the GraphQL mutations above just applied.
-	if !plan.CustomProperties.Equal(state.CustomProperties) {
-		customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	// Write custom properties via OpenAPI v3 when the effective merged map
+	// (custom_properties_all) changed, including clearing it: an empty map
+	// overwrites a previously-set value. Pass the plan's name/description/
+	// parentDomain so the domainProperties aspect write does not clobber the
+	// values the GraphQL mutations above just applied.
+	if !plan.CustomPropertiesAll.Equal(state.CustomPropertiesAll) {
+		all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, state.CustomPropertiesAll, false)
 		resp.Diagnostics.Append(d...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
+		plan.CustomPropertiesAll = all
 		if err := r.client.SetDomainProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentDomain), customProps); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
@@ -326,18 +342,25 @@ func (r *domainResource) ImportState(ctx context.Context, req resource.ImportSta
 		DomainID: types.StringValue(domain.ID),
 	}
 	applyDomainToModel(domain, &state)
+	// Import attribution: keys matching provider defaults or auto-property
+	// markers are omitted from custom_properties so the first plan after
+	// import is minimal.
+	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(domain.CustomProperties, r.defaults)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 // applyDomainToModel maps a read Domain onto the model, normalising empty
-// optional fields to null so they do not show spurious drift.
+// optional fields to null so they do not show spurious drift. Custom
+// properties are reconciled against the model's prior state: the user-facing
+// attribute keeps only its own keys, the computed _all records the full
+// server map.
 func applyDomainToModel(domain *datahub.Domain, m *domainResourceModel) {
 	m.URN = types.StringValue(domain.URN)
 	m.ID = types.StringValue(domain.URN)
 	m.Name = types.StringValue(domain.Name)
 	m.Description = nullIfEmpty(domain.Description)
 	m.ParentDomain = nullIfEmpty(domain.ParentDomain)
-	m.CustomProperties = stringMapToTfMap(domain.CustomProperties)
+	m.CustomProperties, m.CustomPropertiesAll = reconcileCustomPropertiesRead(domain.CustomProperties, m.CustomProperties)
 }
 
 // stringMapToTfMap converts a Go string map to a types.Map, normalising an

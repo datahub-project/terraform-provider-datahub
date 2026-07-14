@@ -24,21 +24,24 @@ var (
 	_ resource.Resource                = &glossaryTermResource{}
 	_ resource.ResourceWithConfigure   = &glossaryTermResource{}
 	_ resource.ResourceWithImportState = &glossaryTermResource{}
+	_ resource.ResourceWithModifyPlan  = &glossaryTermResource{}
 )
 
 type glossaryTermResource struct {
-	client *datahub.Client
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type glossaryTermResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	URN              types.String `tfsdk:"urn"`
-	TermID           types.String `tfsdk:"term_id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	ParentNode       types.String `tfsdk:"parent_node"`
-	Domain           types.String `tfsdk:"domain"`
-	CustomProperties types.Map    `tfsdk:"custom_properties"`
+	ID                  types.String `tfsdk:"id"`
+	URN                 types.String `tfsdk:"urn"`
+	TermID              types.String `tfsdk:"term_id"`
+	Name                types.String `tfsdk:"name"`
+	Description         types.String `tfsdk:"description"`
+	ParentNode          types.String `tfsdk:"parent_node"`
+	Domain              types.String `tfsdk:"domain"`
+	CustomProperties    types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
 }
 
 func NewGlossaryTermResource() resource.Resource {
@@ -50,8 +53,15 @@ func (r *glossaryTermResource) Configure(_ context.Context, req resource.Configu
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *glossaryTermResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planCustomPropertiesAll(ctx, r.defaults, req, resp)
 }
 
 func (r *glossaryTermResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -142,11 +152,14 @@ func (r *glossaryTermResource) Schema(_ context.Context, _ resource.SchemaReques
 					"`customProperties` field of the `glossaryTermInfo` aspect). Terraform owns the " +
 					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
 					"values must be non-empty strings, and values must not be null. Omit the attribute " +
-					"entirely (do not set an empty map) to attach no custom properties.",
+					"entirely (do not set an empty map) to attach no custom properties. Provider-level " +
+					"defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in " +
+					"automatically; the effective written map is the computed `custom_properties_all`.",
 				Validators: []validator.Map{
 					nonEmptyStringMapValidator{},
 				},
 			},
+			"custom_properties_all": customPropertiesAllSchema(),
 		},
 	}
 }
@@ -163,11 +176,12 @@ func (r *glossaryTermResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, types.MapNull(types.StringType), true)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	urn, repairedHusk, err := r.client.CreateGlossaryTerm(ctx, datahub.CreateGlossaryEntityInput{
 		ID:         plan.TermID.ValueString(),
@@ -292,16 +306,18 @@ func (r *glossaryTermResource) Update(ctx context.Context, req resource.UpdateRe
 		}
 	}
 
-	// Write custom_properties via OpenAPI v3 when it changed (including clearing
-	// it: an empty map overwrites a previously-set value). Pass the plan's
-	// name/definition/parentNode so the glossaryTermInfo aspect write does not
-	// clobber the values the GraphQL mutations above just applied.
-	if !plan.CustomProperties.Equal(state.CustomProperties) {
-		customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	// Write custom properties via OpenAPI v3 when the effective merged map
+	// (custom_properties_all) changed, including clearing it: an empty map
+	// overwrites a previously-set value. Pass the plan's name/definition/
+	// parentNode so the glossaryTermInfo aspect write does not clobber the
+	// values the GraphQL mutations above just applied.
+	if !plan.CustomPropertiesAll.Equal(state.CustomPropertiesAll) {
+		all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, state.CustomPropertiesAll, false)
 		resp.Diagnostics.Append(d...)
 		if resp.Diagnostics.HasError() {
 			return
 		}
+		plan.CustomPropertiesAll = all
 		if err := r.client.SetGlossaryTermProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentNode), customProps); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
@@ -380,11 +396,18 @@ func (r *glossaryTermResource) ImportState(ctx context.Context, req resource.Imp
 		TermID: types.StringValue(term.ID),
 	}
 	applyGlossaryTermToModel(term, &state)
+	// Import attribution: keys matching provider defaults or auto-property
+	// markers are omitted from custom_properties so the first plan after
+	// import is minimal.
+	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(term.CustomProperties, r.defaults)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 // applyGlossaryTermToModel maps a read GlossaryTerm onto the model, normalising
-// empty optional fields to null so they do not show spurious drift.
+// empty optional fields to null so they do not show spurious drift. Custom
+// properties are reconciled against the model's prior state: the user-facing
+// attribute keeps only its own keys, the computed _all records the full
+// server map.
 func applyGlossaryTermToModel(term *datahub.GlossaryTerm, m *glossaryTermResourceModel) {
 	m.URN = types.StringValue(term.URN)
 	m.ID = types.StringValue(term.URN)
@@ -392,5 +415,5 @@ func applyGlossaryTermToModel(term *datahub.GlossaryTerm, m *glossaryTermResourc
 	m.Description = nullIfEmpty(term.Definition)
 	m.ParentNode = nullIfEmpty(term.ParentNode)
 	m.Domain = nullIfEmpty(term.Domain)
-	m.CustomProperties = stringMapToTfMap(term.CustomProperties)
+	m.CustomProperties, m.CustomPropertiesAll = reconcileCustomPropertiesRead(term.CustomProperties, m.CustomProperties)
 }

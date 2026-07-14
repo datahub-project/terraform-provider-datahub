@@ -70,6 +70,16 @@ in the repository. Each subdirectory has a README with prerequisites and instruc
 
 ### Optional
 
+- `auto_properties` (Set of String) Provenance markers automatically added to the custom properties of every managed resource whose entity type supports custom properties (same resource list as `defaults.custom_properties`). Allowed markers: `managed-by` (writes `managed-by = "terraform"`) and `provider-version` (writes `provider-version = "<provider version>"`). Defaults to `["managed-by"]`; set to `[]` to disable. Removing a marker from this list removes the property from all managed entities on the next apply, regardless of `auto_property_strategy`. Explicitly configured keys of the same name (in `defaults.custom_properties` or a resource's `custom_properties`) always take precedence over markers.
+- `auto_property_strategy` (String) When auto properties are stamped. `CREATION_ONLY` (default): markers are added only when an entity is created and their values are frozen at creation, so upgrading the provider never produces diffs on existing resources. `PROACTIVE`: markers and their current values are enforced on every managed entity on every apply. Use `PROACTIVE` once to converge an estate created before this feature (or with earlier provider versions), or leave it on to keep `provider-version` current at the cost of diffs after every provider upgrade.
+- `defaults` (Attributes) Default labels attached to every resource this provider manages, wherever the underlying DataHub entity type supports them (similar in spirit to the AWS provider's `default_tags`). Resource-level values win over provider defaults on a per-key basis; a differing value raises a plan-time warning. Resources whose entity type supports no default mechanism (for example `datahub_ingestion_source`, `datahub_secret`, `datahub_policy`) are unaffected. (see [below for nested schema](#nestedatt--defaults))
 - `frontend_url` (String) DataHub frontend URL for native user operations (sign-up, password reset). For example: `https://datahub.example.com:9002`. If not set, the provider reads `DATAHUB_FRONTEND_URL` from the environment, or derives it from `gms_url` by stripping any `/gms` suffix and replacing port 8080 with 9002. Only needed when using `datahub_local_user_login`.
 - `gms_token` (String, Sensitive) DataHub GMS token for authentication. If not set, the provider will read the token from the `DATAHUB_GMS_TOKEN` environment variable, or fall back to the local DataHub CLI configuration at `~/.datahubenv`.
 - `gms_url` (String) DataHub GMS URL. For example: `https://datahub.example.com`. If not set, the provider will read `DATAHUB_GMS_URL` from the environment, or fall back to `gms.server` in `~/.datahubenv`.
+
+<a id="nestedatt--defaults"></a>
+### Nested Schema for `defaults`
+
+Optional:
+
+- `custom_properties` (Map of String) Custom properties merged into the `custom_properties` of every resource whose entity type supports them: `datahub_domain`, `datahub_glossary_term`, `datahub_glossary_node`, `datahub_corp_user`, `datahub_service_account`, and `datahub_data_product`. Resource-level keys win; the provider owns the complete server-side map on managed entities, so properties added outside Terraform are removed on the next apply. The effective merged map is exposed on each resource as the computed `custom_properties_all` attribute.
