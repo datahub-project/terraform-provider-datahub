@@ -70,12 +70,13 @@ output "credit_risk_urn" {
 
 ### Optional
 
-- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the domain (the `customProperties` field of the `domainProperties` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
+- `custom_properties` (Map of String) Arbitrary key-value metadata attached to the domain (the `customProperties` field of the `domainProperties` aspect). Terraform owns the complete map: keys added outside Terraform are removed on the next apply. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties. Provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in automatically; the effective written map is the computed `custom_properties_all`.
 - `description` (String) Description of the domain's scope and purpose.
 - `parent_domain` (String) Full URN of the parent domain (e.g., `urn:li:domain:finance`). Set to `datahub_domain.<name>.urn` (not a raw string) so Terraform's dependency graph orders creation and destruction correctly. Omit for a root domain. Changing this value reparents the domain in place without forcing replacement.
 
 ### Read-Only
 
+- `custom_properties_all` (Map of String) The complete custom-properties map written to DataHub: the merge of provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) with this resource's `custom_properties`, resource values winning per key. The provider owns the complete server-side map; entries added outside Terraform show as drift here and are removed on the next apply.
 - `id` (String) The ID of this resource.
 - `urn` (String) Full DataHub URN for this domain (e.g., `urn:li:domain:marketing`).
 

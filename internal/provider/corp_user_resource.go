@@ -22,21 +22,24 @@ var (
 	_ resource.Resource                = &corpUserResource{}
 	_ resource.ResourceWithConfigure   = &corpUserResource{}
 	_ resource.ResourceWithImportState = &corpUserResource{}
+	_ resource.ResourceWithModifyPlan  = &corpUserResource{}
 )
 
 type corpUserResource struct {
-	client *datahub.Client
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type corpUserResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	URN              types.String `tfsdk:"urn"`
-	Username         types.String `tfsdk:"username"`
-	DisplayName      types.String `tfsdk:"display_name"`
-	FullName         types.String `tfsdk:"full_name"`
-	Email            types.String `tfsdk:"email"`
-	Title            types.String `tfsdk:"title"`
-	CustomProperties types.Map    `tfsdk:"custom_properties"`
+	ID                  types.String `tfsdk:"id"`
+	URN                 types.String `tfsdk:"urn"`
+	Username            types.String `tfsdk:"username"`
+	DisplayName         types.String `tfsdk:"display_name"`
+	FullName            types.String `tfsdk:"full_name"`
+	Email               types.String `tfsdk:"email"`
+	Title               types.String `tfsdk:"title"`
+	CustomProperties    types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
 }
 
 func NewCorpUserResource() resource.Resource {
@@ -48,8 +51,15 @@ func (r *corpUserResource) Configure(_ context.Context, req resource.ConfigureRe
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *corpUserResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planCustomPropertiesAll(ctx, r.defaults, req, resp)
 }
 
 func (r *corpUserResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -119,11 +129,14 @@ func (r *corpUserResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 					"`customProperties` field of the `corpUserInfo` aspect). Terraform owns the " +
 					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
 					"values must be non-empty strings, and values must not be null. Omit the attribute " +
-					"entirely (do not set an empty map) to attach no custom properties.",
+					"entirely (do not set an empty map) to attach no custom properties. Provider-level " +
+					"defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in " +
+					"automatically; the effective written map is the computed `custom_properties_all`.",
 				Validators: []validator.Map{
 					nonEmptyStringMapValidator{},
 				},
 			},
+			"custom_properties_all": customPropertiesAllSchema(),
 		},
 	}
 }
@@ -140,11 +153,12 @@ func (r *corpUserResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, types.MapNull(types.StringType), true)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	urn, err := r.client.UpsertCorpUser(ctx, datahub.UpsertCorpUserInput{
 		Username:         plan.Username.ValueString(),
@@ -208,11 +222,12 @@ func (r *corpUserResource) Update(ctx context.Context, req resource.UpdateReques
 		return
 	}
 
-	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, state.CustomPropertiesAll, false)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	_, err := r.client.UpsertCorpUser(ctx, datahub.UpsertCorpUserInput{
 		Username:         plan.Username.ValueString(),
@@ -299,9 +314,16 @@ func (r *corpUserResource) ImportState(ctx context.Context, req resource.ImportS
 		Username: types.StringValue(user.Username),
 	}
 	applyCorpUserToModel(user, &state)
+	// Import attribution: keys matching provider defaults or auto-property
+	// markers are omitted from custom_properties so the first plan after
+	// import is minimal.
+	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(user.CustomProperties, r.defaults)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
+// applyCorpUserToModel maps a read CorpUser onto the model. Custom properties
+// are reconciled against the model's prior state: the user-facing attribute
+// keeps only its own keys, the computed _all records the full server map.
 func applyCorpUserToModel(user *datahub.CorpUser, m *corpUserResourceModel) {
 	m.URN = types.StringValue(user.URN)
 	m.ID = types.StringValue(user.URN)
@@ -309,5 +331,5 @@ func applyCorpUserToModel(user *datahub.CorpUser, m *corpUserResourceModel) {
 	m.FullName = nullIfEmpty(user.FullName)
 	m.Email = nullIfEmpty(user.Email)
 	m.Title = nullIfEmpty(user.Title)
-	m.CustomProperties = stringMapToTfMap(user.CustomProperties)
+	m.CustomProperties, m.CustomPropertiesAll = reconcileCustomPropertiesRead(user.CustomProperties, m.CustomProperties)
 }

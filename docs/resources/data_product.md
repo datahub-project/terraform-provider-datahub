@@ -49,12 +49,13 @@ Create and update write the `dataProductProperties` aspect (and optionally the `
 
 ### Optional
 
-- `custom_properties` (Map of String) Key-value map of custom metadata properties to attach to this data product. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties.
+- `custom_properties` (Map of String) Key-value map of custom metadata properties to attach to this data product. Keys and values must be non-empty strings, and values must not be null. Omit the attribute entirely (do not set an empty map) to attach no custom properties. Provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in automatically; the effective written map is the computed `custom_properties_all`.
 - `description` (String) Description of the data product's purpose, contents, and intended consumers.
 - `domain` (String) Full DataHub URN of the domain that owns this data product (e.g. `urn:li:domain:finance`). Accepts a reference such as `datahub_domain.finance.urn` so Terraform can order creation automatically.
 - `external_url` (String) URL of external documentation or a data product catalog page for this data product.
 
 ### Read-Only
 
+- `custom_properties_all` (Map of String) The complete custom-properties map written to DataHub: the merge of provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) with this resource's `custom_properties`, resource values winning per key. The provider owns the complete server-side map; entries added outside Terraform show as drift here and are removed on the next apply.
 - `id` (String) The ID of this resource.
 - `urn` (String) Full DataHub URN for this data product (e.g. `urn:li:dataProduct:orders-v2`).

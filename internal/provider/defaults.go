@@ -11,6 +11,9 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	rschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
@@ -119,11 +122,12 @@ type entityDefaults struct {
 	providerVersion string
 }
 
-// providerDefaultsModel mirrors the `defaults` nested attribute.
+// providerDefaultsModel mirrors the `defaults` nested attribute. Members are
+// added phase by phase as their write paths land (`tags` with the globalTags
+// phase, `structured_properties` with the structured-property phase), so the
+// provider never exposes configuration that has no effect.
 type providerDefaultsModel struct {
-	CustomProperties     types.Map `tfsdk:"custom_properties"`
-	Tags                 types.Set `tfsdk:"tags"`
-	StructuredProperties types.Map `tfsdk:"structured_properties"`
+	CustomProperties types.Map `tfsdk:"custom_properties"`
 }
 
 var spDefaultsElementType = types.SetType{ElemType: types.StringType}
@@ -168,12 +172,6 @@ func parseEntityDefaults(ctx context.Context, defaultsObj types.Object, autoProp
 		}
 		if !m.CustomProperties.IsNull() {
 			d.CustomProperties = m.CustomProperties
-		}
-		if !m.Tags.IsNull() {
-			d.Tags = m.Tags
-		}
-		if !m.StructuredProperties.IsNull() {
-			d.StructuredProperties = m.StructuredProperties
 		}
 	}
 
@@ -340,6 +338,135 @@ func (d entityDefaults) plannedAutoProperties(in cpMergeInput) map[string]string
 		}
 	}
 	return out
+}
+
+// planCustomPropertiesAll computes the planned `custom_properties_all` value
+// for a resource and emits the collision warnings. Call from ModifyPlan after
+// the destroy-plan guard (req.Plan.Raw.IsNull()).
+//
+// The merge is a pure function of the resource config, the prior state, and
+// the provider defaults - never of server data - so the apply-time replan
+// reproduces every plan-time-known value exactly.
+func planCustomPropertiesAll(ctx context.Context, defaults entityDefaults, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	var cfg types.Map
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("custom_properties"), &cfg)...)
+
+	priorAll := types.MapNull(types.StringType)
+	isCreate := req.State.Raw.IsNull()
+	if !isCreate {
+		resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("custom_properties_all"), &priorAll)...)
+	}
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	merged, collisions := defaults.mergeCustomProperties(cpMergeInput{
+		Config:   cfg,
+		PriorAll: priorAll,
+		IsCreate: isCreate,
+	})
+	for _, c := range collisions {
+		resp.Diagnostics.AddAttributeWarning(
+			path.Root("custom_properties"),
+			"custom_properties overrides provider default",
+			fmt.Sprintf("Key %q is set to %q on this resource and to %q by the provider (%s). The resource value wins; remove the key from one side to silence this warning.",
+				c.Key, c.ResourceValue, c.ProviderValue, c.ProviderSource),
+		)
+	}
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("custom_properties_all"), merged)...)
+}
+
+// resolvePlannedCustomPropertiesAll returns the custom-properties map to
+// write to DataHub from the planned `custom_properties_all` value, plus the
+// types.Map that belongs in state. The planned value is normally known at
+// apply time (the apply-time replan resolves it); recomputing the pure merge
+// is a defensive fallback that produces the identical result by construction.
+func resolvePlannedCustomPropertiesAll(ctx context.Context, defaults entityDefaults, plannedAll, config, priorAll types.Map, isCreate bool) (types.Map, map[string]string, diag.Diagnostics) {
+	if plannedAll.IsUnknown() {
+		plannedAll, _ = defaults.mergeCustomProperties(cpMergeInput{
+			Config:   config,
+			PriorAll: priorAll,
+			IsCreate: isCreate,
+		})
+	}
+	m, diags := mapValToStringMap(ctx, plannedAll)
+	return plannedAll, m, diags
+}
+
+// reconcileCustomPropertiesRead maps the server's full custom-properties map
+// onto the two state attributes. `custom_properties` keeps only the keys it
+// already had in state (adopting external value edits and dropping external
+// deletes, so the drift is visible on the user-facing attribute), while
+// `custom_properties_all` always records the full server map; externally
+// added keys therefore surface as drift on `_all` and are removed by the next
+// apply (full-map ownership). Read never consults provider defaults:
+// attribution of keys is defined by what Create/Update wrote into state.
+func reconcileCustomPropertiesRead(server map[string]string, priorConfig types.Map) (config types.Map, all types.Map) {
+	all = stringMapToTfMap(server)
+	if priorConfig.IsNull() || priorConfig.IsUnknown() {
+		return types.MapNull(types.StringType), all
+	}
+	owned := map[string]string{}
+	for k := range priorConfig.Elements() {
+		if v, ok := server[k]; ok {
+			owned[k] = v
+		}
+	}
+	return stringMapToTfMap(owned), all
+}
+
+// importCustomProperties splits a server custom-properties map for
+// ImportState. Keys that match a provider default exactly (same key and
+// value) or carry an enabled auto-property marker name (any value; the
+// CREATION_ONLY carry-forward preserves imported values) are attributed to
+// the provider and omitted from `custom_properties`, minimising post-import
+// diff noise. Everything lands in `custom_properties_all`. Keys attributed
+// neither way show as removals in the first plan - correct full-ownership
+// semantics, visible before any write.
+func importCustomProperties(server map[string]string, defaults entityDefaults) (config types.Map, all types.Map) {
+	all = stringMapToTfMap(server)
+
+	markers := map[string]bool{}
+	for _, name := range defaults.autoPropertyNames() {
+		markers[name] = true
+	}
+	defaultCP := map[string]string{}
+	if !defaults.CustomProperties.IsNull() && !defaults.CustomProperties.IsUnknown() {
+		for k, v := range defaults.CustomProperties.Elements() {
+			if s, ok := v.(types.String); ok && !s.IsNull() && !s.IsUnknown() {
+				defaultCP[k] = s.ValueString()
+			}
+		}
+	}
+
+	owned := map[string]string{}
+	for k, v := range server {
+		if markers[k] {
+			continue
+		}
+		if dv, ok := defaultCP[k]; ok && dv == v {
+			continue
+		}
+		owned[k] = v
+	}
+	return stringMapToTfMap(owned), all
+}
+
+// customPropertiesAllSchema is the shared schema for the computed
+// `custom_properties_all` attribute on resources that support
+// custom-property defaults. Deliberately no UseStateForUnknown: the value is
+// recomputed by ModifyPlan on every plan so provider-default changes surface
+// as diffs.
+func customPropertiesAllSchema() rschema.MapAttribute {
+	return rschema.MapAttribute{
+		Computed:    true,
+		ElementType: types.StringType,
+		MarkdownDescription: "The complete custom-properties map written to DataHub: the merge of " +
+			"provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) with " +
+			"this resource's `custom_properties`, resource values winning per key. The provider owns " +
+			"the complete server-side map; entries added outside Terraform show as drift here and are " +
+			"removed on the next apply.",
+	}
 }
 
 // urnPrefixSetValidator requires every element of a string set to be a URN

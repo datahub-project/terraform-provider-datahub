@@ -174,6 +174,73 @@ func TestMergeCustomPropertiesMarkerRemovalIgnoresStrategy(t *testing.T) {
 	}
 }
 
+func TestMergeCustomPropertiesDefaultKeyRemoval(t *testing.T) {
+	// A key that was previously applied via defaults.custom_properties (and
+	// so is present in prior state _all) must disappear from the merge once
+	// removed from the provider defaults: defaults are never carried forward
+	// from prior state - only markers are. Resource-owned keys and stamped
+	// markers survive.
+	d := testDefaults() // defaults.custom_properties now empty
+	merged, _ := d.mergeCustomProperties(cpMergeInput{
+		Config: stringMap(map[string]string{"tier": "gold"}),
+		PriorAll: stringMap(map[string]string{
+			"managed-by": "terraform",
+			"team":       "platform", // was default-sourced; default since removed
+			"tier":       "gold",
+		}),
+		IsCreate: false,
+	})
+	requireMapEquals(t, merged, map[string]string{
+		"managed-by": "terraform",
+		"tier":       "gold",
+	})
+}
+
+func TestMergeCustomPropertiesPartialMarkerRemoval(t *testing.T) {
+	// Dropping one marker from auto_properties while keeping another removes
+	// only the dropped marker, even under CREATION_ONLY with both stamped in
+	// prior state.
+	d := testDefaults()
+	d.AutoProperties = stringSet(autoPropertyManagedBy) // provider-version removed
+	merged, _ := d.mergeCustomProperties(cpMergeInput{
+		Config: types.MapNull(types.StringType),
+		PriorAll: stringMap(map[string]string{
+			"managed-by":       "terraform",
+			"provider-version": "1.0.0",
+		}),
+		IsCreate: false,
+	})
+	requireMapEquals(t, merged, map[string]string{
+		"managed-by": "terraform",
+	})
+}
+
+func TestMergeCustomPropertiesDisabledMarkersOnCreate(t *testing.T) {
+	// The plain opt-out journey: auto_properties = [] on a fresh resource.
+	// Resource-level custom properties pass through untouched, and with no
+	// resource properties the merge is null (nothing written at all).
+	d := testDefaults()
+	d.AutoProperties = stringSet()
+	merged, collisions := d.mergeCustomProperties(cpMergeInput{
+		Config:   stringMap(map[string]string{"tier": "gold"}),
+		PriorAll: types.MapNull(types.StringType),
+		IsCreate: true,
+	})
+	requireMapEquals(t, merged, map[string]string{"tier": "gold"})
+	if len(collisions) != 0 {
+		t.Fatalf("expected no collisions, got %v", collisions)
+	}
+
+	empty, _ := d.mergeCustomProperties(cpMergeInput{
+		Config:   types.MapNull(types.StringType),
+		PriorAll: types.MapNull(types.StringType),
+		IsCreate: true,
+	})
+	if !empty.IsNull() {
+		t.Fatalf("expected null merge with markers disabled and no config, got %s", empty)
+	}
+}
+
 func TestMergeCustomPropertiesDefaultsOverrideMarkersSilently(t *testing.T) {
 	d := testDefaults()
 	d.CustomProperties = stringMap(map[string]string{"managed-by": "terraform-stack-a"})
@@ -326,9 +393,7 @@ func TestParseEntityDefaultsNullBlock(t *testing.T) {
 
 func TestParseEntityDefaultsPopulatedBlock(t *testing.T) {
 	obj, diags := types.ObjectValue(providerDefaultsObjectType(), map[string]attr.Value{
-		"custom_properties":     stringMap(map[string]string{"team": "platform"}),
-		"tags":                  stringSet("urn:li:tag:terraform-managed"),
-		"structured_properties": types.MapNull(spDefaultsElementType),
+		"custom_properties": stringMap(map[string]string{"team": "platform"}),
 	})
 	if diags.HasError() {
 		t.Fatal(diags)
@@ -339,11 +404,8 @@ func TestParseEntityDefaultsPopulatedBlock(t *testing.T) {
 		t.Fatal(pdiags)
 	}
 	requireMapEquals(t, d.CustomProperties, map[string]string{"team": "platform"})
-	if d.Tags.IsNull() || len(d.Tags.Elements()) != 1 {
-		t.Fatalf("expected one default tag, got %s", d.Tags)
-	}
-	if !d.StructuredProperties.IsNull() {
-		t.Fatalf("expected null structured properties, got %s", d.StructuredProperties)
+	if !d.Tags.IsNull() || !d.StructuredProperties.IsNull() {
+		t.Fatalf("expected null tags and structured properties until their phases land, got %+v", d)
 	}
 }
 
@@ -372,9 +434,7 @@ func TestEmptyEntityDefaultsIsInert(t *testing.T) {
 // attribute for test construction.
 func providerDefaultsObjectType() map[string]attr.Type {
 	return map[string]attr.Type{
-		"custom_properties":     types.MapType{ElemType: types.StringType},
-		"tags":                  types.SetType{ElemType: types.StringType},
-		"structured_properties": types.MapType{ElemType: spDefaultsElementType},
+		"custom_properties": types.MapType{ElemType: types.StringType},
 	}
 }
 

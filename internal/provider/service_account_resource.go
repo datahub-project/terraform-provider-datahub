@@ -70,19 +70,22 @@ var (
 	_ resource.Resource                = &serviceAccountResource{}
 	_ resource.ResourceWithConfigure   = &serviceAccountResource{}
 	_ resource.ResourceWithImportState = &serviceAccountResource{}
+	_ resource.ResourceWithModifyPlan  = &serviceAccountResource{}
 )
 
 type serviceAccountResource struct {
-	client *datahub.Client
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type serviceAccountResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	URN              types.String `tfsdk:"urn"`
-	ServiceAccountID types.String `tfsdk:"service_account_id"`
-	DisplayName      types.String `tfsdk:"display_name"`
-	Description      types.String `tfsdk:"description"`
-	CustomProperties types.Map    `tfsdk:"custom_properties"`
+	ID                  types.String `tfsdk:"id"`
+	URN                 types.String `tfsdk:"urn"`
+	ServiceAccountID    types.String `tfsdk:"service_account_id"`
+	DisplayName         types.String `tfsdk:"display_name"`
+	Description         types.String `tfsdk:"description"`
+	CustomProperties    types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
 }
 
 func NewServiceAccountResource() resource.Resource {
@@ -94,8 +97,15 @@ func (r *serviceAccountResource) Configure(_ context.Context, req resource.Confi
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *serviceAccountResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planCustomPropertiesAll(ctx, r.defaults, req, resp)
 }
 
 func (r *serviceAccountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -171,11 +181,14 @@ func (r *serviceAccountResource) Schema(_ context.Context, _ resource.SchemaRequ
 					"`customProperties` field of the `corpUserInfo` aspect). Terraform owns the " +
 					"complete map: keys added outside Terraform are removed on the next apply. Keys and " +
 					"values must be non-empty strings, and values must not be null. Omit the attribute " +
-					"entirely (do not set an empty map) to attach no custom properties.",
+					"entirely (do not set an empty map) to attach no custom properties. Provider-level " +
+					"defaults (`auto_properties` markers and `defaults.custom_properties`) are merged in " +
+					"automatically; the effective written map is the computed `custom_properties_all`.",
 				Validators: []validator.Map{
 					nonEmptyStringMapValidator{},
 				},
 			},
+			"custom_properties_all": customPropertiesAllSchema(),
 		},
 	}
 }
@@ -192,11 +205,12 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 		return
 	}
 
-	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, types.MapNull(types.StringType), true)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	urn, err := r.client.UpsertServiceAccount(ctx, plan.ServiceAccountID.ValueString(), strVal(plan.DisplayName), strVal(plan.Description), customProps)
 	if err != nil {
@@ -258,11 +272,12 @@ func (r *serviceAccountResource) Update(ctx context.Context, req resource.Update
 		return
 	}
 
-	customProps, d := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, state.CustomPropertiesAll, false)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	if _, err := r.client.UpsertServiceAccount(ctx, plan.ServiceAccountID.ValueString(), strVal(plan.DisplayName), strVal(plan.Description), customProps); err != nil {
 		if errors.Is(err, datahub.ErrServiceAccountsUnsupported) {
@@ -343,6 +358,10 @@ func (r *serviceAccountResource) ImportState(ctx context.Context, req resource.I
 		URN: types.StringValue(sa.URN),
 	}
 	applyServiceAccountToModel(sa, &state)
+	// Import attribution: keys matching provider defaults or auto-property
+	// markers are omitted from custom_properties so the first plan after
+	// import is minimal.
+	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(sa.CustomProperties, r.defaults)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -350,11 +369,14 @@ func (r *serviceAccountResource) ImportState(ctx context.Context, req resource.I
 // model, deriving the bare id from the URN and normalising optional fields to
 // null when empty to avoid spurious drift. description reads from the raw
 // corpUserInfo title (InfoTitle) so UI edits to editable title do not shadow it.
+// Custom properties are reconciled against the model's prior state: the
+// user-facing attribute keeps only its own keys, the computed _all records
+// the full server map.
 func applyServiceAccountToModel(sa *datahub.CorpUser, m *serviceAccountResourceModel) {
 	m.URN = types.StringValue(sa.URN)
 	m.ID = types.StringValue(sa.URN)
 	m.ServiceAccountID = types.StringValue(datahub.ServiceAccountIDFromURN(sa.URN))
 	m.DisplayName = nullIfEmpty(sa.DisplayName)
 	m.Description = nullIfEmpty(sa.InfoTitle)
-	m.CustomProperties = stringMapToTfMap(sa.CustomProperties)
+	m.CustomProperties, m.CustomPropertiesAll = reconcileCustomPropertiesRead(sa.CustomProperties, m.CustomProperties)
 }

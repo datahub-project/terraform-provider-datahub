@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -26,21 +25,24 @@ var (
 	_ resource.Resource                = &dataProductResource{}
 	_ resource.ResourceWithConfigure   = &dataProductResource{}
 	_ resource.ResourceWithImportState = &dataProductResource{}
+	_ resource.ResourceWithModifyPlan  = &dataProductResource{}
 )
 
 type dataProductResource struct {
-	client *datahub.Client
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type dataProductResourceModel struct {
-	ID               types.String `tfsdk:"id"`
-	URN              types.String `tfsdk:"urn"`
-	DataProductID    types.String `tfsdk:"data_product_id"`
-	Name             types.String `tfsdk:"name"`
-	Description      types.String `tfsdk:"description"`
-	ExternalURL      types.String `tfsdk:"external_url"`
-	CustomProperties types.Map    `tfsdk:"custom_properties"`
-	Domain           types.String `tfsdk:"domain"`
+	ID                  types.String `tfsdk:"id"`
+	URN                 types.String `tfsdk:"urn"`
+	DataProductID       types.String `tfsdk:"data_product_id"`
+	Name                types.String `tfsdk:"name"`
+	Description         types.String `tfsdk:"description"`
+	ExternalURL         types.String `tfsdk:"external_url"`
+	CustomProperties    types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
+	Domain              types.String `tfsdk:"domain"`
 }
 
 func NewDataProductResource() resource.Resource {
@@ -52,8 +54,15 @@ func (r *dataProductResource) Configure(_ context.Context, req resource.Configur
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *dataProductResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planCustomPropertiesAll(ctx, r.defaults, req, resp)
 }
 
 func (r *dataProductResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -127,11 +136,15 @@ func (r *dataProductResource) Schema(_ context.Context, _ resource.SchemaRequest
 				ElementType: types.StringType,
 				MarkdownDescription: "Key-value map of custom metadata properties to attach to this data product. " +
 					"Keys and values must be non-empty strings, and values must not be null. Omit the " +
-					"attribute entirely (do not set an empty map) to attach no custom properties.",
+					"attribute entirely (do not set an empty map) to attach no custom properties. " +
+					"Provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) " +
+					"are merged in automatically; the effective written map is the computed " +
+					"`custom_properties_all`.",
 				Validators: []validator.Map{
 					nonEmptyStringMapValidator{},
 				},
 			},
+			"custom_properties_all": customPropertiesAllSchema(),
 			"domain": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Full DataHub URN of the domain that owns this data product (e.g. `urn:li:domain:finance`). Accepts a reference such as `datahub_domain.finance.urn` so Terraform can order creation automatically.",
@@ -155,11 +168,12 @@ func (r *dataProductResource) Create(ctx context.Context, req resource.CreateReq
 	dataProductID := plan.DataProductID.ValueString()
 	urn := dataProductURNPrefix + dataProductID
 
-	customProps, diags := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, diags := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, types.MapNull(types.StringType), true)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	if err := r.client.WriteDataProductProperties(
 		ctx, urn,
@@ -205,10 +219,7 @@ func (r *dataProductResource) Read(ctx context.Context, req resource.ReadRequest
 		return
 	}
 
-	resp.Diagnostics.Append(applyDataProductToModel(ctx, dp, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	applyDataProductToModel(dp, &state)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -227,11 +238,12 @@ func (r *dataProductResource) Update(ctx context.Context, req resource.UpdateReq
 
 	urn := state.URN.ValueString()
 
-	customProps, diags := mapValToStringMap(ctx, plan.CustomProperties)
+	all, customProps, diags := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, state.CustomPropertiesAll, false)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	plan.CustomPropertiesAll = all
 
 	if err := r.client.WriteDataProductProperties(
 		ctx, urn,
@@ -316,19 +328,20 @@ func (r *dataProductResource) ImportState(ctx context.Context, req resource.Impo
 		URN:           types.StringValue(dp.URN),
 		DataProductID: types.StringValue(dp.ID),
 	}
-	resp.Diagnostics.Append(applyDataProductToModel(ctx, dp, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
+	applyDataProductToModel(dp, &state)
+	// Import attribution: keys matching provider defaults or auto-property
+	// markers are omitted from custom_properties so the first plan after
+	// import is minimal.
+	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(dp.CustomProperties, r.defaults)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 // applyDataProductToModel maps a read DataProduct onto the resource model,
 // normalising optional fields to null when empty to avoid spurious drift.
-// custom_properties is converted from map[string]string to types.Map.
-func applyDataProductToModel(_ context.Context, dp *datahub.DataProduct, m *dataProductResourceModel) diag.Diagnostics {
-	var diags diag.Diagnostics
-
+// Custom properties are reconciled against the model's prior state: the
+// user-facing attribute keeps only its own keys, the computed _all records
+// the full server map.
+func applyDataProductToModel(dp *datahub.DataProduct, m *dataProductResourceModel) {
 	m.URN = types.StringValue(dp.URN)
 	m.ID = types.StringValue(dp.URN)
 	m.DataProductID = types.StringValue(dp.ID)
@@ -336,22 +349,7 @@ func applyDataProductToModel(_ context.Context, dp *datahub.DataProduct, m *data
 	m.Description = nullIfEmpty(dp.Description)
 	m.ExternalURL = nullIfEmpty(dp.ExternalURL)
 	m.Domain = nullIfEmpty(dp.Domain)
-
-	if len(dp.CustomProperties) > 0 {
-		elems := make(map[string]attr.Value, len(dp.CustomProperties))
-		for k, v := range dp.CustomProperties {
-			elems[k] = types.StringValue(v)
-		}
-		mv, d := types.MapValue(types.StringType, elems)
-		diags.Append(d...)
-		if !diags.HasError() {
-			m.CustomProperties = mv
-		}
-	} else {
-		m.CustomProperties = types.MapNull(types.StringType)
-	}
-
-	return diags
+	m.CustomProperties, m.CustomPropertiesAll = reconcileCustomPropertiesRead(dp.CustomProperties, m.CustomProperties)
 }
 
 // mapValToStringMap converts a types.Map (string elements) to a plain
