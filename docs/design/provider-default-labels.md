@@ -113,10 +113,12 @@ provider "datahub" {
 
 To be verified against a live DataHub during rollout and recorded here:
 
-- [ ] `globalTags` OpenAPI v3 write acceptance and persistence per entity type (corpuser, corpgroup, dataproduct, assertion), including exact entity path casing and a CAT-2562-style silent-no-op read-back check.
-- [ ] Whether a `globalTags` write referencing a nonexistent tag URN succeeds (expected: yes, which is why the provider performs its own existence check).
+- [x] `globalTags` OpenAPI v3 write acceptance and persistence for corpuser, corpgroup, and dataproduct - verified 2026-07-15 against DataHub Cloud (demo.acryl.io): all three lowercase path segments accepted, writes persisted and read back exactly (latch lifecycle including clear-on-unlatch, create-time tagging, import while latched). The assertion entity path remains to be verified in the assertion-tags phase.
+- [x] Nonexistent tag URN in `defaults.tags` - the provider's `ensureTagsExist` guard fails fast before any write (verified live 2026-07-15), so the server's acceptance of dangling tag references is moot for the provider. The raw server behavior itself was not probed.
 - [ ] Structured property upsert on the three new assignment target types (corpuser, corpGroup, dataContract).
 - [ ] corpUser custom-properties write path merge-vs-replace semantics (different writer than the domain-style full-aspect POST).
+
+Environmental note from the 2026-07-15 run: the GraphQL `deleteDataProduct` mutation returned "Unauthorized" for the test token on the Cloud tenant (post-test destroy failure only; the tag write path on dataproduct passed). Live runs of data-product tests need a token whose principal can delete data products, or manual cleanup afterwards.
 
 ## Rollout
 
