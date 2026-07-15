@@ -19,11 +19,10 @@ resource "azurerm_storage_container" "data" {
 }
 
 resource "azurerm_storage_blob" "customers_csv" {
-  name                   = "customers.csv"
-  storage_account_name   = azurerm_storage_account.data.name
-  storage_container_name = azurerm_storage_container.data.name
-  type                   = "Block"
-  content_type           = "text/csv"
+  name                 = "customers.csv"
+  storage_container_id = azurerm_storage_container.data.id
+  type                 = "Block"
+  content_type         = "text/csv"
 
   source_content = <<-CSV
     id,name,region,signup_date
