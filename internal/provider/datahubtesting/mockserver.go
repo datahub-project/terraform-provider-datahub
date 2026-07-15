@@ -84,16 +84,19 @@ type mockServer struct {
 	// entity: entityURN -> propertyURN -> values. Distinct from structuredProperties
 	// (which holds property DEFINITIONS).
 	entityStructuredProps map[string]map[string][]spMockValue
-	ownershipTypes        map[string]mockOwnershipType
-	dataProducts          map[string]mockDataProduct
-	assertions            map[string]mockAssertion
-	actionPipelines       map[string]mockActionPipeline
-	assignmentRules       map[string]mockAssignmentRule
-	dataContracts         map[string]mockDataContract
-	defaultPoolID         string
-	inviteToken           string
-	resetTokens           map[string]string
-	ossSignUpMode         bool
+	// globalTags holds the full globalTags list per entity URN, written via
+	// the OpenAPI v3 collection endpoints (whole-aspect replace semantics).
+	globalTags      map[string][]string
+	ownershipTypes  map[string]mockOwnershipType
+	dataProducts    map[string]mockDataProduct
+	assertions      map[string]mockAssertion
+	actionPipelines map[string]mockActionPipeline
+	assignmentRules map[string]mockAssignmentRule
+	dataContracts   map[string]mockDataContract
+	defaultPoolID   string
+	inviteToken     string
+	resetTokens     map[string]string
+	ossSignUpMode   bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -118,6 +121,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		tags:                  make(map[string]mockTag),
 		structuredProperties:  make(map[string]mockStructuredProperty),
 		entityStructuredProps: make(map[string]map[string][]spMockValue),
+		globalTags:            make(map[string][]string),
 		ownershipTypes:        make(map[string]mockOwnershipType),
 		dataProducts:          make(map[string]mockDataProduct),
 		assertions:            make(map[string]mockAssertion),
@@ -137,6 +141,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
+	mux.HandleFunc("/openapi/v3/entity/corpgroup", s.handleCorpGroupCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
 	mux.HandleFunc("/openapi/v3/entity/domain", s.handleDomainWrite)
 	mux.HandleFunc("/openapi/v3/entity/domain/", s.handleDomainItem)

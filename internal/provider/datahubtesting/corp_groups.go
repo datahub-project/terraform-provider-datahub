@@ -202,6 +202,9 @@ func (s *mockServer) handleCorpGroupItem(w http.ResponseWriter, r *http.Request)
 			"value": map[string]any{"roles": []string{g.RoleURN}},
 		}
 	}
+	if aspect := s.globalTagsAspect(g.URN); aspect != nil {
+		entity["globalTags"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)

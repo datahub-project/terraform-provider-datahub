@@ -83,6 +83,75 @@ func TestAcc_Defaults_Collisions(t *testing.T) {
 	})
 }
 
+// TestAcc_DefaultTags_CorpGroupLifecycle covers the tags_all ownership latch
+// on datahub_corp_group: unlatched create, latching an existing resource when
+// defaults.tags appears, idempotency, import while latched, and unlatching.
+func TestAcc_DefaultTags_CorpGroupLifecycle(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	groupID := tg.Name("tfprovider-dtags-group")
+	tagID := tg.Name("tfprovider-dtags-marker")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.CorpGroupDefaultTagsLifecycleSteps(groupID, tagID),
+	})
+}
+
+// TestAcc_DefaultTags_CorpUserAtCreate covers tagging at create time via the
+// corpuser entity path (shared with datahub_service_account).
+func TestAcc_DefaultTags_CorpUserAtCreate(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	username := tg.Name("tfprovider-dtags-user")
+	tagID := tg.Name("tfprovider-dtags-umarker")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.CorpUserDefaultTagsAtCreateSteps(username, tagID),
+	})
+}
+
+// TestAcc_DefaultTags_DataProductAtCreate covers tagging at create time via
+// the dataproduct entity path, coexisting with the managed-by marker.
+func TestAcc_DefaultTags_DataProductAtCreate(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	dataProductID := tg.Name("tfprovider-dtags-dp")
+	tagID := tg.Name("tfprovider-dtags-dpmarker")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.DataProductDefaultTagsAtCreateSteps(dataProductID, tagID),
+	})
+}
+
+// TestAcc_DefaultTags_ExternalEdits covers both sides of the latch against
+// external tag edits: invisible while unlatched, stomped while latched.
+// Mock-only (the simulated edit writes the raw globalTags aspect).
+func TestAcc_DefaultTags_ExternalEdits(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.IsLive() {
+		t.Skip("external-edit simulation writes the raw globalTags aspect; mock-only")
+	}
+	groupID := tg.Name("tfprovider-dtags-ext-group")
+	tagID := tg.Name("tfprovider-dtags-ext-marker")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.CorpGroupExternalTagSteps(groupID, tagID),
+	})
+}
+
+// TestAcc_DefaultTags_NonexistentTag asserts a clear apply-time error when
+// defaults.tags references a tag that does not exist.
+func TestAcc_DefaultTags_NonexistentTag(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	groupID := tg.Name("tfprovider-dtags-missing")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.DefaultTagsNonexistentSteps(groupID),
+	})
+}
+
 // TestAcc_Defaults_ExternalEditStomped covers full-map ownership: a property
 // added outside Terraform surfaces as drift on custom_properties_all and is
 // removed by the next apply. Mock-only (the simulated external edit writes

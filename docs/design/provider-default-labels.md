@@ -122,12 +122,13 @@ To be verified against a live DataHub during rollout and recorded here:
 
 | Phase | Content | Status |
 |---|---|---|
-| 1 | Plumbing: providerData wrapper threaded to all resources, defaults engine + validators + unit tests, this document. No user-visible changes; the provider schema is deliberately withheld so this phase is release-safe on its own. | this change |
-| 2 | Provider schema (`defaults`, `auto_properties`, `auto_property_strategy`) + custom-property defaults and auto-properties on the 6 CP resources (`custom_properties_all`) | pending |
-| 3 | `globalTags` client + tag defaults on corp_user/service_account/corp_group/data_product (`tags_all`) | pending |
+| 1 | Plumbing: providerData wrapper threaded to all resources, defaults engine + validators + unit tests, this document. No user-visible changes; the provider schema is deliberately withheld so this phase is release-safe on its own. | shipped (#86) |
+| 2 | Provider schema (`defaults`, `auto_properties`, `auto_property_strategy`) + custom-property defaults and auto-properties on the 6 CP resources (`custom_properties_all`) | shipped (#87) |
+| 3 | `globalTags` client + `defaults.tags` on corp_user/service_account/corp_group/data_product (`tags_all` ownership latch, tag-existence guard, read-back verified writes) | this change |
 | 4 | Tag defaults on the 6 assertion resources | pending |
 | 5 | Assignment-target extension (corpuser, corpGroup, dataContract) | pending |
 | 6 | Structured-property defaults (`structured_properties_defaults`) | pending |
 | 7 | Docs guide, examples, roadmap note | pending |
+| 8 (proposed) | `defaults.owners`: opt-in default ownership (owner URN + ownership type URN) via the `ownership` aspect. This is the only mechanism available today on `dataHubIngestionSource` (and `tag`), which register `ownership` but no label aspects - the works-now answer to marking ingestion sources as Terraform-managed while CAT-2642 (registering structuredProperties on the entity) waits on a server release. Requires a pre-existing owner principal (e.g. a `datahub_service_account`) and a custom `datahub_ownership_type` (e.g. "Provisioned By") to keep provenance distinct from human responsibility. Never on by default: ownership is user-facing governance metadata. | pending design |
 
 Every phase is independently mergeable and release-safe: no phase ships schema without behavior. Phase 2 must document (in the `defaults` attribute description) that tag and structured-property defaults are accepted only from the phases that implement them; alternatively phase 2 exposes only the attributes it wires (`custom_properties`, `auto_properties`, `auto_property_strategy`) and later phases add `defaults.tags` / `defaults.structured_properties` when their write paths land. The latter is the default choice unless review argues otherwise.
