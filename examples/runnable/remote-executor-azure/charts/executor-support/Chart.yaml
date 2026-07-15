@@ -1,0 +1,5 @@
+apiVersion: v2
+name: executor-support
+description: Support objects for the DataHub Remote Executor example (SecretProviderClass for the Azure Key Vault CSI mount)
+type: application
+version: 0.1.0

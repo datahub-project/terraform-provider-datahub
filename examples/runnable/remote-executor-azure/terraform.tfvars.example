@@ -1,0 +1,39 @@
+# Copy this file to terraform.tfvars and uncomment the variables you want to override.
+# terraform.tfvars is gitignored and will not be committed.
+
+# Required. The GMS URL the Remote Executor workers connect to (must end in /gms).
+# Easiest is to derive it from the same env var the provider uses:
+#   export TF_VAR_datahub_gms_url="$DATAHUB_GMS_URL/gms"
+#
+# datahub_gms_url = "https://your-instance.acryl.io/gms"
+
+# Required secrets. WARNING: avoid putting real credentials in this file; pass
+# them via the environment instead:
+#   read -s TF_VAR_datahub_executor_token && export TF_VAR_datahub_executor_token
+#   read -s TF_VAR_cloudsmith_token && export TF_VAR_cloudsmith_token
+#
+# datahub_executor_token = "change-me"  # DataHub PAT of type Remote Executor
+# cloudsmith_token       = "change-me"  # from your DataHub Cloud representative
+
+# Image location. Confirm the current image tag with your DataHub Cloud
+# representative before applying.
+#
+# cloudsmith_registry       = "docker.datahub.com"
+# cloudsmith_username       = "re"
+# executor_image_repository = "re/datahub-executor"
+# executor_image_tag        = "v2.0.3-cloud"
+# executor_chart_version    = "0.0.52"
+
+# Azure sizing and placement.
+#
+# location     = "eastus2"
+# node_vm_size = "Standard_D4s_v5"
+# node_count   = 2
+
+# Tags applied to every Azure resource.
+#
+# default_tags = {
+#   project    = "tf-example-datahub-remote-executor"
+#   managed_by = "terraform"
+#   owner      = "you@example.com"
+# }

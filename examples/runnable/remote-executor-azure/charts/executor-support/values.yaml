@@ -1,0 +1,4 @@
+# All values are injected by Terraform (see helm_release.executor_support).
+userAssignedIdentityId: ""
+keyVaultName: ""
+tenantId: ""

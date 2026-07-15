@@ -25,4 +25,5 @@ All runnable examples live under `runnable/`:
 - `runnable/connection-snowflake/` -- create a reusable Snowflake connection
 - `runnable/connection-snowflake-ingestion-source/` -- create a Snowflake connection wired to an ingestion source
 - `runnable/executor-pool-basic/` -- provision a remote executor pool and route an ingestion source to it
+- `runnable/remote-executor-azure/` -- full Remote Executor deployment on Azure AKS: executor pool, worker via Helm, and an ingestion source using both DataHub-managed and Key Vault CSI-mounted secrets (creates billable Azure infrastructure)
 - `runnable/local-iam/` -- set up local-auth users, group membership, a role assignment, and an access policy for a team
