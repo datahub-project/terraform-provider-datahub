@@ -40,6 +40,21 @@ func TestAcc_Defaults_AutoProperties(t *testing.T) {
 	})
 }
 
+// TestAcc_Defaults_AutoPropertiesDisabled covers the plain opt-out journey:
+// auto_properties = [] from the start. Nothing is written, resource-level
+// custom_properties behave as before the feature, replans are empty, and
+// import round-trips.
+func TestAcc_Defaults_AutoPropertiesDisabled(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-defaults-disabled")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.DomainAutoPropertiesDisabledSteps(domainID),
+	})
+}
+
 // TestAcc_Defaults_AutoPropertyStrategy covers the CREATION_ONLY upgrade
 // fence (empty plan on an unstamped estate) and the one-time PROACTIVE
 // convergence pass.

@@ -161,6 +161,53 @@ func DomainAutoPropertiesLifecycleSteps(domainID string) []resource.TestStep {
 	}
 }
 
+// DomainAutoPropertiesDisabledSteps covers the plain opt-out journey: a user
+// who only wants to disable the markers. Created with auto_properties = [],
+// nothing extra is ever written - resource-level custom_properties behave
+// exactly as before the feature existed, replans stay empty, and an import
+// round-trips cleanly.
+func DomainAutoPropertiesDisabledSteps(domainID string) []resource.TestStep {
+	const addr = "datahub_domain.test"
+	disabled := `  auto_properties = []`
+	resourceCP := `  custom_properties = {
+    tier = "gold"
+  }`
+	return []resource.TestStep{
+		{
+			// No resource properties either: nothing is written at all.
+			Config: defaultsDomainConfig(disabled, domainID, ""),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties_all"), knownvalue.Null()),
+			},
+		},
+		{
+			// Resource-level custom properties pass through untouched: _all
+			// is exactly the resource map, no marker mixed in.
+			Config: defaultsDomainConfig(disabled, domainID, resourceCP),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"tier": knownvalue.StringExact("gold"),
+				})),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("custom_properties_all"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"tier": knownvalue.StringExact("gold"),
+				})),
+			},
+		},
+		{
+			// Stability: replanning the identical disabled config is empty.
+			Config:   defaultsDomainConfig(disabled, domainID, resourceCP),
+			PlanOnly: true,
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     domainID,
+			ImportStateVerify: true,
+		},
+	}
+}
+
 // DomainAutoPropertyStrategySteps covers the CREATION_ONLY upgrade fence: a
 // resource created without markers (simulating an estate from before the
 // feature) sees an empty plan when markers become enabled, gets stamped by a
