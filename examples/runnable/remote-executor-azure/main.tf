@@ -7,6 +7,9 @@ locals {
 
   executor_namespace = "datahub-executor"
   container_name     = "tf-example-data"
+
+  # Web UI base URL: the GMS URL without its /gms suffix.
+  datahub_web_url = trimsuffix(var.datahub_gms_url, "/gms")
 }
 
 # Suffix for globally-unique Azure names (key vault, storage account).

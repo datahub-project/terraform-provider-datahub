@@ -68,8 +68,8 @@ In short:
 
 1. `eval "$(terraform output -raw aks_get_credentials_command)"` then `kubectl -n datahub-executor get pods` - the worker pod should be `Running`.
 2. `kubectl -n datahub-executor exec <pod> -- ls /mnt/secrets` - shows `ABS_ACCOUNT_KEY`.
-3. DataHub UI **Settings > Remote Executors** - the `azure-aks` pool shows one attached worker.
-4. DataHub UI **Ingestion** - run *TF Example Azure Blob CSV (azure-aks pool)*. In testing the run completed within a minute or two; the first run can take longer if the worker needs to install the `abs` plugin into a fresh venv. On success, `customers.csv` appears as a dataset on the `abs` platform.
+3. Open `terraform output -raw remote_executors_url` in a browser - the `azure-aks` pool shows one attached worker. (`terraform output -raw aks_portal_url` gives the Azure Portal view of the cluster: workloads, pods, live logs.)
+4. Trigger a test ingest of *TF Example Azure Blob CSV (azure-aks pool)*: click **Run** on the page at `terraform output -raw ingestion_sources_url`, or trigger it from the terminal with `eval "$(terraform output -raw run_ingestion_command)"`. In testing the run completed within a minute or two; the first run can take longer if the worker needs to install the `abs` plugin into a fresh venv. On success, `customers.csv` appears as a dataset on the `abs` platform.
 
 ## Cleanup
 
