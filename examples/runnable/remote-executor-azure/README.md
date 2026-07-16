@@ -21,17 +21,17 @@ Both secrets are load-bearing: if either fails to resolve, the ingestion run vis
 
 **Image path.** The Remote Executor image is pulled directly from DataHub's registry (`docker.datahub.com`, Cloudsmith-hosted) using a Kubernetes image pull secret built from your entitlement token. An ACR pull-through cache was evaluated and is not currently possible: Azure Container Registry's artifact-cache feature supports only a fixed list of upstream registries (Docker Hub, GHCR, Quay, ECR Public, and others), and arbitrary hosts are rejected. If you want the image served from your own ACR, run a one-time server-side copy instead: `az acr import --name <acr> --source docker.datahub.com/<repo>:<tag> --username re --password <token>`.
 
-**Secret hygiene.** No secret value is stored in Terraform state: the DataHub secret uses the provider's write-only `value` attribute, the Key Vault secret uses `value_wo`, and both Kubernetes secrets (executor token and pull secret) use `data_wo`. Rotating any of them means bumping the corresponding `*_version`/`*_revision` counter.
+**Secret hygiene.** No secret value is stored in Terraform state: the DataHub secret uses the provider's write-only `value` attribute, the Key Vault secret uses `value_wo`, and both Kubernetes secrets (executor token and pull secret) use `data_wo`. Rotating any of them means bumping the corresponding `*_version`/`*_revision` counter. The flip side of write-only: Terraform cannot detect that a stored value differs from your variable, so if you applied with a wrong token, a plain `terraform apply` plans no change - force the rewrite with `terraform apply -replace=<resource>` (e.g. `-replace=kubernetes_secret_v1.cloudsmith_pull`).
 
-**Single apply.** The kubernetes and helm providers are configured from the AKS cluster's kubeconfig outputs, so Terraform defers their planning until the cluster exists within the same apply. If the cluster is ever deleted out-of-band, remove the kubernetes/helm resources from state (`terraform state rm`) before destroying.
+**Single apply.** The kubernetes and helm providers are configured from the AKS cluster's kubeconfig, so Terraform defers their planning until the cluster exists within the same apply. Credentials are parsed from `kube_config_raw` rather than azurerm's structured `kube_config` attributes, which can come back with empty client certificates (see the comment in `providers.tf`). If the cluster is ever deleted out-of-band, remove the kubernetes/helm resources from state (`terraform state rm`) before destroying.
 
 ## Prerequisites
 
-- A DataHub Cloud instance and a personal access token with the *Manage Ingestion* privilege (for the provider).
+- A DataHub Cloud instance and a personal access token with the *Manage Metadata Ingestion* privilege (for the provider).
 - A second access token of type **Remote Executor** (DataHub UI: **Settings > Access Tokens > Generate new token > Remote Executor**) - this is what the workers use to authenticate to GMS.
 - A **Cloudsmith entitlement token** for `docker.datahub.com`, from your DataHub Cloud representative. The image lives at `docker.datahub.com/re/datahub-executor`; confirm the current image tag with them (`executor_image_tag`).
 - An Azure subscription and `az login` completed (Terraform's azurerm provider uses the Azure CLI credential by default).
-- `kubectl` (optional, for verification).
+- `kubectl` and `helm` (optional - for verification and for the cleanup fallback).
 
 Export credentials:
 
@@ -52,7 +52,9 @@ terraform init
 terraform apply
 ```
 
-Expect roughly 10-15 minutes: AKS takes 5-10 minutes, the executor pool blocks until READY (30-90 seconds), and the Helm release waits for the worker to start - the first image pull is multi-gigabyte, so the pod can sit in `ContainerCreating` for several minutes.
+Expect roughly 10-15 minutes: AKS takes 5-10 minutes, the executor pool blocks until READY (30-90 seconds), and the Helm release waits for the worker to start - the first image pull is multi-gigabyte, so the pod can sit in `ContainerCreating` for several minutes, then `Running` but unready for a few more while the executor bootstraps and connects to GMS.
+
+If the apply looks stuck on the executor Helm release, resist the urge to interrupt it hard: the release has a 10-minute timeout that fails cleanly and writes state. A single Ctrl-C is a graceful stop; a second Ctrl-C aborts immediately and can truncate the local state file mid-write, after which the next apply starts from scratch and collides with the resources that already exist. (If that happens: restore `terraform.tfstate` from `terraform.tfstate.backup`.)
 
 ## Verify
 
@@ -67,7 +69,7 @@ In short:
 1. `eval "$(terraform output -raw aks_get_credentials_command)"` then `kubectl -n datahub-executor get pods` - the worker pod should be `Running`.
 2. `kubectl -n datahub-executor exec <pod> -- ls /mnt/secrets` - shows `ABS_ACCOUNT_KEY`.
 3. DataHub UI **Settings > Remote Executors** - the `azure-aks` pool shows one attached worker.
-4. DataHub UI **Ingestion** - run *TF Example Azure Blob CSV (azure-aks pool)*. The first run pip-installs the `abs` plugin (including pyspark) into a fresh venv on the worker, which takes several minutes; subsequent runs are fast. On success, `customers.csv` appears as a dataset on the `abs` platform.
+4. DataHub UI **Ingestion** - run *TF Example Azure Blob CSV (azure-aks pool)*. In testing the run completed within a minute or two; the first run can take longer if the worker needs to install the `abs` plugin into a fresh venv. On success, `customers.csv` appears as a dataset on the `abs` platform.
 
 ## Cleanup
 
@@ -81,7 +83,8 @@ Dependency ordering tears the worker Helm release down before the pool, and the 
 
 | Symptom | Likely cause |
 |---|---|
-| Pod `ImagePullBackOff` | Wrong `executor_image_repository` path or an invalid/expired Cloudsmith token. Check `kubectl -n datahub-executor describe pod <pod>`. |
+| Pod `ImagePullBackOff` | Wrong `executor_image_repository` path or an invalid/expired Cloudsmith token. Check `kubectl -n datahub-executor describe pod <pod>` (a `401 Unauthorized` from the registry login endpoint means the credential). Test the token directly: `curl -sS -o /dev/null -w '%{http_code}\n' -u "re:$TF_VAR_cloudsmith_token" "https://docker.datahub.com/v2/re/datahub-executor/tags/list"` - expect `200`. After correcting the token, run `terraform apply -replace=kubernetes_secret_v1.cloudsmith_pull` (write-only values are not diffed) and delete the pod to skip the backoff wait. |
+| `Error: Unauthorized` on kubernetes/helm resources | The providers reached the API server without credentials. This example parses `kube_config_raw` to avoid the known empty-certificate case (see `providers.tf`); if it recurs, check that the cluster has local accounts enabled and is not Entra-only (`az aks show ... --query disableLocalAccounts`). |
 | Pod `Pending` | CPU request does not fit the node. Keep `executor_cpu_request = "3"` on `Standard_D4s_v5` nodes (4 vCPU nodes have ~3.8 allocatable). |
 | Pod `CreateContainerError` / mount failure | The CSI addon identity cannot read the Key Vault. Check the `csi_addon` access policy applied and the SecretProviderClass values. |
 | Worker running but not listed under Remote Executors | Wrong `datahub_gms_url` (must end in `/gms`) or an invalid Remote Executor token. Check the pod logs. |
