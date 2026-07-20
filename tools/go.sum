@@ -242,8 +242,8 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/minamijoyo/terraform-config-inspect v0.0.0-20250505010908-6ad6eb27d3c9 h1:6trjsdYNQsBXv9BShavPR047w/ufWQ6CnzlGO/nd2vo=
 github.com/minamijoyo/terraform-config-inspect v0.0.0-20250505010908-6ad6eb27d3c9/go.mod h1:RhDzenR6+Mj5hmOQpw0nOiMTPDTrjLfuYAtxvcq2IVY=
-github.com/minamijoyo/tfupdate v0.10.1 h1:DDHgwkk27hdmzwOhqIrptMbyHK5S6dV7sKIHK04c8Pg=
-github.com/minamijoyo/tfupdate v0.10.1/go.mod h1:ncSt+rZ0D0kyyZDvvBGhsOk0TT7yjQ/Vf+ECoLvFBHk=
+github.com/minamijoyo/tfupdate v0.10.2 h1:yZynmJpBSHIK7+Sq2vJHyPIPxg3toJyMizr2z+Th3hc=
+github.com/minamijoyo/tfupdate v0.10.2/go.mod h1:ncSt+rZ0D0kyyZDvvBGhsOk0TT7yjQ/Vf+ECoLvFBHk=
 github.com/mitchellh/cli v1.0.0 h1:iGBIsUe3+HZ/AD/Vd7DErOt5sU9fa8Uj7A2s1aggv1Y=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=
 github.com/mitchellh/copystructure v1.2.0 h1:vpKXTN4ewci03Vljg/q9QvCGUDttBOGBIa15WveJJGw=
