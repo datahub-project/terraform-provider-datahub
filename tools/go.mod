@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
-	github.com/minamijoyo/tfupdate v0.10.1
+	github.com/minamijoyo/tfupdate v0.10.2
 )
 
 require (
