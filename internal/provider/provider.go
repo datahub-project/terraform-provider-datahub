@@ -162,6 +162,19 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 							"`custom_properties_all` attribute.",
 						Validators: []validator.Map{nonEmptyStringMapValidator{}},
 					},
+					"tags": schema.SetAttribute{
+						Optional:    true,
+						ElementType: types.StringType,
+						MarkdownDescription: "Tag URNs (`urn:li:tag:...`) attached to every resource whose " +
+							"entity type supports the `globalTags` aspect: `datahub_corp_user`, " +
+							"`datahub_service_account`, `datahub_corp_group`, and `datahub_data_product`. " +
+							"While set, the provider owns the complete tag list on managed entities (tags " +
+							"added outside Terraform are removed on the next apply); the effective list is " +
+							"exposed on each resource as the computed `tags_all` attribute. Referenced tags " +
+							"must already exist - create them in a separate apply. When this attribute has " +
+							"never been set for a resource, the provider neither reads nor writes its tags.",
+						Validators: []validator.Set{urnPrefixSetValidator{prefix: tagURNPrefix}},
+					},
 				},
 			},
 			"auto_properties": schema.SetAttribute{

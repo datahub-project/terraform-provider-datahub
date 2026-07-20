@@ -28,7 +28,10 @@ var (
 	_ resource.ResourceWithModifyPlan  = &dataProductResource{}
 )
 
+const dataProductEntityPath = "dataproduct"
+
 type dataProductResource struct {
+	pd       *providerData
 	client   *datahub.Client
 	defaults entityDefaults
 }
@@ -42,6 +45,7 @@ type dataProductResourceModel struct {
 	ExternalURL         types.String `tfsdk:"external_url"`
 	CustomProperties    types.Map    `tfsdk:"custom_properties"`
 	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
+	TagsAll             types.Set    `tfsdk:"tags_all"`
 	Domain              types.String `tfsdk:"domain"`
 }
 
@@ -54,6 +58,7 @@ func (r *dataProductResource) Configure(_ context.Context, req resource.Configur
 	if pd == nil {
 		return
 	}
+	r.pd = pd
 	r.client = pd.Client
 	r.defaults = pd.defaults
 }
@@ -63,6 +68,7 @@ func (r *dataProductResource) ModifyPlan(ctx context.Context, req resource.Modif
 		return // destroy plan
 	}
 	planCustomPropertiesAll(ctx, r.defaults, req, resp)
+	planTagsAll(ctx, r.defaults, resp)
 }
 
 func (r *dataProductResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -145,6 +151,7 @@ func (r *dataProductResource) Schema(_ context.Context, _ resource.SchemaRequest
 				},
 			},
 			"custom_properties_all": customPropertiesAllSchema(),
+			"tags_all":              tagsAllSchema(),
 			"domain": schema.StringAttribute{
 				Optional:            true,
 				MarkdownDescription: "Full DataHub URN of the domain that owns this data product (e.g. `urn:li:domain:finance`). Accepts a reference such as `datahub_domain.finance.urn` so Terraform can order creation automatically.",
@@ -187,6 +194,23 @@ func (r *dataProductResource) Create(ctx context.Context, req resource.CreateReq
 		return
 	}
 
+	tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+	resp.Diagnostics.Append(td...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.TagsAll = tagsAll
+	if len(tagURNs) > 0 {
+		if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+			resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+			return
+		}
+		if err := r.client.SetGlobalTags(ctx, dataProductEntityPath, urn, tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -220,6 +244,12 @@ func (r *dataProductResource) Read(ctx context.Context, req resource.ReadRequest
 	}
 
 	applyDataProductToModel(dp, &state)
+	tagsAll, err := readTagsAll(ctx, r.client, dataProductEntityPath, urn, state.TagsAll)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -255,6 +285,27 @@ func (r *dataProductResource) Update(ctx context.Context, req resource.UpdateReq
 	); err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+
+	// Reconcile tags when the effective list changed. A null plan with a
+	// non-null prior state clears the aspect and releases the ownership latch.
+	if !plan.TagsAll.Equal(state.TagsAll) {
+		tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+		resp.Diagnostics.Append(td...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.TagsAll = tagsAll
+		if len(tagURNs) > 0 {
+			if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+				resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+				return
+			}
+		}
+		if err := r.client.SetGlobalTags(ctx, dataProductEntityPath, urn, tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = state.ID
@@ -333,6 +384,12 @@ func (r *dataProductResource) ImportState(ctx context.Context, req resource.Impo
 	// markers are omitted from custom_properties so the first plan after
 	// import is minimal.
 	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(dp.CustomProperties, r.defaults)
+	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, dataProductEntityPath, dp.URN)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

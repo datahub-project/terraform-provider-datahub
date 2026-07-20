@@ -113,21 +113,24 @@ provider "datahub" {
 
 To be verified against a live DataHub during rollout and recorded here:
 
-- [ ] `globalTags` OpenAPI v3 write acceptance and persistence per entity type (corpuser, corpgroup, dataproduct, assertion), including exact entity path casing and a CAT-2562-style silent-no-op read-back check.
-- [ ] Whether a `globalTags` write referencing a nonexistent tag URN succeeds (expected: yes, which is why the provider performs its own existence check).
+- [x] `globalTags` OpenAPI v3 write acceptance and persistence for corpuser, corpgroup, and dataproduct - verified 2026-07-15 against DataHub Cloud (demo.acryl.io): all three lowercase path segments accepted, writes persisted and read back exactly (latch lifecycle including clear-on-unlatch, create-time tagging, import while latched). The assertion entity path remains to be verified in the assertion-tags phase.
+- [x] Nonexistent tag URN in `defaults.tags` - the provider's `ensureTagsExist` guard fails fast before any write (verified live 2026-07-15), so the server's acceptance of dangling tag references is moot for the provider. The raw server behavior itself was not probed.
 - [ ] Structured property upsert on the three new assignment target types (corpuser, corpGroup, dataContract).
 - [ ] corpUser custom-properties write path merge-vs-replace semantics (different writer than the domain-style full-aspect POST).
+
+Environmental note from the 2026-07-15 run: the GraphQL `deleteDataProduct` mutation returned "Unauthorized" for the test token on the Cloud tenant (post-test destroy failure only; the tag write path on dataproduct passed). Live runs of data-product tests need a token whose principal can delete data products, or manual cleanup afterwards.
 
 ## Rollout
 
 | Phase | Content | Status |
 |---|---|---|
-| 1 | Plumbing: providerData wrapper threaded to all resources, defaults engine + validators + unit tests, this document. No user-visible changes; the provider schema is deliberately withheld so this phase is release-safe on its own. | this change |
-| 2 | Provider schema (`defaults`, `auto_properties`, `auto_property_strategy`) + custom-property defaults and auto-properties on the 6 CP resources (`custom_properties_all`) | pending |
-| 3 | `globalTags` client + tag defaults on corp_user/service_account/corp_group/data_product (`tags_all`) | pending |
+| 1 | Plumbing: providerData wrapper threaded to all resources, defaults engine + validators + unit tests, this document. No user-visible changes; the provider schema is deliberately withheld so this phase is release-safe on its own. | shipped (#86) |
+| 2 | Provider schema (`defaults`, `auto_properties`, `auto_property_strategy`) + custom-property defaults and auto-properties on the 6 CP resources (`custom_properties_all`) | shipped (#87) |
+| 3 | `globalTags` client + `defaults.tags` on corp_user/service_account/corp_group/data_product (`tags_all` ownership latch, tag-existence guard, read-back verified writes) | this change |
 | 4 | Tag defaults on the 6 assertion resources | pending |
 | 5 | Assignment-target extension (corpuser, corpGroup, dataContract) | pending |
 | 6 | Structured-property defaults (`structured_properties_defaults`) | pending |
 | 7 | Docs guide, examples, roadmap note | pending |
+| 8 (proposed) | `defaults.owners`: opt-in default ownership (owner URN + ownership type URN) via the `ownership` aspect. This is the only mechanism available today on `dataHubIngestionSource` (and `tag`), which register `ownership` but no label aspects - the works-now answer to marking ingestion sources as Terraform-managed while CAT-2642 (registering structuredProperties on the entity) waits on a server release. Requires a pre-existing owner principal (e.g. a `datahub_service_account`) and a custom `datahub_ownership_type` (e.g. "Provisioned By") to keep provenance distinct from human responsibility. Never on by default: ownership is user-facing governance metadata. | pending design |
 
 Every phase is independently mergeable and release-safe: no phase ships schema without behavior. Phase 2 must document (in the `defaults` attribute description) that tag and structured-property defaults are accepted only from the phases that implement them; alternatively phase 2 exposes only the attributes it wires (`custom_properties`, `auto_properties`, `auto_property_strategy`) and later phases add `defaults.tags` / `defaults.structured_properties` when their write paths land. The latter is the default choice unless review argues otherwise.

@@ -23,10 +23,15 @@ var (
 	_ resource.Resource                = &corpGroupResource{}
 	_ resource.ResourceWithConfigure   = &corpGroupResource{}
 	_ resource.ResourceWithImportState = &corpGroupResource{}
+	_ resource.ResourceWithModifyPlan  = &corpGroupResource{}
 )
 
+const corpGroupEntityPath = "corpgroup"
+
 type corpGroupResource struct {
-	client *datahub.Client
+	pd       *providerData
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type corpGroupResourceModel struct {
@@ -37,6 +42,7 @@ type corpGroupResourceModel struct {
 	Description types.String `tfsdk:"description"`
 	Email       types.String `tfsdk:"email"`
 	Slack       types.String `tfsdk:"slack"`
+	TagsAll     types.Set    `tfsdk:"tags_all"`
 }
 
 func NewCorpGroupResource() resource.Resource {
@@ -48,8 +54,16 @@ func (r *corpGroupResource) Configure(_ context.Context, req resource.ConfigureR
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.pd = pd
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *corpGroupResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planTagsAll(ctx, r.defaults, resp)
 }
 
 func (r *corpGroupResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -107,6 +121,7 @@ func (r *corpGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Optional:            true,
 				MarkdownDescription: "Slack channel or handle for the group (e.g., `#data-platform`).",
 			},
+			"tags_all": tagsAllSchema(),
 		},
 	}
 }
@@ -150,6 +165,23 @@ func (r *corpGroupResource) Create(ctx context.Context, req resource.CreateReque
 		}
 	}
 
+	tagsAll, tagURNs, d := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.TagsAll = tagsAll
+	if len(tagURNs) > 0 {
+		if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+			resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+			return
+		}
+		if err := r.client.SetGlobalTags(ctx, corpGroupEntityPath, urn, tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -183,6 +215,12 @@ func (r *corpGroupResource) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 
 	applyGroupToModel(group, &state)
+	tagsAll, err := readTagsAll(ctx, r.client, corpGroupEntityPath, urn, state.TagsAll)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -218,6 +256,27 @@ func (r *corpGroupResource) Update(ctx context.Context, req resource.UpdateReque
 	}); err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+
+	// Reconcile tags when the effective list changed. A null plan with a
+	// non-null prior state clears the aspect and releases the ownership latch.
+	if !plan.TagsAll.Equal(state.TagsAll) {
+		tagsAll, tagURNs, d := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+		resp.Diagnostics.Append(d...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.TagsAll = tagsAll
+		if len(tagURNs) > 0 {
+			if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+				resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+				return
+			}
+		}
+		if err := r.client.SetGlobalTags(ctx, corpGroupEntityPath, urn, tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = state.ID
@@ -292,6 +351,12 @@ func (r *corpGroupResource) ImportState(ctx context.Context, req resource.Import
 		GroupID: types.StringValue(group.ID),
 	}
 	applyGroupToModel(group, &state)
+	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, corpGroupEntityPath, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

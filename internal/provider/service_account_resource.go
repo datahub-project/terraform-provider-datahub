@@ -74,6 +74,7 @@ var (
 )
 
 type serviceAccountResource struct {
+	pd       *providerData
 	client   *datahub.Client
 	defaults entityDefaults
 }
@@ -86,6 +87,7 @@ type serviceAccountResourceModel struct {
 	Description         types.String `tfsdk:"description"`
 	CustomProperties    types.Map    `tfsdk:"custom_properties"`
 	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
+	TagsAll             types.Set    `tfsdk:"tags_all"`
 }
 
 func NewServiceAccountResource() resource.Resource {
@@ -97,6 +99,7 @@ func (r *serviceAccountResource) Configure(_ context.Context, req resource.Confi
 	if pd == nil {
 		return
 	}
+	r.pd = pd
 	r.client = pd.Client
 	r.defaults = pd.defaults
 }
@@ -106,6 +109,7 @@ func (r *serviceAccountResource) ModifyPlan(ctx context.Context, req resource.Mo
 		return // destroy plan
 	}
 	planCustomPropertiesAll(ctx, r.defaults, req, resp)
+	planTagsAll(ctx, r.defaults, resp)
 }
 
 func (r *serviceAccountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -189,6 +193,7 @@ func (r *serviceAccountResource) Schema(_ context.Context, _ resource.SchemaRequ
 				},
 			},
 			"custom_properties_all": customPropertiesAllSchema(),
+			"tags_all":              tagsAllSchema(),
 		},
 	}
 }
@@ -220,6 +225,23 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		}
 		return
+	}
+
+	tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+	resp.Diagnostics.Append(td...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.TagsAll = tagsAll
+	if len(tagURNs) > 0 {
+		if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+			resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+			return
+		}
+		if err := r.client.SetGlobalTags(ctx, corpUserEntityPath, urn, tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = types.StringValue(urn)
@@ -256,6 +278,12 @@ func (r *serviceAccountResource) Read(ctx context.Context, req resource.ReadRequ
 	}
 
 	applyServiceAccountToModel(sa, &state)
+	tagsAll, err := readTagsAll(ctx, r.client, corpUserEntityPath, urn, state.TagsAll)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -286,6 +314,27 @@ func (r *serviceAccountResource) Update(ctx context.Context, req resource.Update
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		}
 		return
+	}
+
+	// Reconcile tags when the effective list changed. A null plan with a
+	// non-null prior state clears the aspect and releases the ownership latch.
+	if !plan.TagsAll.Equal(state.TagsAll) {
+		tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+		resp.Diagnostics.Append(td...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.TagsAll = tagsAll
+		if len(tagURNs) > 0 {
+			if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+				resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+				return
+			}
+		}
+		if err := r.client.SetGlobalTags(ctx, corpUserEntityPath, state.URN.ValueString(), tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = state.ID
@@ -362,6 +411,12 @@ func (r *serviceAccountResource) ImportState(ctx context.Context, req resource.I
 	// markers are omitted from custom_properties so the first plan after
 	// import is minimal.
 	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(sa.CustomProperties, r.defaults)
+	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, corpUserEntityPath, sa.URN)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

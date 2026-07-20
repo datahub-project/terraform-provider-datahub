@@ -134,6 +134,9 @@ func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) 
 			"value": map[string]any{"typeNames": u.SubTypes},
 		}
 	}
+	if aspect := s.globalTagsAspect(u.URN); aspect != nil {
+		entity["globalTags"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
@@ -180,10 +183,17 @@ func (s *mockServer) handleCorpUserCollection(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Aspect writes that only carry globalTags must not touch the user
+	// record (real OpenAPI semantics: aspects are independent).
+	s.storeGlobalTagsFromPayload(body)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, e := range entities {
+		if e.KeyData == nil && e.Info == nil && e.SubTypes == nil {
+			continue // aspect-only write (e.g. globalTags)
+		}
 		username := ""
 		if e.KeyData != nil {
 			username = e.KeyData.Value.Username

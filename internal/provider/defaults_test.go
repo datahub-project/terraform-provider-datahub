@@ -394,6 +394,7 @@ func TestParseEntityDefaultsNullBlock(t *testing.T) {
 func TestParseEntityDefaultsPopulatedBlock(t *testing.T) {
 	obj, diags := types.ObjectValue(providerDefaultsObjectType(), map[string]attr.Value{
 		"custom_properties": stringMap(map[string]string{"team": "platform"}),
+		"tags":              stringSet("urn:li:tag:terraform-managed"),
 	})
 	if diags.HasError() {
 		t.Fatal(diags)
@@ -404,8 +405,11 @@ func TestParseEntityDefaultsPopulatedBlock(t *testing.T) {
 		t.Fatal(pdiags)
 	}
 	requireMapEquals(t, d.CustomProperties, map[string]string{"team": "platform"})
-	if !d.Tags.IsNull() || !d.StructuredProperties.IsNull() {
-		t.Fatalf("expected null tags and structured properties until their phases land, got %+v", d)
+	if d.Tags.IsNull() || len(d.Tags.Elements()) != 1 {
+		t.Fatalf("expected one default tag, got %s", d.Tags)
+	}
+	if !d.StructuredProperties.IsNull() {
+		t.Fatalf("expected null structured properties until their phase lands, got %+v", d)
 	}
 }
 
@@ -435,6 +439,7 @@ func TestEmptyEntityDefaultsIsInert(t *testing.T) {
 func providerDefaultsObjectType() map[string]attr.Type {
 	return map[string]attr.Type{
 		"custom_properties": types.MapType{ElemType: types.StringType},
+		"tags":              types.SetType{ElemType: types.StringType},
 	}
 }
 

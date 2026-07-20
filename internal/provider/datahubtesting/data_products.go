@@ -37,11 +37,20 @@ func (s *mockServer) handleDataProductCollection(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Aspect writes that only carry globalTags must not touch the product
+	// record (real OpenAPI semantics: aspects are independent).
+	s.storeGlobalTagsFromPayload(body)
+
 	s.mu.Lock()
 	for _, entity := range entities {
 		urn, _ := entity["urn"].(string)
 		if urn == "" {
 			continue
+		}
+		if _, hasProps := entity["dataProductProperties"]; !hasProps {
+			if _, hasDomains := entity["domains"]; !hasDomains {
+				continue // aspect-only write (e.g. globalTags)
+			}
 		}
 		id := strings.TrimPrefix(urn, "urn:li:dataProduct:")
 
@@ -153,6 +162,9 @@ func (s *mockServer) handleDataProductItem(w http.ResponseWriter, r *http.Reques
 	}
 	if aspect := s.structuredPropertiesAspect(dp.URN); aspect != nil {
 		entity["structuredProperties"] = aspect
+	}
+	if aspect := s.globalTagsAspect(dp.URN); aspect != nil {
+		entity["globalTags"] = aspect
 	}
 
 	w.Header().Set("Content-Type", "application/json")

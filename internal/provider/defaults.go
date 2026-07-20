@@ -17,6 +17,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 // This file implements the provider-level defaults engine: the parsed form of
@@ -123,11 +125,12 @@ type entityDefaults struct {
 }
 
 // providerDefaultsModel mirrors the `defaults` nested attribute. Members are
-// added phase by phase as their write paths land (`tags` with the globalTags
-// phase, `structured_properties` with the structured-property phase), so the
-// provider never exposes configuration that has no effect.
+// added phase by phase as their write paths land (`structured_properties`
+// arrives with the structured-property phase), so the provider never exposes
+// configuration that has no effect.
 type providerDefaultsModel struct {
 	CustomProperties types.Map `tfsdk:"custom_properties"`
+	Tags             types.Set `tfsdk:"tags"`
 }
 
 var spDefaultsElementType = types.SetType{ElemType: types.StringType}
@@ -172,6 +175,9 @@ func parseEntityDefaults(ctx context.Context, defaultsObj types.Object, autoProp
 		}
 		if !m.CustomProperties.IsNull() {
 			d.CustomProperties = m.CustomProperties
+		}
+		if !m.Tags.IsNull() {
+			d.Tags = m.Tags
 		}
 	}
 
@@ -466,6 +472,121 @@ func customPropertiesAllSchema() rschema.MapAttribute {
 			"this resource's `custom_properties`, resource values winning per key. The provider owns " +
 			"the complete server-side map; entries added outside Terraform show as drift here and are " +
 			"removed on the next apply.",
+	}
+}
+
+// canonicalTagSet converts the provider default_tags value into the canonical
+// planned tags_all value: null when the defaults are null or empty (feature
+// inert / latch released), unknown when unknown, otherwise the set itself.
+// The same empty-means-null rule is applied by the read path, so the two can
+// never disagree about the representation of "no tags".
+func canonicalTagSet(tags types.Set) types.Set {
+	if tags.IsUnknown() {
+		return types.SetUnknown(types.StringType)
+	}
+	if tags.IsNull() || len(tags.Elements()) == 0 {
+		return types.SetNull(types.StringType)
+	}
+	return tags
+}
+
+// tagSetValue converts a plain URN list to a types.Set, normalising empty to
+// null.
+func tagSetValue(urns []string) types.Set {
+	if len(urns) == 0 {
+		return types.SetNull(types.StringType)
+	}
+	elems := make([]attr.Value, 0, len(urns))
+	for _, u := range urns {
+		elems = append(elems, types.StringValue(u))
+	}
+	out, diags := types.SetValue(types.StringType, elems)
+	if diags.HasError() {
+		return types.SetNull(types.StringType)
+	}
+	return out
+}
+
+// planTagsAll computes and sets the planned `tags_all` attribute. This is the
+// whole ownership-latch mechanism on the plan side: with no default tags
+// configured the planned value is null, so a resource whose state is also
+// null shows no diff and is never written or read (fully inert), while a
+// previously-latched resource (non-null state) plans a transition to null
+// that clears the aspect and releases the latch.
+func planTagsAll(ctx context.Context, defaults entityDefaults, resp *resource.ModifyPlanResponse) {
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("tags_all"), canonicalTagSet(defaults.Tags))...)
+}
+
+// resolvePlannedTagsAll returns the tags_all value that belongs in state plus
+// the URN list to write (nil when tags_all is null). The planned value is
+// normally known at apply time; recomputing from the provider defaults is the
+// defensive fallback and produces the identical result by purity.
+func resolvePlannedTagsAll(_ context.Context, defaults entityDefaults, planned types.Set) (types.Set, []string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if planned.IsUnknown() {
+		planned = canonicalTagSet(defaults.Tags)
+	}
+	if planned.IsNull() || planned.IsUnknown() {
+		return types.SetNull(types.StringType), nil, diags
+	}
+	urns := make([]string, 0, len(planned.Elements()))
+	for _, e := range planned.Elements() {
+		s, ok := e.(types.String)
+		if !ok || s.IsNull() || s.IsUnknown() {
+			diags.AddError("Invalid default_tags value", "defaults.tags contains a non-string or unresolved element.")
+			continue
+		}
+		urns = append(urns, s.ValueString())
+	}
+	sort.Strings(urns)
+	return planned, urns, diags
+}
+
+// readTagsAll implements the read side of the ownership latch: an unlatched
+// resource (null prior tags_all) is never read, keeping externally-applied
+// tags invisible; a latched resource records the full server list so external
+// edits surface as drift and are stomped on the next apply.
+func readTagsAll(ctx context.Context, client *datahub.Client, entityPath, urn string, prior types.Set) (types.Set, error) {
+	if prior.IsNull() || prior.IsUnknown() {
+		return types.SetNull(types.StringType), nil
+	}
+	tags, found, err := client.GetGlobalTags(ctx, entityPath, urn)
+	if err != nil {
+		return prior, fmt.Errorf("reading globalTags for %s: %w", urn, err)
+	}
+	if !found {
+		return types.SetNull(types.StringType), nil
+	}
+	return tagSetValue(tags), nil
+}
+
+// importTagsAll decides the imported tags_all value: with default tags
+// configured the provider will own the list, so the server truth is recorded
+// (the first plan shows the reconciliation); with no defaults the latch stays
+// released and the entity's existing tags remain untouched and invisible.
+func importTagsAll(ctx context.Context, client *datahub.Client, defaults entityDefaults, entityPath, urn string) (types.Set, error) {
+	if canonicalTagSet(defaults.Tags).IsNull() {
+		return types.SetNull(types.StringType), nil
+	}
+	tags, _, err := client.GetGlobalTags(ctx, entityPath, urn)
+	if err != nil {
+		return types.SetNull(types.StringType), fmt.Errorf("reading globalTags for %s: %w", urn, err)
+	}
+	return tagSetValue(tags), nil
+}
+
+// tagsAllSchema is the shared schema for the computed `tags_all` attribute on
+// resources whose entity type supports the globalTags aspect. No
+// UseStateForUnknown: the value is recomputed by ModifyPlan on every plan.
+func tagsAllSchema() rschema.SetAttribute {
+	return rschema.SetAttribute{
+		Computed:    true,
+		ElementType: types.StringType,
+		MarkdownDescription: "Tag URNs attached by the provider's `defaults.tags`. While non-null, the " +
+			"provider owns the complete `globalTags` list on this entity: tags added outside Terraform " +
+			"show as drift here and are removed on the next apply. Null when `defaults.tags` is not " +
+			"configured and the provider has never written tags to this entity (existing and " +
+			"externally-applied tags are then left untouched).",
 	}
 }
 
