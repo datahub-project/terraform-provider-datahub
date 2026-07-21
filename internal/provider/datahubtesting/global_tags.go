@@ -71,6 +71,19 @@ func (s *mockServer) globalTagsAspect(urn string) map[string]any {
 // creation and property edits go through GraphQL, so the only aspect write
 // the provider sends here is globalTags.
 func (s *mockServer) handleCorpGroupCollection(w http.ResponseWriter, r *http.Request) {
+	s.handleGlobalTagsOnlyCollection(w, r)
+}
+
+// handleAssertionCollection serves POST /openapi/v3/entity/assertion.
+// Assertion creation and edits go through GraphQL upsert mutations, so the
+// only aspect write the provider sends here is globalTags.
+func (s *mockServer) handleAssertionCollection(w http.ResponseWriter, r *http.Request) {
+	s.handleGlobalTagsOnlyCollection(w, r)
+}
+
+// handleGlobalTagsOnlyCollection is the shared collection-POST handler for
+// entity types whose only OpenAPI v3 aspect write is globalTags.
+func (s *mockServer) handleGlobalTagsOnlyCollection(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

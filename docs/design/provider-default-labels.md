@@ -127,7 +127,7 @@ Environmental note from the 2026-07-15 run: the GraphQL `deleteDataProduct` muta
 | 1 | Plumbing: providerData wrapper threaded to all resources, defaults engine + validators + unit tests, this document. No user-visible changes; the provider schema is deliberately withheld so this phase is release-safe on its own. | shipped (#86) |
 | 2 | Provider schema (`defaults`, `auto_properties`, `auto_property_strategy`) + custom-property defaults and auto-properties on the 6 CP resources (`custom_properties_all`) | shipped (#87) |
 | 3 | `globalTags` client + `defaults.tags` on corp_user/service_account/corp_group/data_product (`tags_all` ownership latch, tag-existence guard, read-back verified writes) | this change |
-| 4 | Tag defaults on the 6 assertion resources | pending |
+| 4 | Tag defaults on the 6 assertion resources (`tags_all` latch reuse; assertion entity path pending Cloud verification - the read-back write guard turns a CAT-2562-style silent no-op into an explicit error until then) | this change |
 | 5 | Assignment-target extension (corpuser, corpGroup, dataContract) | pending |
 | 6 | Structured-property defaults (`structured_properties_defaults`) | pending |
 | 7 | Docs guide, examples, roadmap note | pending |

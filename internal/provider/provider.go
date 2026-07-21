@@ -167,7 +167,11 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 						ElementType: types.StringType,
 						MarkdownDescription: "Tag URNs (`urn:li:tag:...`) attached to every resource whose " +
 							"entity type supports the `globalTags` aspect: `datahub_corp_user`, " +
-							"`datahub_service_account`, `datahub_corp_group`, and `datahub_data_product`. " +
+							"`datahub_service_account`, `datahub_corp_group`, `datahub_data_product`, " +
+							"and the assertion resources (`datahub_custom_assertion`, " +
+							"`datahub_field_assertion`, `datahub_freshness_assertion`, " +
+							"`datahub_schema_assertion`, `datahub_sql_assertion`, " +
+							"`datahub_volume_assertion`). " +
 							"While set, the provider owns the complete tag list on managed entities (tags " +
 							"added outside Terraform are removed on the next apply); the effective list is " +
 							"exposed on each resource as the computed `tags_all` attribute. Referenced tags " +

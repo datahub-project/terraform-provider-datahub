@@ -239,6 +239,84 @@ resource "datahub_corp_group" "test" {
 	}
 }
 
+// CustomAssertionDefaultTagsSteps covers the tags_all latch on
+// datahub_custom_assertion (the assertion entity path): tagged at create,
+// plan idempotency while latched, and unlatching when defaults.tags is
+// removed. Custom assertions work on both OSS and Cloud, so the scenario is
+// live-runnable everywhere; entityURN is parameterised so live callers can
+// pass an ensured dataset.
+func CustomAssertionDefaultTagsSteps(entityURN, tagID string) []resource.TestStep {
+	const addr = "datahub_custom_assertion.test"
+	tagURN := "urn:li:tag:" + tagID
+	assertion := fmt.Sprintf(`
+resource "datahub_custom_assertion" "test" {
+  entity_urn     = %q
+  assertion_type = "CUSTOM"
+  description    = "TF Example - default tags assertion"
+  platform_urn   = "urn:li:dataPlatform:dbt"
+}
+`, entityURN)
+	with := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + assertion
+	without := tagProviderBlock("") + tagResourceConfig(tagID) + assertion
+
+	return []resource.TestStep{
+		{
+			Config: with,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tags_all"), knownvalue.SetExact([]knownvalue.Check{
+					knownvalue.StringExact(tagURN),
+				})),
+			},
+		},
+		{
+			Config:   with,
+			PlanOnly: true,
+		},
+		{
+			// defaults.tags removed: aspect cleared, latch released.
+			Config: without,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tags_all"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
+// FreshnessAssertionDefaultTagsAtCreateSteps covers tag-at-create on a typed
+// (monitor-carrying) assertion resource, proving the latch coexists with the
+// monitor read path. Cloud-only on live targets.
+func FreshnessAssertionDefaultTagsAtCreateSteps(entityURN, tagID string) []resource.TestStep {
+	const addr = "datahub_freshness_assertion.test"
+	tagURN := "urn:li:tag:" + tagID
+	cfg := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + fmt.Sprintf(`
+resource "datahub_freshness_assertion" "test" {
+  entity_urn              = %q
+  schedule_type           = "FIXED_INTERVAL"
+  fixed_interval_unit     = "HOUR"
+  fixed_interval_multiple = 24
+  description             = "TF Example - default tags freshness"
+  evaluation_cron         = "0 */8 * * *"
+  evaluation_timezone     = "UTC"
+  source_type             = "DATAHUB_OPERATION"
+  mode                    = "ACTIVE"
+}
+`, entityURN)
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tags_all"), knownvalue.SetExact([]knownvalue.Check{
+					knownvalue.StringExact(tagURN),
+				})),
+			},
+		},
+		{
+			Config:   cfg,
+			PlanOnly: true,
+		},
+	}
+}
+
 // DefaultTagsNonexistentSteps asserts that referencing a tag that does not
 // exist in defaults.tags fails at apply time with a clear error instead of
 // silently creating a dangling association.
