@@ -21,6 +21,13 @@ import (
 // the computed tags_all ownership latch). The referenced tag is created by a
 // datahub_tag resource in an earlier step of the same scenario, satisfying
 // the create-before-reference requirement against both mock and live targets.
+//
+// Destroy-ordering rule (CAT-2701): every scenario's final applied state has
+// the entities untagged (defaults removed -> latch released) BEFORE the
+// framework's destroy. Destroying the marker tag while entities still carry
+// it races DataHub's async deleteReferences cascade, whose stale-graph-scroll
+// full-aspect upsert resurrects a concurrently hard-deleted entity as a husk
+// and fails CheckDestroy. Remove the unlatch-last steps when CAT-2701 ships.
 
 // tagProviderBlock builds a provider block with defaults.tags set to the
 // given tag URN, or a bare provider block when tagURN is empty.
@@ -288,10 +295,8 @@ resource "datahub_custom_assertion" "test" {
 //
 // The final step unlatches (defaults removed, tags cleared) BEFORE the
 // framework's destroy. This is load-bearing against live targets, not just
-// extra coverage: destroying the marker tag while entities still carry it
-// races DataHub's async deleteEntityReferences sweep, whose stale-index patch
-// resurrects a just-deleted entity as a husk (the CAT-2583
-// patch-on-missing-aspect-upserts class) and fails CheckDestroy.
+// extra coverage: see the destroy-ordering rule (CAT-2701) in the file
+// header - the pre-fix version of this scenario produced a husk live.
 func FreshnessAssertionDefaultTagsAtCreateSteps(entityURN, tagID string) []resource.TestStep {
 	const addr = "datahub_freshness_assertion.test"
 	tagURN := "urn:li:tag:" + tagID
