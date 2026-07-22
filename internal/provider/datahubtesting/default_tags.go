@@ -285,10 +285,17 @@ resource "datahub_custom_assertion" "test" {
 // FreshnessAssertionDefaultTagsAtCreateSteps covers tag-at-create on a typed
 // (monitor-carrying) assertion resource, proving the latch coexists with the
 // monitor read path. Cloud-only on live targets.
+//
+// The final step unlatches (defaults removed, tags cleared) BEFORE the
+// framework's destroy. This is load-bearing against live targets, not just
+// extra coverage: destroying the marker tag while entities still carry it
+// races DataHub's async deleteEntityReferences sweep, whose stale-index patch
+// resurrects a just-deleted entity as a husk (the CAT-2583
+// patch-on-missing-aspect-upserts class) and fails CheckDestroy.
 func FreshnessAssertionDefaultTagsAtCreateSteps(entityURN, tagID string) []resource.TestStep {
 	const addr = "datahub_freshness_assertion.test"
 	tagURN := "urn:li:tag:" + tagID
-	cfg := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + fmt.Sprintf(`
+	assertion := fmt.Sprintf(`
 resource "datahub_freshness_assertion" "test" {
   entity_urn              = %q
   schedule_type           = "FIXED_INTERVAL"
@@ -301,9 +308,11 @@ resource "datahub_freshness_assertion" "test" {
   mode                    = "ACTIVE"
 }
 `, entityURN)
+	with := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + assertion
+	without := tagProviderBlock("") + tagResourceConfig(tagID) + assertion
 	return []resource.TestStep{
 		{
-			Config: cfg,
+			Config: with,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tags_all"), knownvalue.SetExact([]knownvalue.Check{
 					knownvalue.StringExact(tagURN),
@@ -311,8 +320,15 @@ resource "datahub_freshness_assertion" "test" {
 			},
 		},
 		{
-			Config:   cfg,
+			Config:   with,
 			PlanOnly: true,
+		},
+		{
+			// Unlatch before destroy (see doc comment above).
+			Config: without,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("tags_all"), knownvalue.Null()),
+			},
 		},
 	}
 }

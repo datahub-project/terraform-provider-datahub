@@ -120,6 +120,8 @@ To be verified against a live DataHub during rollout and recorded here:
 
 Environmental note from the 2026-07-15 run: the GraphQL `deleteDataProduct` mutation returned "Unauthorized" for the test token on the Cloud tenant (post-test destroy failure only; the tag write path on dataproduct passed). Live runs of data-product tests need a token whose principal can delete data products, or manual cleanup afterwards.
 
+2026-07-23 run (assertion path): `globalTags` writes on the assertion entity verified against DataHub Cloud - accepted, persisted, read back exactly; full latch lifecycle on `datahub_custom_assertion` including unlatch. One live hazard surfaced: destroying a marker tag in the same apply as entities still carrying it races DataHub's async `deleteEntityReferences` sweep - the sweep's stale-index patch resurrects a just-deleted entity as a husk (the CAT-2583 patch-on-missing-aspect-upserts class; observed on a freshness assertion). This affects real users too: a `terraform destroy` of a config holding both a `datahub_tag` used in `defaults.tags` and latched resources can leave husk debris. Mitigations: remove `defaults.tags` (unlatch apply) before destroying the tag, or destroy in two passes; the PR7 guide must document this. The acceptance scenarios unlatch before destroy for this reason.
+
 ## Rollout
 
 | Phase | Content | Status |
