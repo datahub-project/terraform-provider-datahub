@@ -137,6 +137,9 @@ func (s *mockServer) handleCorpUserItem(w http.ResponseWriter, r *http.Request) 
 	if aspect := s.globalTagsAspect(u.URN); aspect != nil {
 		entity["globalTags"] = aspect
 	}
+	if aspect := s.structuredPropertiesAspect(u.URN); aspect != nil {
+		entity["structuredProperties"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)

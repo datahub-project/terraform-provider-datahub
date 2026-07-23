@@ -91,7 +91,8 @@ func (r *structuredPropertyAssignmentResource) Schema(_ context.Context, _ resou
 			"`datahub_structured_property_assignment` resources may safely target the same entity " +
 			"(one per property). Values are validated by DataHub against the property's cardinality " +
 			"and allowed values.\n\n" +
-			"Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct` " +
+			"Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, " +
+			"`corpuser` (including service accounts), `corpGroup`, and `dataContract` " +
 			"(platform-governance entities). Assigning structured properties to ingested data assets " +
 			"(datasets, dashboards, ...) is out of scope for this provider and is rejected.\n\n" +
 			"## References\n\n" +
@@ -108,7 +109,7 @@ func (r *structuredPropertyAssignmentResource) Schema(_ context.Context, _ resou
 			},
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, or `dataProduct` URN. Changing this forces a new resource.",
+				MarkdownDescription: "URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, `corpuser` (including service accounts), `corpGroup`, or `dataContract` URN. Changing this forces a new resource.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},

@@ -33,6 +33,13 @@ var assignmentTargets = []struct {
 	{"urn:li:glossaryNode:", "glossarynode", "glossaryNode"},
 	{"urn:li:glossaryTerm:", "glossaryterm", "glossaryTerm"},
 	{"urn:li:dataProduct:", "dataproduct", "dataProduct"},
+	// The corpuser prefix also matches service-account URNs
+	// (urn:li:corpuser:service_<id>) - intended: they are corpuser entities.
+	// Note the registry short name is all-lowercase "corpuser" (unlike
+	// "corpGroup"/"dataContract").
+	{"urn:li:corpuser:", "corpuser", "corpuser"},
+	{"urn:li:corpGroup:", "corpgroup", "corpGroup"},
+	{"urn:li:dataContract:", "datacontract", "dataContract"},
 }
 
 // SupportedAssignmentEntityTypes returns the short entity-type names the provider

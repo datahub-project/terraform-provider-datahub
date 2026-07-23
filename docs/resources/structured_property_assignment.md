@@ -6,7 +6,7 @@ description: |-
   DataHub ✅ | DataHub Cloud ✅
   Assigns a structured property's value(s) to a target entity. Each resource models a single (entity, property) edge: one target entity, one structured property, and its list of values.
   Assignments merge per property -- creating, updating, or deleting one assignment leaves any other structured properties on the same entity untouched, so multiple datahub_structured_property_assignment resources may safely target the same entity (one per property). Values are validated by DataHub against the property's cardinality and allowed values.
-  Supported target entity types: domain, glossaryNode, glossaryTerm, dataProduct (platform-governance entities). Assigning structured properties to ingested data assets (datasets, dashboards, ...) is out of scope for this provider and is rejected.
+  Supported target entity types: domain, glossaryNode, glossaryTerm, dataProduct, corpuser (including service accounts), corpGroup, and dataContract (platform-governance entities). Assigning structured properties to ingested data assets (datasets, dashboards, ...) is out of scope for this provider and is rejected.
   References
   Prefer expression inputs: set structured_property_urn to datahub_structured_property.<name>.urn and entity_urn to the target's .urn (e.g. datahub_domain.<name>.urn), so the property and target are created first.
 ---
@@ -19,7 +19,7 @@ Assigns a structured property's value(s) to a target entity. Each resource model
 
 Assignments **merge** per property -- creating, updating, or deleting one assignment leaves any other structured properties on the same entity untouched, so multiple `datahub_structured_property_assignment` resources may safely target the same entity (one per property). Values are validated by DataHub against the property's cardinality and allowed values.
 
-Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct` (platform-governance entities). Assigning structured properties to ingested data assets (datasets, dashboards, ...) is out of scope for this provider and is rejected.
+Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, `corpuser` (including service accounts), `corpGroup`, and `dataContract` (platform-governance entities). Assigning structured properties to ingested data assets (datasets, dashboards, ...) is out of scope for this provider and is rejected.
 
 ## References
 
@@ -59,7 +59,7 @@ resource "datahub_structured_property_assignment" "finance_classification" {
 
 ### Required
 
-- `entity_urn` (String) URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, or `dataProduct` URN. Changing this forces a new resource.
+- `entity_urn` (String) URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, `corpuser` (including service accounts), `corpGroup`, or `dataContract` URN. Changing this forces a new resource.
 - `structured_property_urn` (String) URN of the structured property to assign (e.g. `urn:li:structuredProperty:<id>`). Changing this forces a new resource.
 - `values` (Set of String) The value(s) to assign, as an unordered set. A `SINGLE`-cardinality property takes exactly one; a `MULTIPLE` property takes several. All values are strings; for a `number`-typed property give the number in minimal string form (e.g. `"30"`). Can be changed in place. DataHub does not preserve value ordering, so this is modelled as a set: reordering the values produces no diff.
 

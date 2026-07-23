@@ -103,13 +103,17 @@ func (s *mockServer) handleDataContractItem(w http.ResponseWriter, r *http.Reque
 		if len(dc.DataQual) > 0 {
 			props["dataQuality"] = refList(dc.DataQual)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		entity := map[string]any{
 			"urn":                    mockDataContractURNPrefix + id,
 			"dataContractKey":        map[string]any{"value": map[string]any{"id": id}},
 			"dataContractStatus":     map[string]any{"value": map[string]any{"state": dc.State}},
 			"dataContractProperties": map[string]any{"value": props},
-		})
+		}
+		if aspect := s.structuredPropertiesAspect(mockDataContractURNPrefix + id); aspect != nil {
+			entity["structuredProperties"] = aspect
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(entity)
 	default:
 		http.NotFound(w, r)
 	}
