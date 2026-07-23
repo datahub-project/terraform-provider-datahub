@@ -433,8 +433,13 @@ func (s *mockServer) handleAssertionItem(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	entity := buildAssertionEntityJSON(a)
+	if aspect := s.globalTagsAspect(a.URN); aspect != nil {
+		entity["globalTags"] = aspect
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(buildAssertionEntityJSON(a))
+	_ = json.NewEncoder(w).Encode(entity)
 }
 
 // buildAssertionEntityJSON converts a mockAssertion to the OpenAPI v3 entity JSON shape.

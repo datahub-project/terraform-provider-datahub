@@ -157,6 +157,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/ownershiptype/", s.handleOwnershipTypeItem)
 	mux.HandleFunc("/openapi/v3/entity/dataproduct", s.handleDataProductCollection)
 	mux.HandleFunc("/openapi/v3/entity/dataproduct/", s.handleDataProductItem)
+	mux.HandleFunc("/openapi/v3/entity/assertion", s.handleAssertionCollection)
 	mux.HandleFunc("/openapi/v3/entity/assertion/", s.handleAssertionItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubaction/", s.handleActionPipelineItem)
 	mux.HandleFunc("/openapi/v3/entity/datacontract/", s.handleDataContractItem)

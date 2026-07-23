@@ -140,6 +140,82 @@ func TestAcc_DefaultTags_ExternalEdits(t *testing.T) {
 	})
 }
 
+// TestAcc_DefaultTags_CustomAssertion covers the tags_all latch via the
+// assertion entity path on datahub_custom_assertion (OSS + Cloud): tagged at
+// create, idempotent while latched, unlatched when defaults.tags is removed.
+func TestAcc_DefaultTags_CustomAssertion(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	entityURN := "urn:li:dataset:(urn:li:dataPlatform:hive,tfprovider_dtags_custom.table,PROD)"
+	if tg.IsLive() {
+		tg.EnsureDatasetEntity(t, entityURN)
+	}
+	tagID := tg.Name("tfprovider-dtags-camarker")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.CustomAssertionCheckDestroy,
+		Steps:                    datahubtesting.CustomAssertionDefaultTagsSteps(entityURN, tagID),
+	})
+}
+
+// TestAcc_DefaultTags_FreshnessAssertion covers tag-at-create on a typed
+// (monitor-carrying) assertion. Cloud-only on live targets.
+func TestAcc_DefaultTags_FreshnessAssertion(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	entityURN := "urn:li:dataset:(urn:li:dataPlatform:hive,tfprovider_dtags_freshness.table,PROD)"
+	if tg.IsLive() {
+		tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets
+		tg.CleanupOrphanedMonitors(t, entityURN)
+		tg.EnsureDatasetEntity(t, entityURN)
+	}
+	tagID := tg.Name("tfprovider-dtags-famarker")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.FreshnessAssertionCheckDestroy,
+		Steps:                    datahubtesting.FreshnessAssertionDefaultTagsAtCreateSteps(entityURN, tagID),
+	})
+}
+
+// typedAssertionDefaultTagsCase runs one typed-assertion default-tags
+// scenario with the standard Cloud-only live gating.
+func typedAssertionDefaultTagsCase(t *testing.T, slug string, checkDestroy resource.TestCheckFunc, steps func(entityURN, tagID string) []resource.TestStep) {
+	t.Helper()
+	tg := datahubtesting.SetupTarget(t)
+	entityURN := "urn:li:dataset:(urn:li:dataPlatform:hive,tfprovider_dtags_" + slug + ".table,PROD)"
+	if tg.IsLive() {
+		tg.RequireCloud(t) // Cloud-only resources; skips on live OSS targets
+		tg.CleanupOrphanedMonitors(t, entityURN)
+		tg.EnsureDatasetEntity(t, entityURN)
+	}
+	tagID := tg.Name("tfprovider-dtags-" + slug)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             checkDestroy,
+		Steps:                    steps(entityURN, tagID),
+	})
+}
+
+// TestAcc_DefaultTags_VolumeAssertion, _SQLAssertion, _SchemaAssertion, and
+// _FieldAssertion exercise the replicated tags_all wiring on each remaining
+// typed assertion resource (create-tagged, idempotent, unlatch).
+func TestAcc_DefaultTags_VolumeAssertion(t *testing.T) {
+	typedAssertionDefaultTagsCase(t, "volume", datahubtesting.VolumeAssertionCheckDestroy, datahubtesting.VolumeAssertionDefaultTagsSteps)
+}
+
+func TestAcc_DefaultTags_SQLAssertion(t *testing.T) {
+	typedAssertionDefaultTagsCase(t, "sql", datahubtesting.SQLAssertionCheckDestroy, datahubtesting.SQLAssertionDefaultTagsSteps)
+}
+
+func TestAcc_DefaultTags_SchemaAssertion(t *testing.T) {
+	typedAssertionDefaultTagsCase(t, "schema", datahubtesting.SchemaAssertionCheckDestroy, datahubtesting.SchemaAssertionDefaultTagsSteps)
+}
+
+func TestAcc_DefaultTags_FieldAssertion(t *testing.T) {
+	typedAssertionDefaultTagsCase(t, "field", datahubtesting.FieldAssertionCheckDestroy, datahubtesting.FieldAssertionDefaultTagsSteps)
+}
+
 // TestAcc_DefaultTags_NonexistentTag asserts a clear apply-time error when
 // defaults.tags references a tag that does not exist.
 func TestAcc_DefaultTags_NonexistentTag(t *testing.T) {

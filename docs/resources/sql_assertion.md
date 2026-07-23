@@ -50,4 +50,5 @@ DataHub generates a server-side UUID for each assertion. The `urn` and `id` attr
 ### Read-Only
 
 - `id` (String) The ID of this resource.
+- `tags_all` (Set of String) Tag URNs attached by the provider's `defaults.tags`. While non-null, the provider owns the complete `globalTags` list on this entity: tags added outside Terraform show as drift here and are removed on the next apply. Null when `defaults.tags` is not configured and the provider has never written tags to this entity (existing and externally-applied tags are then left untouched).
 - `urn` (String) Full DataHub URN for this assertion (e.g. `urn:li:assertion:<uuid>`).

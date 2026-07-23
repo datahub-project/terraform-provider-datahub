@@ -120,6 +120,8 @@ To be verified against a live DataHub during rollout and recorded here:
 
 Environmental note from the 2026-07-15 run: the GraphQL `deleteDataProduct` mutation returned "Unauthorized" for the test token on the Cloud tenant (post-test destroy failure only; the tag write path on dataproduct passed). Live runs of data-product tests need a token whose principal can delete data products, or manual cleanup afterwards.
 
+2026-07-23 run (assertion path): `globalTags` writes on the assertion entity verified against DataHub Cloud - accepted, persisted, read back exactly; full latch lifecycle on `datahub_custom_assertion` including unlatch. One live hazard surfaced: destroying a marker tag in the same apply as entities still carrying it races DataHub's async `deleteReferences` cascade - the cascade's stale-graph-scroll full-aspect upsert resurrects a just-deleted entity as a husk (filed as CAT-2701, a sibling of CAT-2583 with a different write mechanism; observed on a freshness assertion, husk = `assertionKey` + empty `globalTags`). This affects real users too: a `terraform destroy` of a config holding both a `datahub_tag` used in `defaults.tags` and latched resources can leave husk debris. Mitigations: remove `defaults.tags` (unlatch apply) before destroying the tag, or destroy in two passes; the PR7 guide must document this. The acceptance scenarios unlatch before destroy for this reason (CAT-2701 marker in `datahubtesting/default_tags.go`); remove that ordering constraint when CAT-2701 ships.
+
 ## Rollout
 
 | Phase | Content | Status |
@@ -127,7 +129,7 @@ Environmental note from the 2026-07-15 run: the GraphQL `deleteDataProduct` muta
 | 1 | Plumbing: providerData wrapper threaded to all resources, defaults engine + validators + unit tests, this document. No user-visible changes; the provider schema is deliberately withheld so this phase is release-safe on its own. | shipped (#86) |
 | 2 | Provider schema (`defaults`, `auto_properties`, `auto_property_strategy`) + custom-property defaults and auto-properties on the 6 CP resources (`custom_properties_all`) | shipped (#87) |
 | 3 | `globalTags` client + `defaults.tags` on corp_user/service_account/corp_group/data_product (`tags_all` ownership latch, tag-existence guard, read-back verified writes) | this change |
-| 4 | Tag defaults on the 6 assertion resources | pending |
+| 4 | Tag defaults on the 6 assertion resources (`tags_all` latch reuse; assertion entity path pending Cloud verification - the read-back write guard turns a CAT-2562-style silent no-op into an explicit error until then) | this change |
 | 5 | Assignment-target extension (corpuser, corpGroup, dataContract) | pending |
 | 6 | Structured-property defaults (`structured_properties_defaults`) | pending |
 | 7 | Docs guide, examples, roadmap note | pending |

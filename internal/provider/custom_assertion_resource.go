@@ -22,14 +22,21 @@ import (
 
 const assertionURNPrefix = "urn:li:assertion:"
 
+// assertionEntityPath is the OpenAPI v3 path segment for the assertion entity
+// type, used by the globalTags default-tags writes and reads.
+const assertionEntityPath = "assertion"
+
 var (
 	_ resource.Resource                = &customAssertionResource{}
 	_ resource.ResourceWithConfigure   = &customAssertionResource{}
 	_ resource.ResourceWithImportState = &customAssertionResource{}
+	_ resource.ResourceWithModifyPlan  = &customAssertionResource{}
 )
 
 type customAssertionResource struct {
-	client *datahub.Client
+	pd       *providerData
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type customAssertionResourceModel struct {
@@ -44,6 +51,7 @@ type customAssertionResourceModel struct {
 	Logic            types.String `tfsdk:"logic"`
 	OnSuccessActions types.List   `tfsdk:"on_success_actions"`
 	OnFailureActions types.List   `tfsdk:"on_failure_actions"`
+	TagsAll          types.Set    `tfsdk:"tags_all"`
 }
 
 // NewCustomAssertionResource returns a new datahub_custom_assertion resource.
@@ -56,8 +64,16 @@ func (r *customAssertionResource) Configure(_ context.Context, req resource.Conf
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.pd = pd
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *customAssertionResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	planTagsAll(ctx, r.defaults, resp)
 }
 
 func (r *customAssertionResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -134,6 +150,7 @@ func (r *customAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 					listplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"tags_all": tagsAllSchema(),
 		},
 	}
 }
@@ -162,6 +179,23 @@ func (r *customAssertionResource) Create(ctx context.Context, req resource.Creat
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+
+	tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+	resp.Diagnostics.Append(td...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.TagsAll = tagsAll
+	if len(tagURNs) > 0 {
+		if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+			resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+			return
+		}
+		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, urn, tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = types.StringValue(urn)
@@ -201,6 +235,12 @@ func (r *customAssertionResource) Read(ctx context.Context, req resource.ReadReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	tagsAll, err := readTagsAll(ctx, r.client, assertionEntityPath, urn, state.TagsAll)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -230,6 +270,27 @@ func (r *customAssertionResource) Update(ctx context.Context, req resource.Updat
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+
+	// Reconcile tags when the effective list changed. A null plan with a
+	// non-null prior state clears the aspect and releases the ownership latch.
+	if !plan.TagsAll.Equal(state.TagsAll) {
+		tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
+		resp.Diagnostics.Append(td...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.TagsAll = tagsAll
+		if len(tagURNs) > 0 {
+			if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
+				resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
+				return
+			}
+		}
+		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, state.URN.ValueString(), tagURNs); err != nil {
+			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
 	}
 
 	plan.ID = state.ID
@@ -306,6 +367,12 @@ func (r *customAssertionResource) ImportState(ctx context.Context, req resource.
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, assertionEntityPath, ai.URN)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.TagsAll = tagsAll
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
