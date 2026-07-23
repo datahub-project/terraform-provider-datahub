@@ -29,19 +29,21 @@ var (
 )
 
 type domainResource struct {
+	pd       *providerData
 	client   *datahub.Client
 	defaults entityDefaults
 }
 
 type domainResourceModel struct {
-	ID                  types.String `tfsdk:"id"`
-	URN                 types.String `tfsdk:"urn"`
-	DomainID            types.String `tfsdk:"domain_id"`
-	Name                types.String `tfsdk:"name"`
-	Description         types.String `tfsdk:"description"`
-	ParentDomain        types.String `tfsdk:"parent_domain"`
-	CustomProperties    types.Map    `tfsdk:"custom_properties"`
-	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
+	ID                           types.String `tfsdk:"id"`
+	URN                          types.String `tfsdk:"urn"`
+	DomainID                     types.String `tfsdk:"domain_id"`
+	Name                         types.String `tfsdk:"name"`
+	Description                  types.String `tfsdk:"description"`
+	ParentDomain                 types.String `tfsdk:"parent_domain"`
+	CustomProperties             types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll          types.Map    `tfsdk:"custom_properties_all"`
+	StructuredPropertiesDefaults types.Map    `tfsdk:"structured_properties_defaults"`
 }
 
 func NewDomainResource() resource.Resource {
@@ -53,6 +55,7 @@ func (r *domainResource) Configure(_ context.Context, req resource.ConfigureRequ
 	if pd == nil {
 		return
 	}
+	r.pd = pd
 	r.client = pd.Client
 	r.defaults = pd.defaults
 }
@@ -61,7 +64,11 @@ func (r *domainResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 	if req.Plan.Raw.IsNull() {
 		return // destroy plan
 	}
+	if r.pd == nil {
+		return
+	}
 	planCustomPropertiesAll(ctx, r.defaults, req, resp)
+	planSPDefaults(ctx, r.defaults, r.pd.spDefs, kindDomain, resp)
 }
 
 func (r *domainResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -135,7 +142,8 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 					nonEmptyStringMapValidator{},
 				},
 			},
-			"custom_properties_all": customPropertiesAllSchema(),
+			"custom_properties_all":          customPropertiesAllSchema(),
+			"structured_properties_defaults": spDefaultsSchema(),
 		},
 	}
 }
@@ -180,6 +188,19 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 		}
 	}
 
+	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDomain, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+	if len(spVals) > 0 {
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -213,6 +234,12 @@ func (r *domainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	}
 
 	applyDomainToModel(domain, &state)
+	spDefaults, err := readSPDefaults(ctx, r.client, urn, state.StructuredPropertiesDefaults)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -266,6 +293,20 @@ func (r *domainResource) Update(ctx context.Context, req resource.UpdateRequest,
 		plan.CustomPropertiesAll = all
 		if err := r.client.SetDomainProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentDomain), customProps); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
+	// Reconcile default structured properties when the managed set changed.
+	if !plan.StructuredPropertiesDefaults.Equal(state.StructuredPropertiesDefaults) {
+		spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDomain, plan.StructuredPropertiesDefaults)
+		resp.Diagnostics.Append(sd...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.StructuredPropertiesDefaults = spAll
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, state.StructuredPropertiesDefaults)...)
+		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
@@ -346,6 +387,12 @@ func (r *domainResource) ImportState(ctx context.Context, req resource.ImportSta
 	// markers are omitted from custom_properties so the first plan after
 	// import is minimal.
 	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(domain.CustomProperties, r.defaults)
+	spDefaults, err := importSPDefaults(ctx, r.client, r.defaults, r.pd.spDefs, kindDomain, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

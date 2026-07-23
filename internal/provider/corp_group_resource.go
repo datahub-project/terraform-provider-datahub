@@ -35,14 +35,15 @@ type corpGroupResource struct {
 }
 
 type corpGroupResourceModel struct {
-	ID          types.String `tfsdk:"id"`
-	URN         types.String `tfsdk:"urn"`
-	GroupID     types.String `tfsdk:"group_id"`
-	Name        types.String `tfsdk:"name"`
-	Description types.String `tfsdk:"description"`
-	Email       types.String `tfsdk:"email"`
-	Slack       types.String `tfsdk:"slack"`
-	TagsAll     types.Set    `tfsdk:"tags_all"`
+	ID                           types.String `tfsdk:"id"`
+	URN                          types.String `tfsdk:"urn"`
+	GroupID                      types.String `tfsdk:"group_id"`
+	Name                         types.String `tfsdk:"name"`
+	Description                  types.String `tfsdk:"description"`
+	Email                        types.String `tfsdk:"email"`
+	Slack                        types.String `tfsdk:"slack"`
+	TagsAll                      types.Set    `tfsdk:"tags_all"`
+	StructuredPropertiesDefaults types.Map    `tfsdk:"structured_properties_defaults"`
 }
 
 func NewCorpGroupResource() resource.Resource {
@@ -63,7 +64,11 @@ func (r *corpGroupResource) ModifyPlan(ctx context.Context, req resource.ModifyP
 	if req.Plan.Raw.IsNull() {
 		return // destroy plan
 	}
+	if r.pd == nil {
+		return
+	}
 	planTagsAll(ctx, r.defaults, resp)
+	planSPDefaults(ctx, r.defaults, r.pd.spDefs, kindCorpGroup, resp)
 }
 
 func (r *corpGroupResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -121,7 +126,8 @@ func (r *corpGroupResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Optional:            true,
 				MarkdownDescription: "Slack channel or handle for the group (e.g., `#data-platform`).",
 			},
-			"tags_all": tagsAllSchema(),
+			"tags_all":                       tagsAllSchema(),
+			"structured_properties_defaults": spDefaultsSchema(),
 		},
 	}
 }
@@ -182,6 +188,19 @@ func (r *corpGroupResource) Create(ctx context.Context, req resource.CreateReque
 		}
 	}
 
+	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindCorpGroup, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+	if len(spVals) > 0 {
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -221,6 +240,12 @@ func (r *corpGroupResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 	state.TagsAll = tagsAll
+	spDefaults, err := readSPDefaults(ctx, r.client, urn, state.StructuredPropertiesDefaults)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -275,6 +300,20 @@ func (r *corpGroupResource) Update(ctx context.Context, req resource.UpdateReque
 		}
 		if err := r.client.SetGlobalTags(ctx, corpGroupEntityPath, urn, tagURNs); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
+	// Reconcile default structured properties when the managed set changed.
+	if !plan.StructuredPropertiesDefaults.Equal(state.StructuredPropertiesDefaults) {
+		spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindCorpGroup, plan.StructuredPropertiesDefaults)
+		resp.Diagnostics.Append(sd...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.StructuredPropertiesDefaults = spAll
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, state.StructuredPropertiesDefaults)...)
+		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
@@ -357,6 +396,12 @@ func (r *corpGroupResource) ImportState(ctx context.Context, req resource.Import
 		return
 	}
 	state.TagsAll = tagsAll
+	spDefaults, err := importSPDefaults(ctx, r.client, r.defaults, r.pd.spDefs, kindCorpGroup, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

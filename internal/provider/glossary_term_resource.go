@@ -28,20 +28,22 @@ var (
 )
 
 type glossaryTermResource struct {
+	pd       *providerData
 	client   *datahub.Client
 	defaults entityDefaults
 }
 
 type glossaryTermResourceModel struct {
-	ID                  types.String `tfsdk:"id"`
-	URN                 types.String `tfsdk:"urn"`
-	TermID              types.String `tfsdk:"term_id"`
-	Name                types.String `tfsdk:"name"`
-	Description         types.String `tfsdk:"description"`
-	ParentNode          types.String `tfsdk:"parent_node"`
-	Domain              types.String `tfsdk:"domain"`
-	CustomProperties    types.Map    `tfsdk:"custom_properties"`
-	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
+	ID                           types.String `tfsdk:"id"`
+	URN                          types.String `tfsdk:"urn"`
+	TermID                       types.String `tfsdk:"term_id"`
+	Name                         types.String `tfsdk:"name"`
+	Description                  types.String `tfsdk:"description"`
+	ParentNode                   types.String `tfsdk:"parent_node"`
+	Domain                       types.String `tfsdk:"domain"`
+	CustomProperties             types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll          types.Map    `tfsdk:"custom_properties_all"`
+	StructuredPropertiesDefaults types.Map    `tfsdk:"structured_properties_defaults"`
 }
 
 func NewGlossaryTermResource() resource.Resource {
@@ -53,6 +55,7 @@ func (r *glossaryTermResource) Configure(_ context.Context, req resource.Configu
 	if pd == nil {
 		return
 	}
+	r.pd = pd
 	r.client = pd.Client
 	r.defaults = pd.defaults
 }
@@ -61,7 +64,11 @@ func (r *glossaryTermResource) ModifyPlan(ctx context.Context, req resource.Modi
 	if req.Plan.Raw.IsNull() {
 		return // destroy plan
 	}
+	if r.pd == nil {
+		return
+	}
 	planCustomPropertiesAll(ctx, r.defaults, req, resp)
+	planSPDefaults(ctx, r.defaults, r.pd.spDefs, kindGlossaryTerm, resp)
 }
 
 func (r *glossaryTermResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -159,7 +166,8 @@ func (r *glossaryTermResource) Schema(_ context.Context, _ resource.SchemaReques
 					nonEmptyStringMapValidator{},
 				},
 			},
-			"custom_properties_all": customPropertiesAllSchema(),
+			"custom_properties_all":          customPropertiesAllSchema(),
+			"structured_properties_defaults": spDefaultsSchema(),
 		},
 	}
 }
@@ -222,6 +230,19 @@ func (r *glossaryTermResource) Create(ctx context.Context, req resource.CreateRe
 		}
 	}
 
+	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindGlossaryTerm, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+	if len(spVals) > 0 {
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -253,6 +274,12 @@ func (r *glossaryTermResource) Read(ctx context.Context, req resource.ReadReques
 	}
 
 	applyGlossaryTermToModel(term, &state)
+	spDefaults, err := readSPDefaults(ctx, r.client, urn, state.StructuredPropertiesDefaults)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -320,6 +347,20 @@ func (r *glossaryTermResource) Update(ctx context.Context, req resource.UpdateRe
 		plan.CustomPropertiesAll = all
 		if err := r.client.SetGlossaryTermProperties(ctx, urn, plan.Name.ValueString(), strVal(plan.Description), strVal(plan.ParentNode), customProps); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
+	// Reconcile default structured properties when the managed set changed.
+	if !plan.StructuredPropertiesDefaults.Equal(state.StructuredPropertiesDefaults) {
+		spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindGlossaryTerm, plan.StructuredPropertiesDefaults)
+		resp.Diagnostics.Append(sd...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.StructuredPropertiesDefaults = spAll
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, state.StructuredPropertiesDefaults)...)
+		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
@@ -400,6 +441,12 @@ func (r *glossaryTermResource) ImportState(ctx context.Context, req resource.Imp
 	// markers are omitted from custom_properties so the first plan after
 	// import is minimal.
 	state.CustomProperties, state.CustomPropertiesAll = importCustomProperties(term.CustomProperties, r.defaults)
+	spDefaults, err := importSPDefaults(ctx, r.client, r.defaults, r.pd.spDefs, kindGlossaryTerm, urn)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

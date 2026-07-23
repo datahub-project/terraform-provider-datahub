@@ -213,6 +213,67 @@ type structuredPropertiesAspectEntity struct {
 	} `json:"structuredProperties,omitempty"`
 }
 
+// GetAllStructuredPropertyValues reads every structured-property assignment
+// on one entity in a single call via the strongly-consistent OpenAPI v3
+// entity endpoint, keyed by property URN. found is false when the entity does
+// not exist; an existing entity with no assignments returns an empty map.
+// Number values are formatted minimally, as in GetStructuredPropertyValues.
+func (c *Client) GetAllStructuredPropertyValues(ctx context.Context, entityURN string) (map[string][]string, bool, error) {
+	if c == nil {
+		return nil, false, errors.New("client is nil")
+	}
+	pathSegment, _, err := AssignmentTargetType(entityURN)
+	if err != nil {
+		return nil, false, err
+	}
+
+	path := fmt.Sprintf("/openapi/v3/entity/%s/%s", pathSegment, entityURN)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, false, err
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return nil, false, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return nil, false, fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the Edit Properties privilege on %s", res.StatusCode, entityURN)
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return nil, false, fmt.Errorf("unexpected HTTP %d reading structuredProperties for %s: %s", res.StatusCode, entityURN, respBody)
+	}
+
+	var entity structuredPropertiesAspectEntity
+	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
+		return nil, false, fmt.Errorf("parsing structuredProperties response: %w", err)
+	}
+
+	out := map[string][]string{}
+	if entity.StructuredProperties == nil {
+		return out, true, nil
+	}
+	for _, p := range entity.StructuredProperties.Value.Properties {
+		values := make([]string, 0, len(p.Values))
+		for _, v := range p.Values {
+			switch {
+			case v.String != nil:
+				values = append(values, *v.String)
+			case v.Double != nil:
+				values = append(values, strconv.FormatFloat(*v.Double, 'f', -1, 64))
+			}
+		}
+		out[p.PropertyURN] = values
+	}
+	return out, true, nil
+}
+
 // GetStructuredPropertyValues reads the values assigned for one structured
 // property on one entity via the strongly-consistent OpenAPI v3 entity endpoint.
 // found is false when the entity has no assignment for that property, or the

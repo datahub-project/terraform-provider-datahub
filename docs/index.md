@@ -49,6 +49,19 @@ terraform {
 #
 # Both attributes can also be omitted entirely to fall back to the local
 # DataHub CLI config at ~/.datahubenv.
+#
+# Provider-level defaults (optional) attach labels to every resource the
+# provider manages, wherever the entity type supports them - see the
+# "Provider-level defaults" guide. A managed-by = "terraform" custom property
+# is written automatically to newly created entities unless disabled with
+# auto_properties = [].
+#
+#   provider "datahub" {
+#     defaults = {
+#       custom_properties = { team = "data-platform" }
+#       tags              = ["urn:li:tag:terraform-managed"]
+#     }
+#   }
 provider "datahub" {}
 
 data "datahub_me" "current" {}
@@ -83,4 +96,5 @@ in the repository. Each subdirectory has a README with prerequisites and instruc
 Optional:
 
 - `custom_properties` (Map of String) Custom properties merged into the `custom_properties` of every resource whose entity type supports them: `datahub_domain`, `datahub_glossary_term`, `datahub_glossary_node`, `datahub_corp_user`, `datahub_service_account`, and `datahub_data_product`. Resource-level keys win; the provider owns the complete server-side map on managed entities, so properties added outside Terraform are removed on the next apply. The effective merged map is exposed on each resource as the computed `custom_properties_all` attribute.
+- `structured_properties` (Map of Set of String) Structured property values applied to every resource whose entity type supports them (`datahub_domain`, `datahub_glossary_term`, `datahub_glossary_node`, `datahub_corp_user`, `datahub_service_account`, `datahub_corp_group`, `datahub_data_product`, `datahub_data_contract`), keyed by property URN (`urn:li:structuredProperty:...`). Ownership is per property: only the properties named here are managed, so properties assigned via `datahub_structured_property_assignment` or outside Terraform are untouched - but a property URN listed here should not also be managed by an assignment resource on the same entity. Definitions must already exist (create them in a separate apply) and are applied only to resources whose entity type appears in the definition's `entity_types`; other resources skip the property. The effective managed subset is exposed on each resource as the computed `structured_properties_defaults` attribute.
 - `tags` (Set of String) Tag URNs (`urn:li:tag:...`) attached to every resource whose entity type supports the `globalTags` aspect: `datahub_corp_user`, `datahub_service_account`, `datahub_corp_group`, `datahub_data_product`, and the assertion resources (`datahub_custom_assertion`, `datahub_field_assertion`, `datahub_freshness_assertion`, `datahub_schema_assertion`, `datahub_sql_assertion`, `datahub_volume_assertion`). While set, the provider owns the complete tag list on managed entities (tags added outside Terraform are removed on the next apply); the effective list is exposed on each resource as the computed `tags_all` attribute. Referenced tags must already exist - create them in a separate apply. When this attribute has never been set for a resource, the provider neither reads nor writes its tags.

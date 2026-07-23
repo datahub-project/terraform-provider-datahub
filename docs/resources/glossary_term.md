@@ -81,6 +81,7 @@ resource "datahub_glossary_term" "revenue" {
 
 - `custom_properties_all` (Map of String) The complete custom-properties map written to DataHub: the merge of provider-level defaults (`auto_properties` markers and `defaults.custom_properties`) with this resource's `custom_properties`, resource values winning per key. The provider owns the complete server-side map; entries added outside Terraform show as drift here and are removed on the next apply.
 - `id` (String) The ID of this resource.
+- `structured_properties_defaults` (Map of Set of String) The subset of this entity's structured properties managed by the provider's `defaults.structured_properties` (only the properties whose definitions declare this entity type). Properties managed by `datahub_structured_property_assignment` resources or set outside Terraform are neither shown nor touched. Null when no applicable defaults are configured and the provider has never written any.
 - `urn` (String) Full DataHub URN for this glossary term (e.g. `urn:li:glossaryTerm:revenue`).
 
 ## Import

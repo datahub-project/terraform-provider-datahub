@@ -216,6 +216,52 @@ func TestAcc_DefaultTags_FieldAssertion(t *testing.T) {
 	typedAssertionDefaultTagsCase(t, "field", datahubtesting.FieldAssertionCheckDestroy, datahubtesting.FieldAssertionDefaultTagsSteps)
 }
 
+// TestAcc_SPDefaults_DomainLifecycle covers the per-property latch on
+// datahub_domain: unlatched create, latch-on, idempotency, value ripple,
+// import while latched, unlatch before destroy.
+func TestAcc_SPDefaults_DomainLifecycle(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-dom")
+	propertyID := tg.Name("tfprovider-spd-prop")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.DomainSPDefaultsLifecycleSteps(domainID, propertyID),
+	})
+}
+
+// TestAcc_SPDefaults_EntityTypeFiltering proves a default property applicable
+// only to domains stamps the domain and silently skips the corp group.
+func TestAcc_SPDefaults_EntityTypeFiltering(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-filt-dom")
+	groupID := tg.Name("tfprovider-spd-filt-grp")
+	propertyID := tg.Name("tfprovider-spd-filt-prop")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsEntityTypeFilteringSteps(domainID, groupID, propertyID),
+	})
+}
+
+// TestAcc_SPDefaults_AssignmentCoexistence proves per-property ownership:
+// provider defaults and an explicit assignment resource manage different
+// properties on the same entity without fighting.
+func TestAcc_SPDefaults_AssignmentCoexistence(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-coex-dom")
+	defaultPropID := tg.Name("tfprovider-spd-coex-def")
+	assignedPropID := tg.Name("tfprovider-spd-coex-asg")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsAssignmentCoexistenceSteps(domainID, defaultPropID, assignedPropID),
+	})
+}
+
 // TestAcc_DefaultTags_NonexistentTag asserts a clear apply-time error when
 // defaults.tags references a tag that does not exist.
 func TestAcc_DefaultTags_NonexistentTag(t *testing.T) {

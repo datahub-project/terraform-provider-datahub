@@ -73,6 +73,7 @@ output "contract_urn" {
 
 ### Read-Only
 
+- `structured_properties_defaults` (Map of Set of String) The subset of this entity's structured properties managed by the provider's `defaults.structured_properties` (only the properties whose definitions declare this entity type). Properties managed by `datahub_structured_property_assignment` resources or set outside Terraform are neither shown nor touched. Null when no applicable defaults are configured and the provider has never written any.
 - `urn` (String) Full DataHub URN (`urn:li:dataContract:<id>`).
 
 ## Import

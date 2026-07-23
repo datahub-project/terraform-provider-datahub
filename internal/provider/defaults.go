@@ -129,8 +129,9 @@ type entityDefaults struct {
 // arrives with the structured-property phase), so the provider never exposes
 // configuration that has no effect.
 type providerDefaultsModel struct {
-	CustomProperties types.Map `tfsdk:"custom_properties"`
-	Tags             types.Set `tfsdk:"tags"`
+	CustomProperties     types.Map `tfsdk:"custom_properties"`
+	Tags                 types.Set `tfsdk:"tags"`
+	StructuredProperties types.Map `tfsdk:"structured_properties"`
 }
 
 var spDefaultsElementType = types.SetType{ElemType: types.StringType}
@@ -178,6 +179,9 @@ func parseEntityDefaults(ctx context.Context, defaultsObj types.Object, autoProp
 		}
 		if !m.Tags.IsNull() {
 			d.Tags = m.Tags
+		}
+		if !m.StructuredProperties.IsNull() {
+			d.StructuredProperties = m.StructuredProperties
 		}
 	}
 
@@ -587,6 +591,257 @@ func tagsAllSchema() rschema.SetAttribute {
 			"show as drift here and are removed on the next apply. Null when `defaults.tags` is not " +
 			"configured and the provider has never written tags to this entity (existing and " +
 			"externally-applied tags are then left untouched).",
+	}
+}
+
+// kindEntityTypes maps each entityKind to the registry short entity-type
+// name used in structured property definitions' entityTypes. Note "corpuser"
+// is all-lowercase in the entity registry, unlike the other camelCase names.
+var kindEntityTypes = map[entityKind]string{
+	kindDomain:       "domain",
+	kindGlossaryTerm: "glossaryTerm",
+	kindGlossaryNode: "glossaryNode",
+	kindCorpUser:     "corpuser",
+	kindCorpGroup:    "corpGroup",
+	kindDataProduct:  "dataProduct",
+	kindDataContract: "dataContract",
+	kindAssertion:    "assertion",
+}
+
+// spDefApplicable reports whether a structured property definition declares
+// the given kind's entity type. A nil definition (not found at Configure, see
+// providerData.spDefs) is applicable nowhere: the property is skipped at plan
+// time and the apply-time re-check produces the hard error if a write is
+// actually attempted.
+func spDefApplicable(def *datahub.StructuredProperty, kind entityKind) bool {
+	if def == nil {
+		return false
+	}
+	want := kindEntityTypes[kind]
+	for _, t := range def.EntityTypes {
+		if t == want {
+			return true
+		}
+	}
+	return false
+}
+
+// plannedSPDefaults computes the planned structured_properties_defaults value
+// for a kind: the defaults.structured_properties entries whose definitions
+// declare the kind's entity type, canonicalised to null when empty. Pure:
+// spDefs is fixed at provider Configure, so plan == apply.
+func plannedSPDefaults(defaults entityDefaults, spDefs map[string]*datahub.StructuredProperty, kind entityKind) types.Map {
+	if defaults.StructuredProperties.IsUnknown() {
+		return types.MapUnknown(spDefaultsElementType)
+	}
+	if defaults.StructuredProperties.IsNull() {
+		return types.MapNull(spDefaultsElementType)
+	}
+	elems := map[string]attr.Value{}
+	for k, v := range defaults.StructuredProperties.Elements() {
+		if spDefApplicable(spDefs[k], kind) {
+			elems[k] = v
+		}
+	}
+	if len(elems) == 0 {
+		return types.MapNull(spDefaultsElementType)
+	}
+	out, diags := types.MapValue(spDefaultsElementType, elems)
+	if diags.HasError() {
+		return types.MapUnknown(spDefaultsElementType)
+	}
+	return out
+}
+
+// planSPDefaults sets the planned `structured_properties_defaults` attribute.
+// Like the tags latch, a null planned value against a null prior state is
+// fully inert; a previously-latched key set plans its removal when the
+// defaults (or the property's applicability) go away.
+func planSPDefaults(ctx context.Context, defaults entityDefaults, spDefs map[string]*datahub.StructuredProperty, kind entityKind, resp *resource.ModifyPlanResponse) {
+	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("structured_properties_defaults"), plannedSPDefaults(defaults, spDefs, kind))...)
+}
+
+// spDefaultsValues converts a planned structured_properties_defaults map into
+// plain sorted string values per property URN.
+func spDefaultsValues(planned types.Map) (map[string][]string, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	if planned.IsNull() || planned.IsUnknown() {
+		return nil, diags
+	}
+	out := map[string][]string{}
+	for k, v := range planned.Elements() {
+		set, ok := v.(types.Set)
+		if !ok || set.IsNull() || set.IsUnknown() {
+			diags.AddError("Invalid defaults.structured_properties value", fmt.Sprintf("The value set for %q is not a known set of strings.", k))
+			continue
+		}
+		vals := make([]string, 0, len(set.Elements()))
+		for _, e := range set.Elements() {
+			s, sok := e.(types.String)
+			if !sok || s.IsNull() || s.IsUnknown() {
+				diags.AddError("Invalid defaults.structured_properties value", fmt.Sprintf("The value set for %q contains a non-string or unresolved element.", k))
+				continue
+			}
+			vals = append(vals, s.ValueString())
+		}
+		sort.Strings(vals)
+		out[k] = vals
+	}
+	return out, diags
+}
+
+// resolvePlannedSPDefaults returns the structured_properties_defaults value
+// that belongs in state plus the per-property values to write. The planned
+// value is normally known at apply time; recomputing is the defensive
+// fallback and identical by purity.
+func resolvePlannedSPDefaults(defaults entityDefaults, spDefs map[string]*datahub.StructuredProperty, kind entityKind, planned types.Map) (types.Map, map[string][]string, diag.Diagnostics) {
+	if planned.IsUnknown() {
+		planned = plannedSPDefaults(defaults, spDefs, kind)
+	}
+	vals, diags := spDefaultsValues(planned)
+	if planned.IsUnknown() {
+		planned = types.MapNull(spDefaultsElementType)
+	}
+	return planned, vals, diags
+}
+
+// applySPDefaults reconciles the server toward the planned per-property
+// values: keys present in prior state but no longer planned are removed, and
+// every planned key is (re)written, then verified with a read-back so a
+// silent server no-op surfaces as an error instead of phantom state
+// (CAT-2562 pattern). Per-property ownership: properties not named here -
+// including ones managed by datahub_structured_property_assignment resources
+// - are never touched.
+func applySPDefaults(ctx context.Context, pd *providerData, entityURN string, planned map[string][]string, prior types.Map) diag.Diagnostics {
+	var diags diag.Diagnostics
+
+	if !prior.IsNull() && !prior.IsUnknown() {
+		for k := range prior.Elements() {
+			if _, keep := planned[k]; keep {
+				continue
+			}
+			if err := pd.RemoveStructuredProperty(ctx, entityURN, k); err != nil {
+				diags.AddError("DataHub API Error", fmt.Sprintf("removing default structured property %s from %s: %s", k, entityURN, err))
+				return diags
+			}
+		}
+	}
+
+	if len(planned) == 0 {
+		return diags
+	}
+
+	for k, vals := range planned {
+		def, err := pd.ensureSPDef(ctx, k)
+		if err != nil {
+			diags.AddError("Invalid provider defaults.structured_properties", err.Error())
+			return diags
+		}
+		if err := pd.SetStructuredPropertyValues(ctx, entityURN, k, def.ValueType, vals); err != nil {
+			diags.AddError("DataHub API Error", fmt.Sprintf("applying default structured property %s to %s: %s", k, entityURN, err))
+			return diags
+		}
+	}
+
+	got, found, err := pd.GetAllStructuredPropertyValues(ctx, entityURN)
+	if err != nil {
+		diags.AddError("DataHub API Error", fmt.Sprintf("verifying default structured properties on %s: %s", entityURN, err))
+		return diags
+	}
+	if !found {
+		diags.AddError("DataHub API Error", fmt.Sprintf("verifying default structured properties on %s: entity not found on read-back", entityURN))
+		return diags
+	}
+	for k := range planned {
+		if _, ok := got[k]; !ok {
+			diags.AddError(
+				"Default structured property did not persist",
+				fmt.Sprintf("DataHub accepted the write of %s on %s but the value did not persist; the server may not register structuredProperties for this entity type.", k, entityURN),
+			)
+			return diags
+		}
+	}
+	return diags
+}
+
+// readSPDefaults implements the per-key ownership latch on the read side: an
+// unlatched resource (null prior) is never read; a latched one records the
+// server values for exactly its prior keys, so value drift surfaces while
+// assignment-resource-managed and external properties stay invisible.
+func readSPDefaults(ctx context.Context, client *datahub.Client, entityURN string, prior types.Map) (types.Map, error) {
+	if prior.IsNull() || prior.IsUnknown() {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	all, found, err := client.GetAllStructuredPropertyValues(ctx, entityURN)
+	if err != nil {
+		return prior, fmt.Errorf("reading structured properties for %s: %w", entityURN, err)
+	}
+	if !found {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	elems := map[string]attr.Value{}
+	for k := range prior.Elements() {
+		if vals, ok := all[k]; ok {
+			elems[k] = tagSetValue(vals)
+		}
+	}
+	if len(elems) == 0 {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	out, diags := types.MapValue(spDefaultsElementType, elems)
+	if diags.HasError() {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	return out, nil
+}
+
+// importSPDefaults decides the imported structured_properties_defaults value:
+// the applicable default keys that are present on the server are recorded
+// with their server values (the first plan shows any corrections); with no
+// applicable defaults the latch stays released.
+func importSPDefaults(ctx context.Context, client *datahub.Client, defaults entityDefaults, spDefs map[string]*datahub.StructuredProperty, kind entityKind, entityURN string) (types.Map, error) {
+	planned := plannedSPDefaults(defaults, spDefs, kind)
+	if planned.IsNull() || planned.IsUnknown() {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	all, found, err := client.GetAllStructuredPropertyValues(ctx, entityURN)
+	if err != nil {
+		return types.MapNull(spDefaultsElementType), fmt.Errorf("reading structured properties for %s: %w", entityURN, err)
+	}
+	if !found {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	elems := map[string]attr.Value{}
+	for k := range planned.Elements() {
+		if vals, ok := all[k]; ok {
+			elems[k] = tagSetValue(vals)
+		}
+	}
+	if len(elems) == 0 {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	out, diags := types.MapValue(spDefaultsElementType, elems)
+	if diags.HasError() {
+		return types.MapNull(spDefaultsElementType), nil
+	}
+	return out, nil
+}
+
+// spDefaultsSchema is the shared schema for the computed
+// `structured_properties_defaults` attribute. Deliberately not named `_all`:
+// unlike custom_properties_all/tags_all it is NOT the full server view - it
+// tracks only the properties managed by the provider's
+// defaults.structured_properties (per-property ownership).
+func spDefaultsSchema() rschema.MapAttribute {
+	return rschema.MapAttribute{
+		Computed:    true,
+		ElementType: spDefaultsElementType,
+		MarkdownDescription: "The subset of this entity's structured properties managed by the " +
+			"provider's `defaults.structured_properties` (only the properties whose definitions " +
+			"declare this entity type). Properties managed by " +
+			"`datahub_structured_property_assignment` resources or set outside Terraform are " +
+			"neither shown nor touched. Null when no applicable defaults are configured and the " +
+			"provider has never written any.",
 	}
 }
 
