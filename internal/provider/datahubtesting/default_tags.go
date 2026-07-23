@@ -289,32 +289,17 @@ resource "datahub_custom_assertion" "test" {
 	}
 }
 
-// FreshnessAssertionDefaultTagsAtCreateSteps covers tag-at-create on a typed
-// (monitor-carrying) assertion resource, proving the latch coexists with the
-// monitor read path. Cloud-only on live targets.
-//
-// The final step unlatches (defaults removed, tags cleared) BEFORE the
-// framework's destroy. This is load-bearing against live targets, not just
-// extra coverage: see the destroy-ordering rule (CAT-2701) in the file
-// header - the pre-fix version of this scenario produced a husk live.
-func FreshnessAssertionDefaultTagsAtCreateSteps(entityURN, tagID string) []resource.TestStep {
-	const addr = "datahub_freshness_assertion.test"
+// typedAssertionDefaultTagsSteps is the shared 3-step shape for tag defaults
+// on the typed (monitor-carrying) assertion resources: tagged at create, plan
+// idempotency while latched, then unlatch (defaults removed, tags cleared)
+// BEFORE the framework's destroy. The unlatch-last ordering is load-bearing
+// against live targets, not just extra coverage: see the destroy-ordering
+// rule (CAT-2701) in the file header - a pre-fix scenario produced a husk
+// live.
+func typedAssertionDefaultTagsSteps(addr, assertionConfig, tagID string) []resource.TestStep {
 	tagURN := "urn:li:tag:" + tagID
-	assertion := fmt.Sprintf(`
-resource "datahub_freshness_assertion" "test" {
-  entity_urn              = %q
-  schedule_type           = "FIXED_INTERVAL"
-  fixed_interval_unit     = "HOUR"
-  fixed_interval_multiple = 24
-  description             = "TF Example - default tags freshness"
-  evaluation_cron         = "0 */8 * * *"
-  evaluation_timezone     = "UTC"
-  source_type             = "DATAHUB_OPERATION"
-  mode                    = "ACTIVE"
-}
-`, entityURN)
-	with := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + assertion
-	without := tagProviderBlock("") + tagResourceConfig(tagID) + assertion
+	with := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + assertionConfig
+	without := tagProviderBlock("") + tagResourceConfig(tagID) + assertionConfig
 	return []resource.TestStep{
 		{
 			Config: with,
@@ -336,6 +321,101 @@ resource "datahub_freshness_assertion" "test" {
 			},
 		},
 	}
+}
+
+// FreshnessAssertionDefaultTagsAtCreateSteps covers tag defaults on
+// datahub_freshness_assertion. Cloud-only on live targets.
+func FreshnessAssertionDefaultTagsAtCreateSteps(entityURN, tagID string) []resource.TestStep {
+	return typedAssertionDefaultTagsSteps("datahub_freshness_assertion.test", fmt.Sprintf(`
+resource "datahub_freshness_assertion" "test" {
+  entity_urn              = %q
+  schedule_type           = "FIXED_INTERVAL"
+  fixed_interval_unit     = "HOUR"
+  fixed_interval_multiple = 24
+  description             = "TF Example - default tags freshness"
+  evaluation_cron         = "0 */8 * * *"
+  evaluation_timezone     = "UTC"
+  source_type             = "DATAHUB_OPERATION"
+  mode                    = "ACTIVE"
+}
+`, entityURN), tagID)
+}
+
+// VolumeAssertionDefaultTagsSteps covers tag defaults on
+// datahub_volume_assertion. Cloud-only on live targets.
+func VolumeAssertionDefaultTagsSteps(entityURN, tagID string) []resource.TestStep {
+	return typedAssertionDefaultTagsSteps("datahub_volume_assertion.test", fmt.Sprintf(`
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = %q
+  volume_type         = "ROW_COUNT_TOTAL"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "100"
+  description         = "TF Example - default tags volume"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`, entityURN), tagID)
+}
+
+// SQLAssertionDefaultTagsSteps covers tag defaults on datahub_sql_assertion.
+// Cloud-only on live targets.
+func SQLAssertionDefaultTagsSteps(entityURN, tagID string) []resource.TestStep {
+	return typedAssertionDefaultTagsSteps("datahub_sql_assertion.test", fmt.Sprintf(`
+resource "datahub_sql_assertion" "test" {
+  entity_urn          = %q
+  sql_type            = "METRIC"
+  statement           = "SELECT COUNT(*) FROM project.dataset.table WHERE value < 0"
+  operator            = "EQUAL_TO"
+  value               = "0"
+  description         = "TF Example - default tags sql"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`, entityURN), tagID)
+}
+
+// SchemaAssertionDefaultTagsSteps covers tag defaults on
+// datahub_schema_assertion. Cloud-only on live targets.
+func SchemaAssertionDefaultTagsSteps(entityURN, tagID string) []resource.TestStep {
+	return typedAssertionDefaultTagsSteps("datahub_schema_assertion.test", fmt.Sprintf(`
+resource "datahub_schema_assertion" "test" {
+  entity_urn    = %q
+  compatibility = "SUPERSET"
+  description   = "TF Example - default tags schema"
+  fields = [
+    { path = "id", type = "NUMBER", native_type = "INTEGER" },
+  ]
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  mode                = "ACTIVE"
+}
+`, entityURN), tagID)
+}
+
+// FieldAssertionDefaultTagsSteps covers tag defaults on
+// datahub_field_assertion. Cloud-only on live targets.
+func FieldAssertionDefaultTagsSteps(entityURN, tagID string) []resource.TestStep {
+	return typedAssertionDefaultTagsSteps("datahub_field_assertion.test", fmt.Sprintf(`
+resource "datahub_field_assertion" "test" {
+  entity_urn           = %q
+  field_assertion_type = "FIELD_METRIC"
+  field_path           = "id"
+  field_type           = "NUMBER"
+  field_native_type    = "INTEGER"
+  metric               = "NULL_COUNT"
+  operator             = "EQUAL_TO"
+  single_value         = "0"
+  description          = "TF Example - default tags field"
+  failure_severity     = "HIGH"
+  source_type          = "DATAHUB_DATASET_PROFILE"
+  evaluation_cron      = "0 */8 * * *"
+  evaluation_timezone  = "UTC"
+  mode                 = "ACTIVE"
+}
+`, entityURN), tagID)
 }
 
 // DefaultTagsNonexistentSteps asserts that referencing a tag that does not
