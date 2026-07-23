@@ -53,6 +53,10 @@ Both attach key/value metadata, but they behave differently:
 - **Custom properties** are defined inline on each entity, are not validated, and are not shared or discoverable as a definition. Terraform owns the complete map here -- keys added elsewhere are removed on the next apply.
 - **Structured properties** are a first-class entity: defined once, constrained by a value type and (optionally) an allowed-value set, applicable to declared entity types, and assigned to entities as separate edges. They are searchable/filterable and, because their qualified names are dotted, the UI presents them in a nested group.
 
+## The automatic managed-by marker
+
+When you apply this example, a `managed-by = "terraform"` custom property will appear on the glossary node and term alongside the properties the example sets explicitly. That is the provider's `auto_properties` marker, which is on by default for every custom-property-capable resource -- see the "Provider-level defaults" guide. To apply the example without it, add `auto_properties = []` to the provider block.
+
 ## A note on ordering
 
 The term receives two structured-property assignments (`Regions` and `Tier`). `tier_term` sets `depends_on = [datahub_structured_property_assignment.regions_term]` so Terraform applies the two writes to that single entity sequentially rather than in parallel. On this provider version concurrent structured-property writes to the same entity can race server-side and lose a value; serialising them avoids it. Assignments to different entities (the node vs the term) run in parallel as usual.

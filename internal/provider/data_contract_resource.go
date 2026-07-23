@@ -25,20 +25,24 @@ var (
 	_ resource.Resource                = &dataContractResource{}
 	_ resource.ResourceWithConfigure   = &dataContractResource{}
 	_ resource.ResourceWithImportState = &dataContractResource{}
+	_ resource.ResourceWithModifyPlan  = &dataContractResource{}
 )
 
 type dataContractResource struct {
-	client *datahub.Client
+	pd       *providerData
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type dataContractResourceModel struct {
-	ID                       types.String `tfsdk:"id"`
-	URN                      types.String `tfsdk:"urn"`
-	DatasetURN               types.String `tfsdk:"dataset_urn"`
-	State                    types.String `tfsdk:"state"`
-	FreshnessAssertionURNs   types.List   `tfsdk:"freshness_assertion_urns"`
-	SchemaAssertionURNs      types.List   `tfsdk:"schema_assertion_urns"`
-	DataQualityAssertionURNs types.List   `tfsdk:"data_quality_assertion_urns"`
+	ID                           types.String `tfsdk:"id"`
+	URN                          types.String `tfsdk:"urn"`
+	DatasetURN                   types.String `tfsdk:"dataset_urn"`
+	State                        types.String `tfsdk:"state"`
+	FreshnessAssertionURNs       types.List   `tfsdk:"freshness_assertion_urns"`
+	SchemaAssertionURNs          types.List   `tfsdk:"schema_assertion_urns"`
+	DataQualityAssertionURNs     types.List   `tfsdk:"data_quality_assertion_urns"`
+	StructuredPropertiesDefaults types.Map    `tfsdk:"structured_properties_defaults"`
 }
 
 // NewDataContractResource returns a new datahub_data_contract resource.
@@ -51,8 +55,19 @@ func (r *dataContractResource) Configure(_ context.Context, req resource.Configu
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.pd = pd
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+func (r *dataContractResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	if r.pd == nil {
+		return
+	}
+	planSPDefaults(ctx, r.defaults, r.pd.spDefs, kindDataContract, resp)
 }
 
 func (r *dataContractResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -117,9 +132,10 @@ func (r *dataContractResource) Schema(_ context.Context, _ resource.SchemaReques
 				MarkdownDescription: "Contract lifecycle state: `ACTIVE` (in force) or `PENDING` (proposed). Defaults to `ACTIVE`.",
 				Validators:          []validator.String{enumString("ACTIVE", "PENDING")},
 			},
-			"freshness_assertion_urns":    assertionURNListAttribute("freshness"),
-			"schema_assertion_urns":       assertionURNListAttribute("schema"),
-			"data_quality_assertion_urns": assertionURNListAttribute("data quality"),
+			"freshness_assertion_urns":       assertionURNListAttribute("freshness"),
+			"schema_assertion_urns":          assertionURNListAttribute("schema"),
+			"data_quality_assertion_urns":    assertionURNListAttribute("data quality"),
+			"structured_properties_defaults": spDefaultsSchema(),
 		},
 	}
 }
@@ -175,6 +191,20 @@ func (r *dataContractResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDataContract, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+	if len(spVals) > 0 {
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, plan.URN.ValueString(), spVals, types.MapNull(spDefaultsElementType))...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -183,8 +213,9 @@ func (r *dataContractResource) Update(ctx context.Context, req resource.UpdateRe
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration is set.")
 		return
 	}
-	var plan dataContractResourceModel
+	var plan, state dataContractResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -192,6 +223,21 @@ func (r *dataContractResource) Update(ctx context.Context, req resource.UpdateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// Reconcile default structured properties when the managed set changed.
+	if !plan.StructuredPropertiesDefaults.Equal(state.StructuredPropertiesDefaults) {
+		spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDataContract, plan.StructuredPropertiesDefaults)
+		resp.Diagnostics.Append(sd...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.StructuredPropertiesDefaults = spAll
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, plan.URN.ValueString(), spVals, state.StructuredPropertiesDefaults)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -238,6 +284,12 @@ func (r *dataContractResource) Read(ctx context.Context, req resource.ReadReques
 	}
 
 	r.applyToModel(ctx, dc, &state, &resp.Diagnostics)
+	spDefaults, spErr := readSPDefaults(ctx, r.client, dc.URN, state.StructuredPropertiesDefaults)
+	if spErr != nil {
+		resp.Diagnostics.AddError("DataHub API Error", spErr.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -298,4 +350,12 @@ func (r *dataContractResource) ImportState(ctx context.Context, req resource.Imp
 	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("urn"), datahub.DataContractURNPrefix+id)...)
+	// Import attribution: latch onto provider-default structured properties
+	// already present on the server so the first plan after import is minimal.
+	spDefaults, err := importSPDefaults(ctx, r.client, r.defaults, r.pd.spDefs, kindDataContract, datahub.DataContractURNPrefix+id)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("structured_properties_defaults"), spDefaults)...)
 }

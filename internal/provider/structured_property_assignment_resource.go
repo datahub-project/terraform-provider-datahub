@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -24,6 +25,7 @@ var (
 	_ resource.Resource                = &structuredPropertyAssignmentResource{}
 	_ resource.ResourceWithConfigure   = &structuredPropertyAssignmentResource{}
 	_ resource.ResourceWithImportState = &structuredPropertyAssignmentResource{}
+	_ resource.ResourceWithModifyPlan  = &structuredPropertyAssignmentResource{}
 )
 
 // supportedAssignmentTargetValidator rejects entity_urn values whose entity type
@@ -53,7 +55,8 @@ func (v supportedAssignmentTargetValidator) ValidateString(_ context.Context, re
 }
 
 type structuredPropertyAssignmentResource struct {
-	client *datahub.Client
+	client   *datahub.Client
+	defaults entityDefaults
 }
 
 type structuredPropertyAssignmentResourceModel struct {
@@ -72,8 +75,36 @@ func (r *structuredPropertyAssignmentResource) Configure(_ context.Context, req 
 	if pd == nil {
 		return
 	}
-	client := pd.Client
-	r.client = client
+	r.client = pd.Client
+	r.defaults = pd.defaults
+}
+
+// ModifyPlan warns when this assignment manages a property URN that is also
+// listed in the provider's defaults.structured_properties: both sides would
+// own the same (entity, property) edge and alternate applies would flip-flop
+// the value whenever they disagree. A warning (not an error) because the
+// assignment may legitimately target an entity type the defaults skip.
+func (r *structuredPropertyAssignmentResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() {
+		return // destroy plan
+	}
+	if r.defaults.StructuredProperties.IsNull() || r.defaults.StructuredProperties.IsUnknown() {
+		return
+	}
+	var propURN types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("structured_property_urn"), &propURN)...)
+	if resp.Diagnostics.HasError() || propURN.IsNull() || propURN.IsUnknown() {
+		return
+	}
+	if _, overlaps := r.defaults.StructuredProperties.Elements()[propURN.ValueString()]; overlaps {
+		resp.Diagnostics.AddAttributeWarning(
+			path.Root("structured_property_urn"),
+			"Assignment overlaps provider defaults.structured_properties",
+			fmt.Sprintf("The property %s is also managed by the provider's defaults.structured_properties. "+
+				"If this assignment's target entity type is covered by the defaults, both will fight over the "+
+				"value on alternating applies. Remove the property from one side.", propURN.ValueString()),
+		)
+	}
 }
 
 func (r *structuredPropertyAssignmentResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -91,7 +122,8 @@ func (r *structuredPropertyAssignmentResource) Schema(_ context.Context, _ resou
 			"`datahub_structured_property_assignment` resources may safely target the same entity " +
 			"(one per property). Values are validated by DataHub against the property's cardinality " +
 			"and allowed values.\n\n" +
-			"Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct` " +
+			"Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, " +
+			"`corpuser` (including service accounts), `corpGroup`, and `dataContract` " +
 			"(platform-governance entities). Assigning structured properties to ingested data assets " +
 			"(datasets, dashboards, ...) is out of scope for this provider and is rejected.\n\n" +
 			"## References\n\n" +
@@ -108,7 +140,7 @@ func (r *structuredPropertyAssignmentResource) Schema(_ context.Context, _ resou
 			},
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
-				MarkdownDescription: "URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, or `dataProduct` URN. Changing this forces a new resource.",
+				MarkdownDescription: "URN of the target entity to assign the property to. Must be a `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, `corpuser` (including service accounts), `corpGroup`, or `dataContract` URN. Changing this forces a new resource.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},

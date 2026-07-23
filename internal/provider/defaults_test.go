@@ -10,6 +10,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 func stringMap(m map[string]string) types.Map {
@@ -75,9 +77,92 @@ func TestDefaultsSupportMatrixComplete(t *testing.T) {
 		if _, ok := defaultsSupport[kind]; !ok {
 			t.Errorf("defaultsSupport is missing a row for entityKind %d", kind)
 		}
+		if _, ok := kindEntityTypes[kind]; !ok {
+			t.Errorf("kindEntityTypes is missing a row for entityKind %d", kind)
+		}
 	}
 	if len(defaultsSupport) != len(allEntityKinds) {
 		t.Errorf("defaultsSupport has %d rows, allEntityKinds has %d", len(defaultsSupport), len(allEntityKinds))
+	}
+	if len(kindEntityTypes) != len(allEntityKinds) {
+		t.Errorf("kindEntityTypes has %d rows, allEntityKinds has %d", len(kindEntityTypes), len(allEntityKinds))
+	}
+}
+
+// spDefaultsMap builds a defaults.structured_properties value for tests.
+func spDefaultsMap(t *testing.T, m map[string][]string) types.Map {
+	t.Helper()
+	elems := map[string]attr.Value{}
+	for k, vals := range m {
+		elems[k] = stringSet(vals...)
+	}
+	out, diags := types.MapValue(spDefaultsElementType, elems)
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	return out
+}
+
+func TestPlannedSPDefaultsFiltersByEntityType(t *testing.T) {
+	d := testDefaults()
+	d.StructuredProperties = spDefaultsMap(t, map[string][]string{
+		"urn:li:structuredProperty:io.example.stack":  {"prod"},
+		"urn:li:structuredProperty:io.example.uslope": {"x"},
+		"urn:li:structuredProperty:io.example.ghost":  {"y"},
+	})
+	spDefs := map[string]*datahub.StructuredProperty{
+		// applicable to domains only
+		"urn:li:structuredProperty:io.example.stack": {EntityTypes: []string{"domain"}},
+		// applicable to corpuser (registry lowercase form)
+		"urn:li:structuredProperty:io.example.uslope": {EntityTypes: []string{"corpuser"}},
+		// nil: definition missing at Configure -> skipped everywhere
+		"urn:li:structuredProperty:io.example.ghost": nil,
+	}
+
+	domainPlan := plannedSPDefaults(d, spDefs, kindDomain)
+	if domainPlan.IsNull() || len(domainPlan.Elements()) != 1 {
+		t.Fatalf("expected exactly the stack property for domains, got %s", domainPlan)
+	}
+	if _, ok := domainPlan.Elements()["urn:li:structuredProperty:io.example.stack"]; !ok {
+		t.Fatalf("expected stack property key, got %s", domainPlan)
+	}
+
+	userPlan := plannedSPDefaults(d, spDefs, kindCorpUser)
+	if userPlan.IsNull() || len(userPlan.Elements()) != 1 {
+		t.Fatalf("expected exactly the uslope property for corp users, got %s", userPlan)
+	}
+
+	groupPlan := plannedSPDefaults(d, spDefs, kindCorpGroup)
+	if !groupPlan.IsNull() {
+		t.Fatalf("expected null plan for corp groups (nothing applicable), got %s", groupPlan)
+	}
+}
+
+func TestPlannedSPDefaultsNullAndUnknown(t *testing.T) {
+	d := testDefaults() // StructuredProperties null
+	if got := plannedSPDefaults(d, nil, kindDomain); !got.IsNull() {
+		t.Fatalf("expected null plan for null defaults, got %s", got)
+	}
+	d.StructuredProperties = types.MapUnknown(spDefaultsElementType)
+	if got := plannedSPDefaults(d, nil, kindDomain); !got.IsUnknown() {
+		t.Fatalf("expected unknown plan for unknown defaults, got %s", got)
+	}
+}
+
+func TestSPDefaultsValues(t *testing.T) {
+	planned := spDefaultsMap(t, map[string][]string{
+		"urn:li:structuredProperty:io.example.stack": {"b", "a"},
+	})
+	vals, diags := spDefaultsValues(planned)
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	got := vals["urn:li:structuredProperty:io.example.stack"]
+	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("expected sorted [a b], got %v", got)
+	}
+	if v, _ := spDefaultsValues(types.MapNull(spDefaultsElementType)); v != nil {
+		t.Fatalf("expected nil values for null planned map, got %v", v)
 	}
 }
 
@@ -392,9 +477,16 @@ func TestParseEntityDefaultsNullBlock(t *testing.T) {
 }
 
 func TestParseEntityDefaultsPopulatedBlock(t *testing.T) {
+	spVals, sdiags := types.MapValue(spDefaultsElementType, map[string]attr.Value{
+		"urn:li:structuredProperty:io.example.stack": stringSet("prod"),
+	})
+	if sdiags.HasError() {
+		t.Fatal(sdiags)
+	}
 	obj, diags := types.ObjectValue(providerDefaultsObjectType(), map[string]attr.Value{
-		"custom_properties": stringMap(map[string]string{"team": "platform"}),
-		"tags":              stringSet("urn:li:tag:terraform-managed"),
+		"custom_properties":     stringMap(map[string]string{"team": "platform"}),
+		"tags":                  stringSet("urn:li:tag:terraform-managed"),
+		"structured_properties": spVals,
 	})
 	if diags.HasError() {
 		t.Fatal(diags)
@@ -408,8 +500,8 @@ func TestParseEntityDefaultsPopulatedBlock(t *testing.T) {
 	if d.Tags.IsNull() || len(d.Tags.Elements()) != 1 {
 		t.Fatalf("expected one default tag, got %s", d.Tags)
 	}
-	if !d.StructuredProperties.IsNull() {
-		t.Fatalf("expected null structured properties until their phase lands, got %+v", d)
+	if d.StructuredProperties.IsNull() || len(d.StructuredProperties.Elements()) != 1 {
+		t.Fatalf("expected one default structured property, got %s", d.StructuredProperties)
 	}
 }
 
@@ -438,8 +530,9 @@ func TestEmptyEntityDefaultsIsInert(t *testing.T) {
 // attribute for test construction.
 func providerDefaultsObjectType() map[string]attr.Type {
 	return map[string]attr.Type{
-		"custom_properties": types.MapType{ElemType: types.StringType},
-		"tags":              types.SetType{ElemType: types.StringType},
+		"custom_properties":     types.MapType{ElemType: types.StringType},
+		"tags":                  types.SetType{ElemType: types.StringType},
+		"structured_properties": types.MapType{ElemType: spDefaultsElementType},
 	}
 }
 

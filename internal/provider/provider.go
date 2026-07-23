@@ -179,6 +179,24 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 							"never been set for a resource, the provider neither reads nor writes its tags.",
 						Validators: []validator.Set{urnPrefixSetValidator{prefix: tagURNPrefix}},
 					},
+					"structured_properties": schema.MapAttribute{
+						Optional:    true,
+						ElementType: types.SetType{ElemType: types.StringType},
+						MarkdownDescription: "Structured property values applied to every resource whose " +
+							"entity type supports them (`datahub_domain`, `datahub_glossary_term`, " +
+							"`datahub_glossary_node`, `datahub_corp_user`, `datahub_service_account`, " +
+							"`datahub_corp_group`, `datahub_data_product`, `datahub_data_contract`), keyed " +
+							"by property URN (`urn:li:structuredProperty:...`). Ownership is per property: " +
+							"only the properties named here are managed, so properties assigned via " +
+							"`datahub_structured_property_assignment` or outside Terraform are untouched - " +
+							"but a property URN listed here should not also be managed by an assignment " +
+							"resource on the same entity. Definitions must already exist (create them in a " +
+							"separate apply) and are applied only to resources whose entity type appears in " +
+							"the definition's `entity_types`; other resources skip the property. The " +
+							"effective managed subset is exposed on each resource as the computed " +
+							"`structured_properties_defaults` attribute.",
+						Validators: []validator.Map{spDefaultsMapValidator{}},
+					},
 				},
 			},
 			"auto_properties": schema.SetAttribute{
@@ -339,12 +357,37 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		return
 	}
 
+	// Prefetch defaults.structured_properties definitions once for plan-time
+	// entityTypes filtering. Failures warn rather than error: a hard error
+	// here would block `terraform destroy` of configs whose definitions are
+	// already deleted. Skipped-at-plan properties hard-error at apply time if
+	// a write is attempted (providerData.ensureSPDef).
+	spDefs := map[string]*datahub.StructuredProperty{}
+	if !defaults.StructuredProperties.IsNull() && !defaults.StructuredProperties.IsUnknown() {
+		for urn := range defaults.StructuredProperties.Elements() {
+			def, err := client.GetStructuredPropertyByURN(ctx, urn)
+			if err != nil {
+				resp.Diagnostics.AddWarning(
+					"Could not fetch default structured property definition",
+					fmt.Sprintf("Fetching %s failed (%s); resources will skip this default until it can be resolved.", urn, err),
+				)
+			} else if def == nil {
+				resp.Diagnostics.AddWarning(
+					"Default structured property does not exist",
+					fmt.Sprintf("%s (referenced in defaults.structured_properties) was not found; resources will skip this default. Create the definition in a separate apply before relying on it.", urn),
+				)
+			}
+			spDefs[urn] = def
+		}
+	}
+
 	// Data sources receive the bare client; resources additionally receive
 	// the provider-level defaults configuration.
 	resp.DataSourceData = client
 	resp.ResourceData = &providerData{
 		Client:   client,
 		defaults: defaults,
+		spDefs:   spDefs,
 	}
 }
 

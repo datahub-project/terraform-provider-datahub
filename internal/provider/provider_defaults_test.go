@@ -216,6 +216,96 @@ func TestAcc_DefaultTags_FieldAssertion(t *testing.T) {
 	typedAssertionDefaultTagsCase(t, "field", datahubtesting.FieldAssertionCheckDestroy, datahubtesting.FieldAssertionDefaultTagsSteps)
 }
 
+// TestAcc_SPDefaults_DomainLifecycle covers the per-property latch on
+// datahub_domain: unlatched create, latch-on, idempotency, value ripple,
+// import while latched, unlatch before destroy.
+func TestAcc_SPDefaults_DomainLifecycle(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-dom")
+	propertyID := tg.Name("tfprovider-spd-prop")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.DomainSPDefaultsLifecycleSteps(domainID, propertyID),
+	})
+}
+
+// TestAcc_SPDefaults_EntityTypeFiltering proves a default property applicable
+// only to domains stamps the domain and silently skips the corp group.
+func TestAcc_SPDefaults_EntityTypeFiltering(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-filt-dom")
+	groupID := tg.Name("tfprovider-spd-filt-grp")
+	propertyID := tg.Name("tfprovider-spd-filt-prop")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsEntityTypeFilteringSteps(domainID, groupID, propertyID),
+	})
+}
+
+// TestAcc_SPDefaults_AllResources runs the SP-defaults latch (stamp on
+// latch-on, clean replan, import while latched, unlatch before destroy) on
+// every SP-capable resource type not covered by the domain lifecycle:
+// glossary node/term, corp user, service account, corp group, data product,
+// and data contract.
+func TestAcc_SPDefaults_AllResources(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	ids := map[string]string{
+		"prop":   tg.Name("tfprovider-spd-all-prop"),
+		"node":   tg.Name("tfprovider-spd-all-node"),
+		"term":   tg.Name("tfprovider-spd-all-term"),
+		"user":   tg.Name("tfprovider-spd-all-usr"),
+		"sa":     tg.Name("tfprovider-spd-all-sa"),
+		"group":  tg.Name("tfprovider-spd-all-grp"),
+		"domain": tg.Name("tfprovider-spd-all-dom"),
+		"dp":     tg.Name("tfprovider-spd-all-dp"),
+	}
+	datasetURN := "urn:li:dataset:(urn:li:dataPlatform:hive,tfprovider_spd_all.table,PROD)"
+	if tg.IsLive() {
+		tg.EnsureDatasetEntity(t, datasetURN)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.GlossaryNodeCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsAllResourcesSteps(ids, datasetURN),
+	})
+}
+
+// TestAcc_SPDefaults_AssignmentCoexistence proves per-property ownership:
+// provider defaults and an explicit assignment resource manage different
+// properties on the same entity without fighting.
+func TestAcc_SPDefaults_AssignmentCoexistence(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-coex-dom")
+	defaultPropID := tg.Name("tfprovider-spd-coex-def")
+	assignedPropID := tg.Name("tfprovider-spd-coex-asg")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsAssignmentCoexistenceSteps(domainID, defaultPropID, assignedPropID),
+	})
+}
+
+// TestAcc_SPDefaults_AssignmentOverlap exercises the deliberate-overlap path:
+// an assignment manages the same property URN as the provider defaults with
+// matching values - a plan-time warning, but stable convergence.
+func TestAcc_SPDefaults_AssignmentOverlap(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-ovl-dom")
+	propertyID := tg.Name("tfprovider-spd-ovl-prop")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsAssignmentOverlapSteps(domainID, propertyID),
+	})
+}
+
 // TestAcc_DefaultTags_NonexistentTag asserts a clear apply-time error when
 // defaults.tags references a tag that does not exist.
 func TestAcc_DefaultTags_NonexistentTag(t *testing.T) {

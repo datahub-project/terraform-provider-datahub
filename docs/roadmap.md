@@ -266,6 +266,10 @@ No TF resource shape. Listed so nothing is silently excluded:
 
 ## Cross-cutting implementation notes
 
+### Provider-level defaults (shipped)
+
+The provider supports `default_tags`-style automatic labelling (`defaults` block plus the on-by-default `managed-by` auto-property; see the "Provider-level defaults" guide). Coverage is bounded by the entity registry: entity types that register no label aspects (`dataHubIngestionSource`, `dataHubSecret`, `dataHubPolicy`, `dataHubConnection`, ...) are documented no-ops. Extending the registry upstream (structuredProperties on ingestion sources et al.) is tracked outside this repo; when a server ships it, the defaults engine picks the type up by adding a matrix row and an assignment-target entry.
+
 ### Stability classification
 
 GraphQL has no inline `category: internal` markers. Stability is inferred from schema file location:

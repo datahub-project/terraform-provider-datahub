@@ -23,6 +23,25 @@ func TestAcc_StructuredPropertyAssignment_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_StructuredPropertyAssignment_NewTargets exercises assignments
+// against the corpGroup, corpUser, and dataContract target types.
+func TestAcc_StructuredPropertyAssignment_NewTargets(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-spa-nt")
+	groupID := tg.Name("tfprovider-spa-nt-grp")
+	username := tg.Name("tfprovider-spa-nt-usr")
+	datasetURN := "urn:li:dataset:(urn:li:dataPlatform:hive,tfprovider_spa_nt.table,PROD)"
+	if tg.IsLive() {
+		tg.EnsureDatasetEntity(t, datasetURN)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.StructuredPropertyAssignmentCheckDestroy,
+		Steps:                    datahubtesting.StructuredPropertyAssignmentNewTargetsSteps(propertyID, groupID, username, datasetURN),
+	})
+}
+
 func TestAcc_StructuredPropertyAssignment_UnsupportedTarget(t *testing.T) {
 	// Guard #1 (CAT-2562): unsupported target type rejected at plan time.
 	_ = datahubtesting.SetupTarget(t)

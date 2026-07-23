@@ -80,14 +80,15 @@ type serviceAccountResource struct {
 }
 
 type serviceAccountResourceModel struct {
-	ID                  types.String `tfsdk:"id"`
-	URN                 types.String `tfsdk:"urn"`
-	ServiceAccountID    types.String `tfsdk:"service_account_id"`
-	DisplayName         types.String `tfsdk:"display_name"`
-	Description         types.String `tfsdk:"description"`
-	CustomProperties    types.Map    `tfsdk:"custom_properties"`
-	CustomPropertiesAll types.Map    `tfsdk:"custom_properties_all"`
-	TagsAll             types.Set    `tfsdk:"tags_all"`
+	ID                           types.String `tfsdk:"id"`
+	URN                          types.String `tfsdk:"urn"`
+	ServiceAccountID             types.String `tfsdk:"service_account_id"`
+	DisplayName                  types.String `tfsdk:"display_name"`
+	Description                  types.String `tfsdk:"description"`
+	CustomProperties             types.Map    `tfsdk:"custom_properties"`
+	CustomPropertiesAll          types.Map    `tfsdk:"custom_properties_all"`
+	TagsAll                      types.Set    `tfsdk:"tags_all"`
+	StructuredPropertiesDefaults types.Map    `tfsdk:"structured_properties_defaults"`
 }
 
 func NewServiceAccountResource() resource.Resource {
@@ -108,8 +109,12 @@ func (r *serviceAccountResource) ModifyPlan(ctx context.Context, req resource.Mo
 	if req.Plan.Raw.IsNull() {
 		return // destroy plan
 	}
+	if r.pd == nil {
+		return
+	}
 	planCustomPropertiesAll(ctx, r.defaults, req, resp)
 	planTagsAll(ctx, r.defaults, resp)
+	planSPDefaults(ctx, r.defaults, r.pd.spDefs, kindCorpUser, resp)
 }
 
 func (r *serviceAccountResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -192,8 +197,9 @@ func (r *serviceAccountResource) Schema(_ context.Context, _ resource.SchemaRequ
 					nonEmptyStringMapValidator{},
 				},
 			},
-			"custom_properties_all": customPropertiesAllSchema(),
-			"tags_all":              tagsAllSchema(),
+			"custom_properties_all":          customPropertiesAllSchema(),
+			"tags_all":                       tagsAllSchema(),
+			"structured_properties_defaults": spDefaultsSchema(),
 		},
 	}
 }
@@ -244,6 +250,19 @@ func (r *serviceAccountResource) Create(ctx context.Context, req resource.Create
 		}
 	}
 
+	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindCorpUser, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+	if len(spVals) > 0 {
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
@@ -284,6 +303,12 @@ func (r *serviceAccountResource) Read(ctx context.Context, req resource.ReadRequ
 		return
 	}
 	state.TagsAll = tagsAll
+	spDefaults, err := readSPDefaults(ctx, r.client, urn, state.StructuredPropertiesDefaults)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -333,6 +358,20 @@ func (r *serviceAccountResource) Update(ctx context.Context, req resource.Update
 		}
 		if err := r.client.SetGlobalTags(ctx, corpUserEntityPath, state.URN.ValueString(), tagURNs); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
+			return
+		}
+	}
+
+	// Reconcile default structured properties when the managed set changed.
+	if !plan.StructuredPropertiesDefaults.Equal(state.StructuredPropertiesDefaults) {
+		spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindCorpUser, plan.StructuredPropertiesDefaults)
+		resp.Diagnostics.Append(sd...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.StructuredPropertiesDefaults = spAll
+		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, state.URN.ValueString(), spVals, state.StructuredPropertiesDefaults)...)
+		if resp.Diagnostics.HasError() {
 			return
 		}
 	}
@@ -417,6 +456,12 @@ func (r *serviceAccountResource) ImportState(ctx context.Context, req resource.I
 		return
 	}
 	state.TagsAll = tagsAll
+	spDefaults, err := importSPDefaults(ctx, r.client, r.defaults, r.pd.spDefs, kindCorpUser, sa.URN)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	state.StructuredPropertiesDefaults = spDefaults
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
