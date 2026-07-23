@@ -43,9 +43,16 @@ resource "datahub_corp_user" "test" {
   display_name = "SP New Targets User"
 }
 
+resource "datahub_custom_assertion" "dq" {
+  entity_urn     = %q
+  assertion_type = "CUSTOM"
+  description    = "TF Example - SP new targets DQ"
+  platform_urn   = "urn:li:dataPlatform:dbt"
+}
+
 resource "datahub_data_contract" "test" {
   dataset_urn                 = %q
-  data_quality_assertion_urns = ["urn:li:assertion:tf-sp-targets-dq"]
+  data_quality_assertion_urns = [datahub_custom_assertion.dq.urn]
 }
 
 resource "datahub_structured_property_assignment" "group" {
@@ -65,7 +72,7 @@ resource "datahub_structured_property_assignment" "contract" {
   structured_property_urn = datahub_structured_property.steward_team.urn
   values                  = ["contract-team"]
 }
-`, propertyID, groupID, username, contractDatasetURN, groupValue)
+`, propertyID, groupID, username, contractDatasetURN, contractDatasetURN, groupValue)
 	}
 
 	return []resource.TestStep{
