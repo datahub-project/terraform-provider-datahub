@@ -165,6 +165,185 @@ resource "datahub_corp_group" "test" {
 	}
 }
 
+// SPDefaultsAllResourcesSteps exercises the SP-defaults latch on every
+// SP-capable resource type other than domain (covered by the lifecycle
+// scenario) in one config: glossary node + term, corp user, service account,
+// corp group, data product, and data contract. The definition is created
+// alone first (create-before-reference), then every resource is CREATED with
+// defaults already on - the stamped-at-create path, which the latch-on-update
+// scenarios cannot reach - replans clean, imports with the latch intact, and
+// unlatches before destroy.
+func SPDefaultsAllResourcesSteps(ids map[string]string, contractDatasetURN string) []resource.TestStep {
+	propURN := "urn:li:structuredProperty:" + ids["prop"]
+	definition := spDefinitionConfig(ids["prop"],
+		`"glossaryTerm", "glossaryNode", "corpuser", "corpGroup", "dataProduct", "dataContract"`)
+	resources := definition + fmt.Sprintf(`
+resource "datahub_glossary_node" "test" {
+  node_id = %q
+  name    = "SP All Node"
+}
+
+resource "datahub_glossary_term" "test" {
+  term_id     = %q
+  name        = "SP All Term"
+  parent_node = datahub_glossary_node.test.urn
+}
+
+resource "datahub_corp_user" "test" {
+  username     = %q
+  display_name = "SP All User"
+}
+
+resource "datahub_service_account" "test" {
+  service_account_id = %q
+  display_name       = "SP All Service Account"
+}
+
+resource "datahub_corp_group" "test" {
+  group_id = %q
+  name     = "SP All Group"
+}
+
+resource "datahub_domain" "home" {
+  domain_id = %q
+  name      = "SP All Home Domain"
+}
+
+# The domain also makes deleteDataProduct authorize via the domain path on
+# servers without the domain-less-delete fix (OSS #18446).
+resource "datahub_data_product" "test" {
+  data_product_id = %q
+  name            = "SP All Product"
+  domain          = datahub_domain.home.urn
+}
+
+resource "datahub_custom_assertion" "dq" {
+  entity_urn     = %q
+  assertion_type = "CUSTOM"
+  description    = "TF Example - SP all resources DQ"
+  platform_urn   = "urn:li:dataPlatform:dbt"
+}
+
+resource "datahub_data_contract" "test" {
+  dataset_urn                 = %q
+  data_quality_assertion_urns = [datahub_custom_assertion.dq.urn]
+}
+`, ids["node"], ids["term"], ids["user"], ids["sa"], ids["group"], ids["domain"], ids["dp"], contractDatasetURN, contractDatasetURN)
+	without := spDefaultsProviderBlock("") + resources
+	with := spDefaultsProviderBlock(propURN, "finale") + resources
+
+	addrs := []string{
+		"datahub_glossary_node.test",
+		"datahub_glossary_term.test",
+		"datahub_corp_user.test",
+		"datahub_service_account.test",
+		"datahub_corp_group.test",
+		"datahub_data_product.test",
+		"datahub_data_contract.test",
+	}
+	stamped := make([]statecheck.StateCheck, 0, len(addrs))
+	cleared := make([]statecheck.StateCheck, 0, len(addrs))
+	for _, a := range addrs {
+		stamped = append(stamped, statecheck.ExpectKnownValue(a, tfjsonpath.New("structured_properties_defaults"), knownvalue.MapExact(map[string]knownvalue.Check{
+			propURN: knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("finale")}),
+		})))
+		cleared = append(cleared, statecheck.ExpectKnownValue(a, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()))
+	}
+
+	steps := []resource.TestStep{
+		{
+			// The definition alone: provider configuration cannot depend on a
+			// property created in the same apply.
+			Config: spDefaultsProviderBlock("") + definition,
+		},
+		{
+			// Every resource is created with defaults already on: the
+			// stamped-at-create path.
+			Config:            with,
+			ConfigStateChecks: stamped,
+		},
+		{
+			Config:   with,
+			PlanOnly: true,
+		},
+	}
+	// Import each resource while latched: import attribution must
+	// reconstruct structured_properties_defaults on every type.
+	for _, a := range addrs {
+		steps = append(steps, resource.TestStep{
+			ResourceName:      a,
+			ImportState:       true,
+			ImportStateVerify: true,
+		})
+	}
+	return append(steps, resource.TestStep{
+		// Unlatch before destroy (destroy-ordering rule above).
+		Config:            without,
+		ConfigStateChecks: cleared,
+	})
+}
+
+// SPDefaultsAssignmentOverlapSteps exercises the deliberate-overlap path: an
+// explicit assignment manages the SAME property URN the provider defaults
+// manage, with matching values. The assignment resource emits a plan-time
+// warning (warnings do not fail steps); because both sides write the same
+// values the combined config still converges and replans clean.
+func SPDefaultsAssignmentOverlapSteps(domainID, propertyID string) []resource.TestStep {
+	const domainAddr = "datahub_domain.test"
+	propURN := "urn:li:structuredProperty:" + propertyID
+	resources := spDefinitionConfig(propertyID, `"domain"`) + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "SP Overlap Domain"
+}
+
+resource "datahub_structured_property_assignment" "overlap" {
+  entity_urn              = datahub_domain.test.urn
+  structured_property_urn = datahub_structured_property.marker.urn
+  values                  = ["shared-value"]
+}
+`, domainID)
+	base := spDefinitionConfig(propertyID, `"domain"`) + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "SP Overlap Domain"
+}
+`, domainID)
+	with := spDefaultsProviderBlock(propURN, "shared-value") + resources
+
+	return []resource.TestStep{
+		{
+			// The definition alone: provider configuration cannot depend on a
+			// property created in the same apply.
+			Config: spDefaultsProviderBlock("") + spDefinitionConfig(propertyID, `"domain"`),
+		},
+		{
+			// Domain and assignment are created with defaults already on:
+			// stamped at create, warning fires on the overlapping assignment.
+			Config: with,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("structured_properties_defaults"), knownvalue.MapExact(map[string]knownvalue.Check{
+					propURN: knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact("shared-value")}),
+				})),
+			},
+		},
+		{
+			// Same values on both sides: no flip-flop, clean replan.
+			Config:   with,
+			PlanOnly: true,
+		},
+		{
+			// Unlatch AND drop the assignment in the same apply: removing only
+			// the defaults would delete the value out from under the still-
+			// managed assignment and the post-apply refresh would show drift.
+			Config: spDefaultsProviderBlock("") + base,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()),
+			},
+		},
+	}
+}
+
 // SPDefaultsAssignmentCoexistenceSteps proves per-property ownership: a
 // provider default (property A) and an explicit
 // datahub_structured_property_assignment (property B) manage different

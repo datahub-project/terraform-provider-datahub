@@ -350,4 +350,12 @@ func (r *dataContractResource) ImportState(ctx context.Context, req resource.Imp
 	}
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("urn"), datahub.DataContractURNPrefix+id)...)
+	// Import attribution: latch onto provider-default structured properties
+	// already present on the server so the first plan after import is minimal.
+	spDefaults, err := importSPDefaults(ctx, r.client, r.defaults, r.pd.spDefs, kindDataContract, datahub.DataContractURNPrefix+id)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("structured_properties_defaults"), spDefaults)...)
 }
