@@ -26,6 +26,19 @@ terraform {
 #
 # Both attributes can also be omitted entirely to fall back to the local
 # DataHub CLI config at ~/.datahubenv.
+#
+# Provider-level defaults (optional) attach labels to every resource the
+# provider manages, wherever the entity type supports them - see the
+# "Provider-level defaults" guide. A managed-by = "terraform" custom property
+# is written automatically to newly created entities unless disabled with
+# auto_properties = [].
+#
+#   provider "datahub" {
+#     defaults = {
+#       custom_properties = { team = "data-platform" }
+#       tags              = ["urn:li:tag:terraform-managed"]
+#     }
+#   }
 provider "datahub" {}
 
 data "datahub_me" "current" {}
