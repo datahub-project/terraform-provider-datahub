@@ -50,6 +50,10 @@ DataHub refuses to hard-delete a domain that still has child domains. Terraform 
 
 If you replace a `.urn` reference with a hard-coded URN string, Terraform loses that edge and may attempt to destroy the parent before its children, causing a `terraform destroy` failure.
 
+## The automatic managed-by marker
+
+When you apply this example, a `managed-by = "terraform"` custom property will appear on every domain alongside the resources you declared. That is the provider's `auto_properties` marker, which is on by default for every custom-property-capable resource -- see the "Provider-level defaults" guide. To apply the example without it, add `auto_properties = []` to the provider block.
+
 ## Cleanup
 
 ```bash

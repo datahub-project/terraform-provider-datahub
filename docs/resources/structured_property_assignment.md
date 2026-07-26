@@ -7,6 +7,7 @@ description: |-
   Assigns a structured property's value(s) to a target entity. Each resource models a single (entity, property) edge: one target entity, one structured property, and its list of values.
   Assignments merge per property -- creating, updating, or deleting one assignment leaves any other structured properties on the same entity untouched, so multiple datahub_structured_property_assignment resources may safely target the same entity (one per property). Values are validated by DataHub against the property's cardinality and allowed values.
   Supported target entity types: domain, glossaryNode, glossaryTerm, dataProduct, corpuser (including service accounts), corpGroup, and dataContract (platform-governance entities). Assigning structured properties to ingested data assets (datasets, dashboards, ...) is out of scope for this provider and is rejected.
+  This resource can coexist with the provider's defaults.structured_properties on the same entity, as long as they manage different property URNs -- ownership there is per-property. Managing the same property URN through both raises a plan-time warning, since the two would fight over its value on alternating applies. See the "Provider-level defaults" guide.
   References
   Prefer expression inputs: set structured_property_urn to datahub_structured_property.<name>.urn and entity_urn to the target's .urn (e.g. datahub_domain.<name>.urn), so the property and target are created first.
 ---
@@ -20,6 +21,8 @@ Assigns a structured property's value(s) to a target entity. Each resource model
 Assignments **merge** per property -- creating, updating, or deleting one assignment leaves any other structured properties on the same entity untouched, so multiple `datahub_structured_property_assignment` resources may safely target the same entity (one per property). Values are validated by DataHub against the property's cardinality and allowed values.
 
 Supported target entity types: `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, `corpuser` (including service accounts), `corpGroup`, and `dataContract` (platform-governance entities). Assigning structured properties to ingested data assets (datasets, dashboards, ...) is out of scope for this provider and is rejected.
+
+This resource can coexist with the provider's `defaults.structured_properties` on the same entity, as long as they manage different property URNs -- ownership there is per-property. Managing the same property URN through both raises a plan-time warning, since the two would fight over its value on alternating applies. See the "Provider-level defaults" guide.
 
 ## References
 

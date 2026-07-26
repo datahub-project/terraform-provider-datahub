@@ -16,6 +16,7 @@ This example illustrates:
 - **Structured properties** (`datahub_structured_property`) - defined once with a `value_type`, `cardinality`, and `allowed_values`; validated server-side.
 - **Assignment** (`datahub_structured_property_assignment`) - one `(entity, property)` edge per resource. The `Regions` property is defined for both `glossaryTerm` and `glossaryNode` and assigned to one of each, sharing the value `GLOBAL` with one region unique to each. `AMER` is an allowed value left deliberately unassigned.
 - **UI grouping via the qualified name** - both structured properties share the `tf-example.governance.` prefix, so DataHub's Properties tab folds them under a single `tf-example.governance` group. The grouping is derived from the dotted name; it is not a separate object you manage. Custom properties render flat, outside that group.
+- **Provider-level defaults** (`defaults.custom_properties` on the provider block) - a `team` key merged automatically into both entities' custom properties, alongside the automatic `managed-by` marker.
 
 ## Prerequisites
 
@@ -53,9 +54,14 @@ Both attach key/value metadata, but they behave differently:
 - **Custom properties** are defined inline on each entity, are not validated, and are not shared or discoverable as a definition. Terraform owns the complete map here -- keys added elsewhere are removed on the next apply.
 - **Structured properties** are a first-class entity: defined once, constrained by a value type and (optionally) an allowed-value set, applicable to declared entity types, and assigned to entities as separate edges. They are searchable/filterable and, because their qualified names are dotted, the UI presents them in a nested group.
 
-## The automatic managed-by marker
+## Provider-level defaults
 
-When you apply this example, a `managed-by = "terraform"` custom property will appear on the glossary node and term alongside the properties the example sets explicitly. That is the provider's `auto_properties` marker, which is on by default for every custom-property-capable resource -- see the "Provider-level defaults" guide. To apply the example without it, add `auto_properties = []` to the provider block.
+Two independent mechanisms add properties beyond the ones this example sets explicitly:
+
+- **The automatic managed-by marker.** A `managed-by = "terraform"` custom property appears on the glossary node and term. This is the provider's `auto_properties` marker, on by default for every custom-property-capable resource. To apply the example without it, add `auto_properties = []` to the provider block.
+- **An explicit `defaults.custom_properties` block.** The provider block in `main.tf` also sets `team = "data-platform"`, which merges into `custom_properties_all` on both the node and the term. Unlike the frozen-at-creation marker above, this value is live: change it and re-apply, and it updates on every managed entity, including ones created before the change.
+
+Run `terraform output node_custom_properties_all` and `terraform output term_custom_properties_all` to see each entity's full merged map: the entity's own keys (steward, source_system on the term) plus both provider-level sources, none of which collide here. If a `defaults.custom_properties` key matched one of the term's own keys with a *different* value, the resource's value would win and `terraform plan` would print a warning -- see the "Provider-level defaults" guide for the full precedence and collision rules.
 
 ## A note on ordering
 

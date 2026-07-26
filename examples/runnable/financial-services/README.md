@@ -145,6 +145,10 @@ echo "Glossary: ${DATAHUB_GMS_URL%/gms}/glossary"
 
 The Domains page shows the three-level FIBO hierarchy. The Glossary page shows a matching hierarchy of term groups with terms beneath each leaf node.
 
+## The automatic managed-by marker
+
+When you apply this example, a `managed-by = "terraform"` custom property will appear on every domain, glossary node, and glossary term it creates. That is the provider's `auto_properties` marker, which is on by default for every custom-property-capable resource -- see the "Provider-level defaults" guide. To apply the example without it, add `auto_properties = []` to the provider block.
+
 ## Cleanup
 
 ```bash

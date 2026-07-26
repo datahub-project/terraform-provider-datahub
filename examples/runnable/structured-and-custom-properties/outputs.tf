@@ -27,6 +27,16 @@ output "assignment_ids" {
   ]
 }
 
+output "node_custom_properties_all" {
+  description = "The node's merged custom_properties_all: defaults.custom_properties' \"team\" key + the auto_properties managed-by marker (the node sets no custom_properties of its own)."
+  value       = datahub_glossary_node.governance.custom_properties_all
+}
+
+output "term_custom_properties_all" {
+  description = "The term's merged custom_properties_all: its own steward/source_system, plus defaults.custom_properties' \"team\" key and the managed-by marker -- all three sources coexist because none of their keys collide."
+  value       = datahub_glossary_term.revenue.custom_properties_all
+}
+
 output "summary" {
   description = "Post-apply summary of the properties created and assigned."
   value       = <<-EOT
@@ -34,10 +44,12 @@ output "summary" {
   Glossary tree + properties created:
 
     TF Example - Governance   ${datahub_glossary_node.governance.urn}
+      custom:     team = data-platform, managed-by = terraform          (from provider defaults)
       structured: Regions = [GLOBAL, EMEA]
       +- TF Example Revenue   ${datahub_glossary_term.revenue.urn}
-           custom:     steward = data-office, source_system = SITS   (flat)
-           structured: Regions = [GLOBAL, APAC], Tier = Gold         (folded under tf-example.governance)
+           custom:     steward = data-office, source_system = SITS      (its own)
+                       team = data-platform, managed-by = terraform     (from provider defaults)
+           structured: Regions = [GLOBAL, APAC], Tier = Gold            (folded under tf-example.governance)
 
   Structured property "Regions" allows GLOBAL/APAC/EMEA/AMER; AMER is defined
   but deliberately left unassigned. GLOBAL is shared by both entities.

@@ -86,6 +86,16 @@ The reason for this boundary: DataHub's primary value proposition as a collabora
 
 **Corollary:** the provider should not attempt to manage data asset entities (`dataset`, `dataJob`, `dataFlow`, `chart`, `dashboard`) as Terraform resources. Those entities are the output of ingestion, not inputs to it. Enrichment aspects on those entities (descriptions, ownership, tags) are in the out-of-scope category above. The correct Terraform primitives for data assets are **data sources** (for looking up URNs and metadata), not resources.
 
+## Provider-Level Defaults Integration
+
+Every new resource that manages a platform-level entity (per "Provider Scope" above) should be checked against the provider-level defaults feature (`docs/design/provider-default-labels.md`, `docs/guides/provider-defaults.md`): default custom properties, default tags, default structured properties, and the `managed-by`/`provider-version` auto-property markers.
+
+The check is mechanical: does the entity type's DataHub aspect set include `customProperties`, `globalTags`, or a structured-property aspect? If yes, it belongs in the corresponding mechanism's entry in `defaultsSupport` (`internal/provider/defaults.go`), and the resource needs the same ModifyPlan-merge / Create-Update-apply / Read-reconcile / Import-attribution wiring as the other resources already using that mechanism.
+
+**This is easy to miss because the failure mode is silent, not an error.** A resource left out of `defaultsSupport` simply never receives provider defaults - `terraform plan` and `terraform apply` succeed normally, so nothing calls attention to the gap until a user notices the resource lacks a marker that every sibling resource has. Contrast with, say, forgetting a Read/ImportState wiring for a URN format, which usually surfaces immediately as a failing plan or import.
+
+When a resource is added to a mechanism, update in the same change: the `defaultsSupport` matrix, the mechanism's schema description in `provider.go` (each lists its supported resources by name), and the support matrix table in `docs/guides/provider-defaults.md`.
+
 ## Cross-Environment Parameterization
 
 The standard use case for this provider is managing the same configuration across multiple DataHub environments (dev, staging, prod). URN references that are environment-specific — such as executor IDs, recipe hostnames, or secret names — should be expressed as Terraform input variables, not hardcoded in resource definitions.

@@ -147,6 +147,11 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 - Resources are appropriate for platform-level configuration only. Do not implement resources for managing descriptions, tag assignments, or ownership on individual data assets - those belong to business users and will be overwritten by apply.
 - Data sources are appropriate for looking up asset URNs and metadata without managing them.
 
+**Provider-level defaults**
+- Does the entity type carry `customProperties`, `globalTags`, or a structured-property aspect? If so, it is a defaults candidate - see `docs/design/provider-default-labels.md` and the "Provider-level defaults" guide.
+- Add the entity's kind to the relevant mechanism(s) in `defaultsSupport` (`internal/provider/defaults.go`) and wire the resource's ModifyPlan/Create/Update/Read/Import the same way the existing default-capable resources do. Getting this wrong is silent: the resource just never picks up defaults, with no error to notice.
+- Update the support matrix in `docs/guides/provider-defaults.md` and the `defaults` schema descriptions in `provider.go` to list the new resource.
+
 ## Example conventions
 
 ### File layout

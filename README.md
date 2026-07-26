@@ -91,6 +91,21 @@ Assertion resources create monitor rules visible in the DataHub Validations tab.
 
 Generated docs live under `docs/`.
 
+## Provider-level defaults
+
+The provider can attach default custom properties, tags, and structured properties to every resource it manages, wherever the underlying DataHub entity type supports them (similar in spirit to the AWS provider's `default_tags`). A `managed-by = "terraform"` custom property is also stamped automatically on newly created resources unless disabled.
+
+```terraform
+provider "datahub" {
+  defaults = {
+    custom_properties = { team = "data-platform" }
+    tags              = ["urn:li:tag:terraform-managed"]
+  }
+}
+```
+
+See the [Provider-level defaults guide](docs/guides/provider-defaults.md) for the full support matrix, precedence rules, and bootstrap/destroy ordering.
+
 ## Requirements
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.11

@@ -41,3 +41,32 @@ output "ui_url" {
   description = "DataHub UI path to verify the created data products."
   value       = "Navigate to Govern -> Data Products in the DataHub UI, or open $DATAHUB_GMS_URL/datahub/govern/dataProducts"
 }
+
+output "orders_tags_all" {
+  description = "Orders' merged tags_all -- the marker tag, once var.enable_defaults = true. Null while defaults are off."
+  value       = datahub_data_product.orders.tags_all
+}
+
+output "orders_structured_properties_defaults" {
+  description = "Orders' structured_properties_defaults -- the marker property, once var.enable_defaults = true. Null while defaults are off."
+  value       = datahub_data_product.orders.structured_properties_defaults
+}
+
+output "customer_360_tags_all" {
+  description = "Customer 360's merged tags_all -- the marker tag, once var.enable_defaults = true. Null while defaults are off."
+  value       = datahub_data_product.customer_360.tags_all
+}
+
+output "customer_360_structured_properties_defaults" {
+  description = "Customer 360's structured_properties_defaults -- the marker property, once var.enable_defaults = true. Null while defaults are off."
+  value       = datahub_data_product.customer_360.structured_properties_defaults
+}
+
+output "defaults_summary" {
+  description = "What to do next, depending on whether provider defaults are on."
+  value = var.enable_defaults ? (
+    "Provider defaults are ON. Run: terraform output orders_tags_all / orders_structured_properties_defaults to see the merged values on both data products."
+    ) : (
+    "Provider defaults are OFF (enable_defaults = false). The bootstrap tag and structured property now exist. Re-apply with: terraform apply -var enable_defaults=true, to turn defaults on and see them appear on both data products above."
+  )
+}
