@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-27
+
+### Added
+
+- Provider-level defaults: a new `defaults` provider block (`custom_properties`, `tags`, `structured_properties`) attaches default labels to every resource whose entity type supports them, similar in spirit to the AWS provider's `default_tags`. Resource-level values win over provider defaults on a per-key basis, with a plan-time warning when a differing value collides. Ownership varies by mechanism: `defaults.custom_properties` merges into the existing full-map `custom_properties_all` on `datahub_domain`, `datahub_glossary_term`, `datahub_glossary_node`, `datahub_corp_user`, `datahub_service_account`, and `datahub_data_product`; `defaults.tags` owns the complete `globalTags` list on `datahub_corp_user`, `datahub_service_account`, `datahub_corp_group`, `datahub_data_product`, and all six assertion resources, guarded by an ownership latch so the provider neither reads nor writes an entity's tags until `defaults.tags` is first set (a provider upgrade alone never touches existing UI-applied tags); `defaults.structured_properties` manages only the property URNs it names (per-property ownership, exposed as `structured_properties_defaults`) on `datahub_domain`, `datahub_glossary_term`, `datahub_glossary_node`, `datahub_corp_user`, `datahub_service_account`, `datahub_corp_group`, `datahub_data_product`, and `datahub_data_contract`, applied only to resources whose property definition declares that entity type - so it coexists with `datahub_structured_property_assignment` managing a different property on the same entity, with a plan-time warning if the same property URN is managed both ways. Referenced tags and structured-property definitions must already exist (create them in a prior apply); a missing structured-property definition warns and skips rather than erroring, so `terraform destroy` is never blocked.
+- Auto-properties: a `managed-by = "terraform"` custom property is now written automatically to every newly created resource whose entity type supports custom properties, controlled by the top-level `auto_properties` (default `["managed-by"]`; also accepts `provider-version`) and `auto_property_strategy` (`CREATION_ONLY`, the default, stamps and freezes the value at creation so upgrading the provider never produces diffs on existing resources; `PROACTIVE` enforces the current value on every managed entity on every apply, useful for a one-time convergence pass on an estate created before this feature). Set `auto_properties = []` to disable entirely.
+- New "Provider-level defaults" guide (`docs/guides/provider-defaults.md`) covering the support matrix, precedence and collision rules, ownership and latch semantics, the `auto_property_strategy` upgrade fence, bootstrap and destroy ordering, a search-filterable marker recipe, and the provider-alias opt-out for excluding specific resources.
+- `datahub_structured_property_assignment`: three new supported target entity types - `corpuser` (including service accounts), `corpGroup`, and `dataContract` - alongside the existing `domain`, `glossaryNode`, `glossaryTerm`, and `dataProduct`.
+- `examples/runnable/remote-executor-azure`: a runnable example standing up a complete DataHub Cloud Remote Executor deployment from nothing in a single `terraform apply` - a non-default Remote Executor pool, an AKS cluster with the Key Vault secrets-store CSI addon, an Azure Key Vault, a storage account, the `datahub-executor-worker` Helm chart, and an `abs` ingestion source whose recipe exercises both a DataHub-managed secret (resolved via GMS) and a Key Vault secret (file-mounted by the CSI driver). Creates billable Azure infrastructure; the README carries a cost warning and destroy instructions.
+
 ### Changed
 
 - `datahub_structured_property_assignment`: the `values` attribute is now a **set** of strings instead of a list. DataHub treats a property's assigned values as an unordered collection - it does not preserve or act on their order (validation is by cardinality count and allowed-value membership) - so modelling `values` as an ordered list produced spurious "update in-place" diffs whenever the server returned the values in a different order than the configuration listed them. As a set, reordering the values is a no-op. This is a schema change on an attribute shipped in 0.14.0, but list and set serialize identically in state (a JSON array), so existing state upgrades cleanly with no migration and no plan churn beyond the one-time removal of any pending reorder diff.
+
+### Fixed
+
+- `datahub_glossary_node` / `datahub_glossary_term`: destroying a structured property together with entities that carried it (a single `terraform destroy` of the `structured-and-custom-properties` example did exactly this) could leave an invisible "husk" entity behind - the entity reappears in DataHub's database with only a key aspect, renders nowhere in the UI or search, and blocks the next `terraform apply` with an "already exists" error. Root cause: DataHub's structured-property-deletion cleanup scrolls the eventually-consistent search index for entities carrying the property and patches each hit, and a stale index read can list an entity that was just hard-deleted, resurrecting it. The provider now settles on a zero-count barrier before issuing a structured-property delete, and separately detects and repairs a husk on the next glossary node/term create (only when the blocking entity is provably empty beyond its key aspect; anything with real content surfaces the original error unchanged). A server-side fix is tracked upstream; both resource docs gain an "Orphaned-husk repair" section.
 
 ## [0.15.0] - 2026-07-08
 
@@ -268,7 +282,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.12.0...v0.13.0
