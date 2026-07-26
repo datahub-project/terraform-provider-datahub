@@ -65,6 +65,10 @@ Then open the DataHub UI:
 - Groups: `$DATAHUB_GMS_URL/settings/identities/groups`
 - Users: `$DATAHUB_GMS_URL/settings/identities/users`
 
+## The automatic managed-by marker
+
+When you apply this example, a `managed-by = "terraform"` custom property will appear on the `pipeline_bot` user. That is the provider's `auto_properties` marker, which is on by default for every custom-property-capable resource -- see the "Provider-level defaults" guide. To apply the example without it, add `auto_properties = []` to the provider block.
+
 ## Clean up
 
 ```bash

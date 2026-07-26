@@ -126,6 +126,11 @@ func (r *structuredPropertyAssignmentResource) Schema(_ context.Context, _ resou
 			"`corpuser` (including service accounts), `corpGroup`, and `dataContract` " +
 			"(platform-governance entities). Assigning structured properties to ingested data assets " +
 			"(datasets, dashboards, ...) is out of scope for this provider and is rejected.\n\n" +
+			"This resource can coexist with the provider's `defaults.structured_properties` on the " +
+			"same entity, as long as they manage different property URNs -- ownership there is " +
+			"per-property. Managing the same property URN through both raises a plan-time warning, " +
+			"since the two would fight over its value on alternating applies. See the " +
+			"\"Provider-level defaults\" guide.\n\n" +
 			"## References\n\n" +
 			"Prefer expression inputs: set `structured_property_urn` to " +
 			"`datahub_structured_property.<name>.urn` and `entity_urn` to the target's `.urn` " +

@@ -9,10 +9,57 @@ terraform {
   }
 }
 
+locals {
+  marker_tag_id       = "tf-example-dp-managed"
+  marker_tag_urn      = "urn:li:tag:${local.marker_tag_id}"
+  marker_property_id  = "io.example.terraform.dpManagedBy"
+  marker_property_urn = "urn:li:structuredProperty:${local.marker_property_id}"
+}
+
 # Configure the DataHub provider.
 # Credentials can also be supplied via DATAHUB_GMS_URL / DATAHUB_GMS_TOKEN
 # environment variables.
-provider "datahub" {}
+#
+# defaults.tags and defaults.structured_properties reference the marker tag
+# and structured property below by their deterministic URN (not by a
+# `datahub_tag.x.urn` / `datahub_structured_property.x.urn` reference) --
+# provider configuration is evaluated once, before any resource in this apply
+# runs, so it cannot depend on a resource this same apply would create. See
+# variables.tf and the "Provider-level defaults" guide's bootstrap ordering
+# section: apply once with the default var.enable_defaults = false to create
+# the marker tag/property, then set it to true and re-apply.
+provider "datahub" {
+  defaults = var.enable_defaults ? {
+    tags = [local.marker_tag_urn]
+    structured_properties = {
+      (local.marker_property_urn) = ["true"]
+    }
+  } : null
+}
+
+# ---------------------------------------------------------------------------
+# Bootstrap: the marker tag and structured property that defaults.tags and
+# defaults.structured_properties reference once enabled. These must exist
+# before var.enable_defaults is set to true (see the provider block above).
+# ---------------------------------------------------------------------------
+
+resource "datahub_tag" "managed" {
+  tag_id      = local.marker_tag_id
+  name        = "TF Example - DP Managed"
+  description = "Applied automatically to every data product this example's provider defaults manage."
+}
+
+resource "datahub_structured_property" "managed_by" {
+  property_id  = local.marker_property_id
+  display_name = "TF Example - DP Managed By Terraform"
+  description  = "Search-filterable marker: value \"true\" means Terraform manages this data product."
+  value_type   = "string"
+  entity_types = ["dataProduct"]
+
+  settings = {
+    show_in_search_filters = true
+  }
+}
 
 # ---------------------------------------------------------------------------
 # Domain

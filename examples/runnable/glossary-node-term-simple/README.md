@@ -54,6 +54,10 @@ DataHub's `deleteGlossaryEntity` mutation does not check for children before del
 
 In this example every `parent_node` is set to `<resource>.urn` (a Terraform reference, not a raw URN string). Terraform uses these edges to build a dependency graph, which guarantees that terms are destroyed before their parent nodes and child nodes before root nodes. Never replace `.urn` references with hard-coded URN strings, as doing so removes those edges.
 
+## The automatic managed-by marker
+
+When you apply this example, a `managed-by = "terraform"` custom property will appear on every node and term. That is the provider's `auto_properties` marker, which is on by default for every custom-property-capable resource -- see the "Provider-level defaults" guide. To apply the example without it, add `auto_properties = []` to the provider block.
+
 ## Cleanup
 
 ```bash

@@ -12,6 +12,18 @@ provider "datahub" {
   # Credentials from environment:
   #   DATAHUB_GMS_URL   - e.g. https://your-instance.acryl.io/gms  (or http://localhost:8080 for OSS)
   #   DATAHUB_GMS_TOKEN - personal access token
+
+  # A provider-level default custom property. It has no bootstrap dependency
+  # (unlike defaults.tags / defaults.structured_properties, it is a literal
+  # map -- nothing needs to exist beforehand), so it applies from the very
+  # first apply. It merges into every custom-property-capable resource below,
+  # alongside the automatic managed-by marker and each entity's own
+  # custom_properties -- see "Provider-level defaults" in the README.
+  defaults = {
+    custom_properties = {
+      team = "data-platform"
+    }
+  }
 }
 
 # ---------------------------------------------------------------------------
