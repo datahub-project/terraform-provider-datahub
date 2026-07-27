@@ -36,6 +36,49 @@ func TestAcc_Policy_Metadata(t *testing.T) {
 	})
 }
 
+// TestAcc_Policy_Filter exercises the criteria-based resources.filter scope:
+// multi-type plus tag scoping, an in-place criteria edit, and import fidelity.
+func TestAcc_Policy_Filter(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	policyID := tg.Name("tfprovider-policy-filter")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyFilterSteps(policyID),
+	})
+}
+
+// TestAcc_Policy_FilterImport imports a filter-scoped policy the provider did not
+// create -- the UI-authored case whose scope the read path used to discard.
+// Mock-only: it seeds the policy via /test-control/seed-policy.
+func TestAcc_Policy_FilterImport(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.Kind != datahubtesting.TargetMock {
+		t.Skip("seeding a UI-shaped policy requires the mock target")
+	}
+	policyID := tg.Name("tfprovider-policy-seeded")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyFilterImportSteps(policyID),
+	})
+}
+
+// TestAcc_Policy_FilterConflicts verifies the plan-time guards that stop a
+// filter being silently overridden by the deprecated resource attributes.
+func TestAcc_Policy_FilterConflicts(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	policyID := tg.Name("tfprovider-policy-conflict")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyFilterConflictSteps(policyID),
+	})
+}
+
 // TestAcc_Policy_Drift verifies out-of-band deletion is detected and re-created.
 func TestAcc_Policy_Drift(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)

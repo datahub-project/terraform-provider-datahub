@@ -1323,6 +1323,280 @@ resource "datahub_policy" "test" {
 	}
 }
 
+// PolicyFilterSteps covers the criteria-based resources.filter form: a scope
+// spanning two entity types AND a tag, which the legacy type/resources
+// attributes cannot express. Also covers an in-place criteria edit and that the
+// filter survives a round-trip through import.
+func PolicyFilterSteps(policyID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+	criteria := tfjsonpath.New("resources").AtMapKey("filter").AtMapKey("criteria")
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Snowflake Dataset Owners"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS"]
+  actors = {
+    resource_owners = true
+  }
+  resources = {
+    filter = {
+      criteria = [
+        { field = "TYPE", values = ["dataset", "container"] },
+        { field = "TAG", values = ["urn:li:tag:source:snowflake"] },
+      ]
+    }
+  }
+}
+`, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("actors").AtMapKey("resource_owners"), knownvalue.Bool(true)),
+				statecheck.ExpectKnownValue(addr, criteria, knownvalue.ListSizeExact(2)),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("field"), knownvalue.StringExact("TYPE")),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("values"), knownvalue.ListSizeExact(2)),
+				// condition is Optional+Computed and defaults to EQUALS.
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("condition"), knownvalue.StringExact("EQUALS")),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(1).AtMapKey("field"), knownvalue.StringExact("TAG")),
+				// The legacy attributes stay unset when the filter form is used.
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("resources").AtMapKey("type"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("resources").AtMapKey("all_resources"), knownvalue.Bool(false)),
+			},
+		},
+		{
+			// Narrow the scope in place: drop container, switch the tag criterion
+			// to a prefix match.
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Snowflake Dataset Owners"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS"]
+  actors = {
+    resource_owners = true
+  }
+  resources = {
+    filter = {
+      criteria = [
+        { field = "TYPE", values = ["dataset"] },
+        { field = "TAG", values = ["urn:li:tag:source:"], condition = "STARTS_WITH" },
+      ]
+    }
+  }
+}
+`, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, criteria, knownvalue.ListSizeExact(2)),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("values"), knownvalue.ListSizeExact(1)),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(1).AtMapKey("condition"), knownvalue.StringExact("STARTS_WITH")),
+			},
+		},
+		{
+			// Round-trip the provider's own write through import. PolicyFilterImportSteps
+			// covers the harder case of importing a policy the provider never wrote.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// SeedFilterPolicy injects a filter-scoped METADATA policy into the mock store at
+// baseURL via /test-control/seed-policy, bypassing the provider's own write path.
+// Stands in for a policy authored in the DataHub UI. Mock-only.
+func SeedFilterPolicy(baseURL, policyID, name, criteriaJSON string) {
+	body := fmt.Sprintf(`{"id":%q,"name":%q,"criteria":%s}`, policyID, name, criteriaJSON)
+	resp, err := http.Post(baseURL+"/test-control/seed-policy", "application/json", strings.NewReader(body)) //nolint:noctx
+	if err != nil {
+		panic(fmt.Sprintf("SeedFilterPolicy: %v", err))
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		panic(fmt.Sprintf("SeedFilterPolicy: unexpected status %d", resp.StatusCode))
+	}
+}
+
+// PolicyFilterImportSteps imports a filter-scoped policy that the provider did
+// not create, which is the case that actually regressed: the read path dropped
+// resources.filter, so importing a UI-authored policy produced state with an
+// empty scope and the next apply would widen the policy to every resource.
+//
+// Importing a provider-written policy cannot catch this on its own -- the write
+// path and the read path would have to be wrong in the same way. Seeding the
+// policy directly makes the read path the only thing under test. Mock-only:
+// a live target does not expose /test-control/seed-policy.
+func PolicyFilterImportSteps(policyID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+
+	// Mirrors the aspect JSON a UI-built policy carries, including a NOT_EQUALS
+	// criterion that no other test exercises. The last criterion omits condition
+	// entirely: PolicyMatchCondition defaults to EQUALS in the PDL, so a
+	// serialiser that drops defaulted fields would produce this, and the provider
+	// has to normalise it rather than store an empty string (which would surface
+	// as a permanent diff against any config).
+	const seeded = `[
+		{"field":"TYPE","values":["dataset","container"],"condition":"EQUALS"},
+		{"field":"TAG","values":["urn:li:tag:DIMENSION"],"condition":"EQUALS"},
+		{"field":"DOMAIN","values":["urn:li:domain:marketing"],"condition":"NOT_EQUALS"},
+		{"field":"CONTAINER","values":["urn:li:container:analytics"]}
+	]`
+
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Seeded UI Policy"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS"]
+  actors = {
+    resource_owners = true
+  }
+  resources = {
+    filter = {
+      criteria = [
+        { field = "TYPE", values = ["dataset", "container"] },
+        { field = "TAG", values = ["urn:li:tag:DIMENSION"] },
+        { field = "DOMAIN", values = ["urn:li:domain:marketing"], condition = "NOT_EQUALS" },
+        { field = "CONTAINER", values = ["urn:li:container:analytics"] },
+      ]
+    }
+  }
+}
+`, policyID)
+
+	return []resource.TestStep{
+		{
+			PreConfig: func() {
+				SeedFilterPolicy(os.Getenv("DATAHUB_GMS_URL"), policyID, "Seeded UI Policy", seeded)
+			},
+			Config:             cfg,
+			ResourceName:       addr,
+			ImportState:        true,
+			ImportStateId:      policyID,
+			ImportStatePersist: true,
+			ImportStateCheck: func(states []*terraform.InstanceState) error {
+				if len(states) != 1 {
+					return fmt.Errorf("expected 1 imported instance, got %d", len(states))
+				}
+				attrs := states[0].Attributes
+				// The scope must survive import. Before the read-path fix these
+				// were all absent and the count was "0".
+				want := map[string]string{
+					"resources.filter.criteria.#":           "4",
+					"resources.filter.criteria.0.field":     "TYPE",
+					"resources.filter.criteria.0.values.#":  "2",
+					"resources.filter.criteria.0.values.0":  "dataset",
+					"resources.filter.criteria.0.values.1":  "container",
+					"resources.filter.criteria.0.condition": "EQUALS",
+					"resources.filter.criteria.1.field":     "TAG",
+					"resources.filter.criteria.1.values.0":  "urn:li:tag:DIMENSION",
+					"resources.filter.criteria.2.field":     "DOMAIN",
+					"resources.filter.criteria.2.condition": "NOT_EQUALS",
+					"resources.filter.criteria.3.field":     "CONTAINER",
+					// Seeded with no condition; normalised to the PDL default.
+					"resources.filter.criteria.3.condition": "EQUALS",
+				}
+				for k, v := range want {
+					if got := attrs[k]; got != v {
+						return fmt.Errorf("imported attribute %s = %q, want %q", k, got, v)
+					}
+				}
+				return nil
+			},
+		},
+		{
+			// The imported state must match the equivalent config exactly: an
+			// empty plan proves the round-trip is lossless in both directions.
+			Config:             cfg,
+			PlanOnly:           true,
+			ExpectNonEmptyPlan: false,
+		},
+	}
+}
+
+// PolicyFilterConflictSteps verifies the plan-time guards on resources.filter.
+// The server accepts a filter alongside the deprecated attributes and then
+// evaluates only the filter, so these have to be caught before apply.
+func PolicyFilterConflictSteps(policyID string) []resource.TestStep {
+	cfg := func(resources string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Conflicting Scope"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS"]
+  actors = {
+    all_users = true
+  }
+  resources = %s
+}
+`, policyID, resources)
+	}
+
+	return []resource.TestStep{
+		{
+			Config: cfg(`{
+    type = "dataset"
+    filter = {
+      criteria = [{ field = "TAG", values = ["urn:li:tag:pii"] }]
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`Conflicting resource scope`),
+		},
+		{
+			Config: cfg(`{
+    resources = ["urn:li:dataset:(urn:li:dataPlatform:hive,foo,PROD)"]
+    filter = {
+      criteria = [{ field = "TAG", values = ["urn:li:tag:pii"] }]
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`Conflicting resource scope`),
+		},
+		{
+			Config: cfg(`{
+    all_resources = true
+    filter = {
+      criteria = [{ field = "TAG", values = ["urn:li:tag:pii"] }]
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`Conflicting resource scope`),
+		},
+		{
+			Config: cfg(`{
+    filter = {
+      criteria = []
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`Empty criteria list`),
+		},
+		{
+			Config: cfg(`{
+    filter = {
+      criteria = [{ field = "TAG", values = [] }]
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`Empty values list`),
+		},
+		{
+			Config: cfg(`{
+    filter = {
+      criteria = [{ field = "NOT_A_FIELD", values = ["x"] }]
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`is not valid; expected one of`),
+		},
+		{
+			Config: cfg(`{
+    filter = {
+      criteria = [{ field = "TAG", values = ["urn:li:tag:pii"], condition = "MATCHES" }]
+    }
+  }`),
+			ExpectError: regexp.MustCompile(`is not valid; expected one of`),
+		},
+	}
+}
+
 // PolicyDriftSteps verifies out-of-band deletion is detected and the policy is
 // re-created on the next apply.
 func PolicyDriftSteps(policyID string) []resource.TestStep {
