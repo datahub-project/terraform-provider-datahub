@@ -8,7 +8,9 @@ description: |-
   Policies grant a set of privileges to a set of actors (users and/or groups), optionally scoped to a set of resources. There are two policy types:
   PLATFORM -- top-level administrative privileges (e.g. MANAGE_POLICIES, MANAGE_INGESTION). Omit the resources block.METADATA -- privileges over metadata entities (e.g. EDIT_ENTITY_TAGS), optionally scoped via the resources block.
   Resource scoping
-  resources accepts two mutually exclusive forms. resources.filter is the current one and the only one that can scope by tag, domain, container or several entity types at once:
+  resources accepts two mutually exclusive forms:
+  filter -- a list of criteria. The only form that can scope by tag, domain or container, or across several entity types at once. This is what the DataHub UI writes.type + resources + all_resources -- a single entity type plus an explicit list of resource URNs. The original form, since deprecated by DataHub. Still supported, but it cannot express any of the scopes listed above.
+  Prefer filter. A criteria scope looks like this:
   
   resources = {
     filter = {
@@ -20,7 +22,7 @@ description: |-
   }
   
   Criteria combine with AND; the values within one criterion combine with OR. The example above matches datasets and containers that also carry the pii tag. There is no top-level OR -- a scope such as "tagged pii OR in domain finance" needs two policies.
-  resources.type, resources.resources and resources.all_resources are the legacy form, deprecated by DataHub. They remain supported for existing configurations but cannot express tag or multi-type scoping, and cannot be combined with filter.
+  The two forms cannot be combined: setting filter alongside type, resources or all_resources is rejected at plan time, because DataHub would silently evaluate the filter alone and ignore the rest.
   Naming
   policy_id becomes the URN suffix (urn:li:dataHubPolicy:<policy_id>). Supplying an explicit id keeps the URN deterministic and stable, avoiding the random UUID the DataHub UI assigns.
   List ownership
@@ -42,7 +44,12 @@ Policies grant a set of privileges to a set of actors (users and/or groups), opt
 
 ## Resource scoping
 
-`resources` accepts two mutually exclusive forms. `resources.filter` is the current one and the only one that can scope by tag, domain, container or several entity types at once:
+`resources` accepts two mutually exclusive forms:
+
+- **`filter`** -- a list of criteria. The only form that can scope by tag, domain or container, or across several entity types at once. This is what the DataHub UI writes.
+- **`type` + `resources` + `all_resources`** -- a single entity type plus an explicit list of resource URNs. The original form, since deprecated by DataHub. Still supported, but it cannot express any of the scopes listed above.
+
+Prefer `filter`. A criteria scope looks like this:
 
 ```terraform
 resources = {
@@ -57,7 +64,7 @@ resources = {
 
 Criteria combine with AND; the `values` within one criterion combine with OR. The example above matches datasets and containers that also carry the `pii` tag. There is no top-level OR -- a scope such as "tagged `pii` OR in domain `finance`" needs two policies.
 
-`resources.type`, `resources.resources` and `resources.all_resources` are the legacy form, deprecated by DataHub. They remain supported for existing configurations but cannot express tag or multi-type scoping, and cannot be combined with `filter`.
+The two forms cannot be combined: setting `filter` alongside `type`, `resources` or `all_resources` is rejected at plan time, because DataHub would silently evaluate the filter alone and ignore the rest.
 
 ## Naming
 
@@ -192,7 +199,7 @@ resource "datahub_policy" "all_source_tagged_viewers" {
 - `description` (String) Description of the policy's purpose.
 - `resources` (Attributes) Resource scope for METADATA policies. Omit for platform-wide PLATFORM policies.
 
-Use `filter` for anything beyond a single resource type or an explicit URN list. `type`, `resources` and `all_resources` are the deprecated legacy form and cannot express tag, domain, container or multi-type scoping. (see [below for nested schema](#nestedatt--resources))
+Set either `filter` (criteria-based) or the deprecated `type` / `resources` / `all_resources` trio, never both. Only `filter` can scope by tag, domain or container, or across several entity types at once. (see [below for nested schema](#nestedatt--resources))
 - `state` (String) Policy state: `ACTIVE` (enforced) or `INACTIVE`. Defaults to `ACTIVE`.
 
 ### Read-Only

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -1593,6 +1594,54 @@ resource "datahub_policy" "test" {
     }
   }`),
 			ExpectError: regexp.MustCompile(`is not valid; expected one of`),
+		},
+	}
+}
+
+// publishedProviderVersion is the released provider the upgrade test starts from.
+// Bump it when a newer release supersedes it as the realistic upgrade origin.
+const publishedProviderVersion = "0.16.0"
+
+// PolicyUpgradeSteps applies a legacy-scoped policy with the last published
+// provider, then re-plans with the build under test. The first step deliberately
+// exercises only attributes that existed in that release; the second asserts an
+// empty plan, which is what proves the added resources.filter attribute did not
+// break decoding of prior state or introduce a diff for existing configs.
+//
+// devFactories is the caller's ProtoV6ProviderFactories map, threaded through so
+// this package does not need to import the provider it tests.
+func PolicyUpgradeSteps(policyID string, devFactories map[string]func() (tfprotov6.ProviderServer, error)) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Legacy Scoped Policy"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS"]
+  actors = {
+    all_users = true
+  }
+  resources = {
+    type      = "dataset"
+    resources = ["urn:li:dataset:(urn:li:dataPlatform:hive,upgrade.fixture,PROD)"]
+  }
+}
+`, policyID)
+
+	return []resource.TestStep{
+		{
+			ExternalProviders: map[string]resource.ExternalProvider{
+				"datahub": {
+					Source:            "datahub-project/datahub",
+					VersionConstraint: publishedProviderVersion,
+				},
+			},
+			Config: cfg,
+		},
+		{
+			ProtoV6ProviderFactories: devFactories,
+			Config:                   cfg,
+			PlanOnly:                 true,
+			ExpectNonEmptyPlan:       false,
 		},
 	}
 }

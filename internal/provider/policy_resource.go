@@ -116,8 +116,13 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"- `METADATA` -- privileges over metadata entities (e.g. `EDIT_ENTITY_TAGS`), optionally " +
 			"scoped via the `resources` block.\n\n" +
 			"## Resource scoping\n\n" +
-			"`resources` accepts two mutually exclusive forms. `resources.filter` is the current one and " +
-			"the only one that can scope by tag, domain, container or several entity types at once:\n\n" +
+			"`resources` accepts two mutually exclusive forms:\n\n" +
+			"- **`filter`** -- a list of criteria. The only form that can scope by tag, domain or " +
+			"container, or across several entity types at once. This is what the DataHub UI writes.\n" +
+			"- **`type` + `resources` + `all_resources`** -- a single entity type plus an explicit list " +
+			"of resource URNs. The original form, since deprecated by DataHub. Still supported, but it " +
+			"cannot express any of the scopes listed above.\n\n" +
+			"Prefer `filter`. A criteria scope looks like this:\n\n" +
 			"```terraform\n" +
 			"resources = {\n" +
 			"  filter = {\n" +
@@ -131,9 +136,9 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"Criteria combine with AND; the `values` within one criterion combine with OR. The example " +
 			"above matches datasets and containers that also carry the `pii` tag. There is no top-level " +
 			"OR -- a scope such as \"tagged `pii` OR in domain `finance`\" needs two policies.\n\n" +
-			"`resources.type`, `resources.resources` and `resources.all_resources` are the legacy form, " +
-			"deprecated by DataHub. They remain supported for existing configurations but cannot express " +
-			"tag or multi-type scoping, and cannot be combined with `filter`.\n\n" +
+			"The two forms cannot be combined: setting `filter` alongside `type`, `resources` or " +
+			"`all_resources` is rejected at plan time, because DataHub would silently evaluate the " +
+			"filter alone and ignore the rest.\n\n" +
 			"## Naming\n\n" +
 			"`policy_id` becomes the URN suffix (`urn:li:dataHubPolicy:<policy_id>`). Supplying an " +
 			"explicit id keeps the URN deterministic and stable, avoiding the random UUID the DataHub " +
@@ -234,9 +239,9 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"resources": schema.SingleNestedAttribute{
 				Optional: true,
 				MarkdownDescription: "Resource scope for METADATA policies. Omit for platform-wide PLATFORM policies.\n\n" +
-					"Use `filter` for anything beyond a single resource type or an explicit URN list. " +
-					"`type`, `resources` and `all_resources` are the deprecated legacy form and cannot " +
-					"express tag, domain, container or multi-type scoping.",
+					"Set either `filter` (criteria-based) or the deprecated `type` / `resources` / " +
+					"`all_resources` trio, never both. Only `filter` can scope by tag, domain or container, " +
+					"or across several entity types at once.",
 				Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{
 						Optional:            true,
