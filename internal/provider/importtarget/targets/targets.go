@@ -388,6 +388,20 @@ func init() {
 		OSSCompatible:      false,
 	})
 
+	// Organization display preferences are a Cloud-only singleton. Enumeration
+	// is deliberately not offered even though the URN is fixed and always
+	// present: the resource owns every field it exposes, so auto-generating an
+	// import for org-wide branding would nudge users into a config that blanks
+	// whichever field they omit. Importing it is a deliberate choice, and the
+	// import ID is ignored (see the resource's ImportState).
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_organization_display_preferences",
+		DataSourceTypeName: "",
+		Enumerate:          nil,
+		IDFromURN:          func(urn string) string { return urn },
+		OSSCompatible:      false,
+	})
+
 	// --- Relationship / composite resources: no single-URN import identity ---
 
 	// datahub_corp_group_member identifies a (group, member) pair, not a single

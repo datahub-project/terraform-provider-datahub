@@ -93,10 +93,13 @@ type mockServer struct {
 	actionPipelines map[string]mockActionPipeline
 	assignmentRules map[string]mockAssignmentRule
 	dataContracts   map[string]mockDataContract
-	defaultPoolID   string
-	inviteToken     string
-	resetTokens     map[string]string
-	ossSignUpMode   bool
+	// orgDisplayPreferences is the globalSettings singleton's visual section.
+	// A zero value means "nothing set", which is how a fresh instance reads.
+	orgDisplayPreferences mockOrgDisplayPreferences
+	defaultPoolID         string
+	inviteToken           string
+	resetTokens           map[string]string
+	ossSignUpMode         bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -153,6 +156,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/structuredproperty/", s.handleStructuredPropertyItem)
 	mux.HandleFunc("/openapi/v3/entity/tag", s.handleTagCollection)
 	mux.HandleFunc("/openapi/v3/entity/tag/", s.handleTagItem)
+	mux.HandleFunc("/openapi/v3/entity/globalsettings/", s.handleGlobalSettingsItem)
 	mux.HandleFunc("/openapi/v3/entity/ownershiptype", s.handleOwnershipTypeCollection)
 	mux.HandleFunc("/openapi/v3/entity/ownershiptype/", s.handleOwnershipTypeItem)
 	mux.HandleFunc("/openapi/v3/entity/dataproduct", s.handleDataProductCollection)
@@ -196,6 +200,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(q, "me {"):
 		s.handleMe(w)
+	case strings.Contains(q, "updateOrganizationDisplayPreferences"):
+		s.handleUpdateOrganizationDisplayPreferences(w, req.Variables)
 	case strings.Contains(q, "createSecret"):
 		s.handleCreateSecret(w, req.Variables)
 	case strings.Contains(q, "updateSecret"):
