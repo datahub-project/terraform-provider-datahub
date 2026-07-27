@@ -36,8 +36,9 @@ This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — an
 | 8 | **Per-asset enrichment** | *(deny-list)* | none | Explicitly out of scope — documented below. |
 | 9 | **Action workflows** | *(MEDIUM, experimental)* | resource | Cloud-only governance workflows; revisit when stable. |
 | 10 | **Lineage / versioning / ER** | *(LOW)* | data source only | Manual lineage overwritten by ingestion. |
-| 11 | **AI / Compass / Documents / Subscriptions / Page modules** | *(IRRELEVANT)* | none | Runtime/per-user/experimental Cloud features. |
+| 11 | **AI / Compass / Documents / Subscriptions** | *(IRRELEVANT)* | none | Runtime/per-user/experimental Cloud features. |
 | 12 | **Infrastructure / ops** | *(IRRELEVANT)* | none | Kafka, ES, K8s, RestoreIndices, Iceberg REST catalog, etc. |
+| 13 | **Home-page layout (page templates/modules)** | `dataHubPageTemplate`, `dataHubPageModule` | resource | Split out of 11 -- `category: core` in OSS, not Cloud-only; `GLOBAL` scope is the org-default admins configure. |
 
 ---
 
@@ -182,6 +183,8 @@ Each setting is a singleton (URN `urn:li:globalSettings:0` etc.). HashiCorp idio
 | `updateGlobalViewsSettings` / `globalViewsSettings` | M/Q | MEDIUM | no | Org default view setting. |
 | `updateSampleDataSettings` / `updateHelpLink` / `updateOrganizationDisplayPreferences` | M/Q | LOW | varies | UI prefs. |
 
+**Caveat added 2026-07-28**: the "Cloud-only" column above answers "does the mutation exist on OSS", but the `globalSettings` entity itself is marked `category: internal` in `entity-registry.yml` — the same stability tier as `datahub_remote_executor_pool`'s underlying mutations (`category: internal` in DataHub Cloud, no external API stability guarantee). Treat `datahub_global_settings` under the same disclaimer convention when it's built, not as a plain-stable resource just because it's OSS-available. See Category 13 for the `homePage` sub-field specifically, which additionally lacks any public update mutation today.
+
 ---
 
 ## Category 8: Per-asset Enrichment (DENY-LIST)
@@ -233,7 +236,7 @@ Each setting is a singleton (URN `urn:li:globalSettings:0` etc.). HashiCorp idio
 
 ---
 
-## Category 11: AI / Compass / Documents / Subscriptions / Page Customization (IRRELEVANT)
+## Category 11: AI / Compass / Documents / Subscriptions (IRRELEVANT)
 
 All Cloud-only, runtime/per-user, or experimental. No TF resource shape:
 
@@ -244,8 +247,9 @@ All Cloud-only, runtime/per-user, or experimental. No TF resource shape:
 - `createAgent`/`updateAgent`/`deleteAgent`/`createTask`/`runTask` — AI agents (experimental)
 - `createEval`/`runEvals` — AI evals (experimental)
 - `upsertAiPlugin`/`deleteAiPlugin` — AI plugin config (borderline; revisit if customers ask)
-- `upsertPageModule`/`deletePageModule`/`upsertPageTemplate`/`deletePageTemplate` — UI page customization
 - `createDraftEntity` — governance drafts
+
+`upsertPageModule`/`deletePageModule`/`upsertPageTemplate`/`deletePageTemplate` (UI page customization) previously sat in this bucket. Moved out to Category 13 (2026-07-28): verified directly against the OSS repo (not just schema surface) that these are `category: core` entities with a real `GLOBAL` org-default scope, not a Cloud-only or purely per-user mechanism -- see Category 13.
 
 ---
 
@@ -261,6 +265,20 @@ No TF resource shape. Listed so nothing is silently excluded:
 - **Iceberg REST catalog** (6 controllers, ~22 paths) — DataHub-as-Iceberg-catalog is a separate product surface
 - **Entity Registry / Lineage Registry / Entity Consistency / Timeline / Logical Models** — internal/legacy/operational
 - **Generic Relationships / Generic Timeseries / Relationships (v1) / Entities (v1) / Platform Entities** — legacy endpoints superseded by v2/v3
+
+---
+
+## Category 13: Home-page Layout (Page Templates / Modules)
+
+Split out of Category 11 (2026-07-28) after a closer look showed the earlier "Cloud-only, runtime/per-user, or experimental" bucketing didn't hold for the `GLOBAL`-scope half of this feature. Verified directly against the OSS repo, using the same two-layer approach as the "Stability classification" note below (entity-model layer + GraphQL/resolver layer), not just a schema-surface grep:
+
+- **Entity-model layer**: `metadata-models/src/main/resources/entity-registry.yml` marks both `dataHubPageTemplate` and `dataHubPageModule` `category: core` (the same file marks `globalSettings` `category: internal` a few hundred lines earlier — direct evidence the registry does distinguish stability tiers, so a `core` marking here is meaningful, not a default).
+- **GraphQL/resolver layer**: `upsertPageTemplate`/`deletePageTemplate`/`upsertPageModule`/`deletePageModule` and their resolvers (`UpsertPageTemplateResolver`, `DeletePageTemplateResolver`, `UpsertPageModuleResolver`, `DeletePageModuleResolver`) live in `datahub-graphql-core` — the OSS-stable location per this doc's own classification scheme — with matching unit tests, and the schema is consumed by `datahub-web-react` (the OSS frontend), not just declared and unused. The resolvers gate on a plain `AuthorizationUtils.canManageHomePageTemplates` privilege check when `scope == GLOBAL`; no license/feature-flag gate of the kind that would mark it Cloud-only.
+- Confirmed identical in `datahub-fork` — no Cloud-only override or extension of this specific feature.
+
+**The shape**: `dataHubPageTemplate` holds ordered rows of `dataHubPageModule` references (a `Form`/`metadata_test`-style nested-list resource, not a flat singleton). Both carry `visibility.scope` of `PERSONAL` or `GLOBAL`. `PERSONAL` templates are exactly the per-user, low-value case Category 11 correctly excludes. `GLOBAL` templates are the org-default home-page layout an admin configures — a legitimate platform-config resource under this provider's existing scope rules. See Tier 2 for the proposed `datahub_page_template` + `datahub_page_module` pair.
+
+A related but distinct piece stays out of scope for now: `globalSettings.homePage.defaultTemplate` (the pointer saying "this `GLOBAL` template is the one everyone sees") lives on the `globalSettings` singleton from Category 7, which is `category: internal` and — as of this check — has only a read resolver (`GlobalHomePageSettingsResolver`), no public update mutation. Revisit once Category 7's `datahub_global_settings` work looks at that singleton in detail.
 
 ---
 
@@ -359,6 +377,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | 10 | `datahub_metadata_test` | resource + data source | yes (API) | API mutations confirmed OSS; management UI is Cloud-only; no nav entry in OSS frontend |
 | 14 | `datahub_service_account` | resource + data source | yes (1.4.0+) | Moved from Tier 3 - OSS since Core v1.4.0. Deterministic aspect write (`service_<id>` + `subTypes=[SERVICE_ACCOUNT]`) like `ownership_type`/`domain`, subtype-guarded read; token is a separate write-once resource; needs Metadata Service Auth enabled |
 | ~~11~~ | ~~`datahub_ownership_type`~~ | resource + data source | yes | **Shipped ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50))** |
+| 17 | `datahub_page_template` + `datahub_page_module` | resource | yes | See Category 13. Template = ordered rows of module references (`form`/`metadata_test`-style nesting); `GLOBAL`-scope only (reject/ignore `PERSONAL` at plan time, same call as excluding per-asset enrichment); admin-gated via `manageHomePageTemplates`. |
 
 ### Tier 3 — Cloud-only, high leverage, accept stability caveat
 
