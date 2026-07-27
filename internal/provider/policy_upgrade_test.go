@@ -4,7 +4,6 @@
 package provider_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -23,15 +22,9 @@ import (
 // existing configurations neither error on state upgrade nor acquire a spurious
 // diff from the new attribute.
 func TestAcc_Policy_UpgradeFromPublished(t *testing.T) {
-	// A dev_overrides block makes Terraform serve datahub-project/datahub from the
-	// local build and ignore required_providers entirely, so step 1 would silently
-	// run on the build under test instead of the published one and the test would
-	// pass no matter what. `make dev-override` sets this via .mise.env for local
-	// development, so refuse to run rather than report a meaningless pass.
-	if cfg := os.Getenv("TF_CLI_CONFIG_FILE"); cfg != "" {
-		t.Skipf("TF_CLI_CONFIG_FILE=%s is set; a dev override would make this test vacuous. "+
-			"Re-run with it unset: mise exec -- env -u TF_CLI_CONFIG_FILE go test ...", cfg)
-	}
+	// Required: without this a local dev_overrides block serves both steps from the
+	// build under test, and the test passes regardless of what the schema does.
+	datahubtesting.NeutralizeDevOverride(t)
 
 	tg := datahubtesting.SetupTarget(t)
 	if tg.Kind != datahubtesting.TargetMock {
