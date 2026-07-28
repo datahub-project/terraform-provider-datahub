@@ -148,6 +148,12 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 - Resources are appropriate for platform-level configuration only. Do not implement resources for managing descriptions, tag assignments, or ownership on individual data assets - those belong to business users and will be overwritten by apply.
 - Data sources are appropriate for looking up asset URNs and metadata without managing them.
 
+**Org-level settings and singletons**
+- Is this a setting on the `globalSettings` singleton (or a similar always-present platform object)? If so, read `docs/design/provider-org-settings.md` before designing it - `datahub_organization_display_preferences` is the reference implementation.
+- **Group by administrative domain**, not by UI page and not by GraphQL mutation. One resource per set of settings that one persona owns, one privilege gates, and one availability tier applies to. Aspect sections are the raw material; merge where a domain spans several. Anchoring on the page breaks because pages mix org-wide and per-user settings and get rearranged; anchoring on the mutation breaks because `updateGlobalSettings` alone spans SSO, notifications, integrations and four AI groups.
+- **Check the scope of every control on the page.** Every DataHub settings page examined so far mixes org-wide settings with per-user ones (`corpUserSettings`). Per-user preferences are out of scope by the provider-scope rule above; only the org-wide half is ever modelled.
+- Do not collapse the settings surface into one fat `datahub_global_settings`: resources here own what they declare, so that would reset unrelated settings when a user manages one of them, and privileges, availability tiers and owning teams all differ per domain.
+
 **Provider-level defaults**
 - Does the entity type carry `customProperties`, `globalTags`, or a structured-property aspect? If so, it is a defaults candidate - see `docs/design/provider-default-labels.md` and the "Provider-level defaults" guide.
 - Add the entity's kind to the relevant mechanism(s) in `defaultsSupport` (`internal/provider/defaults.go`) and wire the resource's ModifyPlan/Create/Update/Read/Import the same way the existing default-capable resources do. Getting this wrong is silent: the resource just never picks up defaults, with no error to notice.

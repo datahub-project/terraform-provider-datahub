@@ -26,7 +26,7 @@ A request to manage "whatever it takes to gain access to the settings on `/setti
 
 The upshot: everything in scope is Cloud-only, which is what makes a single resource viable. Had "Show Applications" been included, one resource would have mixed OSS and Cloud fields and partially failed on OSS - the alternative being to split by availability tier.
 
-Also on the same settings *area* but a different route, so out of scope here: `updateHelpLink` (org-wide, Cloud-only, `globalSettingsInfo.visual.helpLink`). It is a reasonable future sibling resource and would reuse this pattern directly.
+Also org-wide and Cloud-only, and stored in the same `globalSettingsInfo.visual` section, but surfaced on a different route so not built here: `updateHelpLink`. When it is built it becomes additional attributes on *this* resource rather than a resource of its own - see "Resource granularity and naming" below.
 
 ## Empirical findings (DataHub Cloud, 2026-07-28)
 
@@ -57,6 +57,56 @@ Conventions established here, for reuse by the settings siblings that follow (`h
 ### Not every singleton needs a resource
 
 Restating the roadmap's rule because it applied here: prefer a singleton resource when the aspect section carries multiple coherent fields (as `visual`'s name+logo do), or when a flag-on-member would create a cross-instance invariant Terraform cannot check at plan time. A one-field singleton already projected onto another resource's attribute - like the remote-executor default pointer on `datahub_remote_executor_pool.is_default` - does not warrant its own resource.
+
+## Resource granularity and naming
+
+The question this section answers: DataHub has a lot of org-level settings. How many Terraform resources should they become, where are the boundaries, and what do we call them?
+
+### Two anchors that look obvious and are both wrong
+
+**Not the UI page.** The obvious reading of "build a resource for `/settings/preferences`" is one resource per settings page. That page alone spans three different storage homes and two scopes:
+
+| Control | Stored in | Scope |
+|---|---|---|
+| Org name, logo, sample data | `globalSettingsInfo.visual` | org-wide |
+| Show Applications | `globalSettingsInfo.applications` | org-wide |
+| Language | `corpUserSettings.locale` | **per-user** |
+
+A page is a UI grouping chosen for human browsing, it mixes things Terraform must treat differently, and DataHub can rearrange it in any release. It is not a model.
+
+**Not the GraphQL mutation.** The first rule proposed for this resource was one-resource-per-mutation, on the reasoning that a mutation is the server's own write unit and therefore a natural transaction boundary. It survived about a day. `updateGlobalSettings` takes SSO, notifications, integrations, and four separate AI settings groups as sub-inputs of a single mutation, so the rule would fuse SSO config and AI instructions into one resource. Display preferences only *looked* like a clean fit because DataHub happens to have given it a dedicated narrow mutation. Mutation granularity is an artifact of how the API grew, not a statement about how the settings relate.
+
+### The rule: group by administrative domain
+
+**A settings resource covers one coherent administrative domain: the set of settings that one persona owns, one privilege gates, and one availability tier applies to.** Aspect sections (`visual`, `notifications`, `integrations`, the AI group) are the raw material, since they are DataHub's own grouping and are stable, but merge several where one domain spans them and split one where it clearly holds two unrelated concerns.
+
+Name the resource after the domain. `datahub_organization_display_preferences` maps to `globalSettingsInfo.visual` - a better anchor than either the page or the mutation, and the reason the name survives the page being reorganised.
+
+### Why not one fat `datahub_global_settings`
+
+The alternative - a single settings resource with an attribute per field - is a real pattern in the ecosystem (`gitlab_application_settings`, `github_organization_settings`, `datadog_organization_settings`), and the counter-pattern is equally real: AWS deliberately split the monolithic `aws_s3_bucket` into around twelve standalone resources in v4, accepting a breaking major version, because the fat resource had become unmaintainable with poor ownership semantics. Precedent alone does not decide it. Four properties of *this* provider do:
+
+1. **Ownership semantics.** This provider's convention is that a resource owns what it declares, and omitting an attribute resets it. A fat settings resource means managing the org logo hands you a resource that also owns SSO, notifications and AI instructions - omit them and they reset. Avoiding that needs "null means do not manage", which contradicts the convention, makes clearing a field impossible, and removes drift detection. This is the decisive one: it is a semantic breakage, not a style preference.
+2. **Privilege granularity.** `MANAGE_ORGANIZATION_DISPLAY_PREFERENCES`, `MANAGE_GLOBAL_SETTINGS` and `MANAGE_FEATURES` are distinct. A fat resource fails wholesale when the token lacks any one of them, including for fields the config never set.
+3. **Availability tiers.** Already load-bearing here: org branding is Cloud-only while Show Applications is OSS. One resource spanning both half-fails on OSS.
+4. **Team ownership.** Platform owns SSO, governance owns AI instructions, brand owns the logo. One resource is one state entry with one owner; separate resources let those teams coexist without fighting over a single object.
+
+The usual argument for consolidation - fewer resource names to remember - cuts the other way in practice. Registry docs are per-resource pages, so a sixty-attribute settings resource is a wall of prose, and editor completion works on resource type names, so `datahub_` surfaces the domains while a nested attribute nobody knows about cannot be completed into.
+
+### Consequences already decided
+
+- **`helpLink` folds into `datahub_organization_display_preferences`** when it is built. It lives in `globalSettingsInfo.visual`, it is a display affordance, and it is gated and tiered identically. It does not become `datahub_help_link`. This also removes the resource's only naming imprecision: with the help link included, the resource covers `visual` rather than an arbitrary two of its four fields.
+- **A future org-wide dark/light mode** is a new attribute on this resource, not a new resource, for the same reasons.
+- **A non-display setting appearing on the preferences page** becomes its own domain resource. The page is not the anchor, so it can gain or lose controls freely.
+- **AI settings become one `datahub_ai_settings`**, covering `aiAssistant` instructions, `documentationAi`, `aiContext` evaluation and the MCP telemetry flag - one persona, one page, one tier - rather than four resources mirroring four aspect sections.
+- **`aiPlugins` and `mcpServers` are lists of objects, not scalars.** List-valued configuration whose members have independent lifecycles is the classic case for a child resource (`datahub_ai_plugin`, one per plugin), not an attribute on the settings resource.
+- **SSO is argued against entirely.** Terraform managing the mechanism that authenticates Terraform is a lockout waiting to happen; the recovery path is manual regardless, so the resource buys little.
+
+Expected end state is roughly four settings resources, not ten: display preferences, AI settings, notification settings, integration settings.
+
+### The org-versus-user trap recurs
+
+Every DataHub settings page seen so far mixes org-wide and per-user settings, and the AI settings page is no exception - `updateCorpUserAiAssistantSettings`, `updateUserAiPluginSettings` and `updateUserContextDocumentsSettings` sit alongside the global ones. **Check the scope of every control before modelling a settings page.** Per-user settings stay out per the provider's scope rule; only the system-level half is ever in scope.
 
 ## Stability posture
 

@@ -163,7 +163,11 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 
 ## Category 7: Org-level Settings (Singleton Resources)
 
-Each setting is a singleton (URN `urn:li:globalSettings:0` etc.). HashiCorp idiom: many small resources, not one fat one. Singleton shape: hard-code URN, no `Create` (just `Update`), treat as drift-correction. See `aws_default_*` for precedent.
+Each setting is a singleton (URN `urn:li:globalSettings:0` etc.). Singleton shape: hard-code URN, no `Create` (just `Update`), treat as drift-correction. See `aws_default_*` for precedent.
+
+**Granularity rule — group by administrative domain.** One resource per coherent administrative domain: the settings one persona owns, one privilege gates, one availability tier applies to. Aspect sections are the raw material; merge where a domain spans several. Do **not** anchor on the UI page (pages mix org-wide and per-user settings, span multiple aspects, and get rearranged) or on the GraphQL mutation (`updateGlobalSettings` alone spans SSO, notifications, integrations and four AI groups). Do **not** collapse everything into one `datahub_global_settings`: this provider's resources own what they declare, so a fat settings resource would reset SSO and AI config when a user manages only their logo — plus privileges, availability tiers and owning teams all differ per domain. Full reasoning, precedent and the already-decided consequences: `docs/design/provider-org-settings.md`.
+
+Expected end state is roughly four settings resources, not ten. **Check the scope of every control before modelling a settings page** — every DataHub settings page examined so far mixes org-wide and per-user settings, and per-user is out of scope.
 
 **Small-singleton pattern — ESTABLISHED by `datahub_organization_display_preferences`** (shipped 2026-07-28; see `docs/design/provider-org-settings.md` for the pattern as implemented and the empirical findings behind it). It manages `globalSettingsInfo.visual.customOrgName` / `.customLogoUrl` — the org name and logo on the UI's Settings -> Preferences page — and is the reference implementation for the remaining settings singletons. `datahub_global_settings` was the originally-planned first instance; the display-preferences slice landed first because it was what a real request asked for, and it turned out to be a cleaner pattern-setter (a coherent two-field section, entirely Cloud-only, so no mixed-availability complications).
 
@@ -177,14 +181,16 @@ Several system-level singletons remain on the horizon (the rest of this category
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
-| `updateGlobalSettings` / `globalSettings` | M/Q | **HIGH** | no | **New:** `datahub_global_settings` resource. |
+| `updateGlobalSettings` / `globalSettings` | M/Q | **HIGH** | yes | **Not one resource.** This single mutation spans SSO, notifications, integrations and four AI groups, so it is a transport, not a domain — split per the granularity rule above. Also note this whole surface is Cloud-only (OSS exposes no `globalSettings` query or `updateGlobalSettings` mutation at all) and the entity is `category: internal`. |
+| AI settings (`aiAssistant`, `documentationAi`, `aiContext`, `mcpSettings`) | M/Q | **HIGH** | yes | **New:** one `datahub_ai_settings` covering all four — one persona, one page, one tier. `aiPlugins`/`mcpServers` are object lists with independent lifecycles, so they are child resources (e.g. `datahub_ai_plugin`), not attributes. Per-user siblings (`updateCorpUserAiAssistantSettings`, `updateUserAiPluginSettings`, `updateUserContextDocumentsSettings`) are out of scope. |
+| `ssoSettings` | M/Q | **excluded** | yes | Argued against: Terraform managing the mechanism that authenticates Terraform is a lockout risk, and recovery is manual regardless. |
 | `updateAssetSettings` | M | **HIGH** | yes | **New:** `datahub_asset_settings` resource. |
 | `updateDocPropagationSettings` / `docPropagationSettings` | M/Q | MEDIUM | no | Doc propagation feature toggle. |
 | `updateContextGenerationSettings` / `contextGenerationSettings` | M/Q | MEDIUM | yes | Ingestion context config. |
 | `updateApplicationsSettings` | M | MEDIUM | yes | Applications feature toggle. |
 | `updateGlobalViewsSettings` / `globalViewsSettings` | M/Q | MEDIUM | no | Org default view setting. |
 | ~~`updateOrganizationDisplayPreferences`~~ | M | **HIGH** | yes | **Shipped**: `datahub_organization_display_preferences` (resource + data source). Re-rated from LOW — org branding is exactly the slow-moving platform config this provider exists for, and the original "UI prefs" grouping conflated it with per-user preferences. |
-| `updateHelpLink` / `helpLink` | M/Q | MEDIUM | yes | Org-wide, `globalSettingsInfo.visual.helpLink`. Natural sibling to the shipped display-preferences resource; reuses the same singleton pattern. |
+| `updateHelpLink` / `helpLink` | M/Q | MEDIUM | yes | **Folds into `datahub_organization_display_preferences`** as extra attributes — same aspect section (`globalSettingsInfo.visual`), same privilege tier, same persona. Deliberately *not* a separate `datahub_help_link`; doing so is what the domain-grouping rule exists to prevent. Also removes that resource's only naming imprecision (it would then cover `visual`, not two of its four fields). |
 | `updateSampleDataSettings` | M | **excluded** | yes | Org-wide but not a pure config write: toggling asynchronously soft-deletes/restores sample-data entities via `SampleDataService`, so declarative apply/destroy is destructive. Trial-instance-only in the UI. Rationale in `docs/design/provider-org-settings.md`. |
 | `updateApplicationsSettings` (Beta features) | M | **excluded** | no (OSS) | Org-wide and OSS-stable, so technically clean, but excluded as a product decision (2026-07-28): feature-preview flags are not this provider's job. Deliberately not backlogged. |
 | `updateCorpUserLocaleSettings` and other per-user settings | M | IRRELEVANT | no | Per-user preferences; excluded by the provider's scope rule. |
