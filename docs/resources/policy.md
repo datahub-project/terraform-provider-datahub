@@ -247,6 +247,11 @@ There is no top-level OR: a scope such as "tagged `pii` OR in domain `finance`" 
 Required:
 
 - `field` (String) Entity field to match on. One of `TYPE`, `URN`, `OWNER`, `DOMAIN`, `GROUP_MEMBERSHIP`, `DATA_PLATFORM_INSTANCE`, `TAG`, `CONTAINER`, `GLOSSARY`. (`RESOURCE_TYPE` and `RESOURCE_URN` are accepted deprecated aliases of `TYPE` and `URN`.)
+
+**Some fields match hierarchically and some do not**, which is not visible from the configuration and materially changes how much a criterion covers:
+
+- `DOMAIN`, `CONTAINER` and `GLOSSARY` match **descendants**. DataHub resolves an entity's value set for these fields by expanding ancestors, so a criterion naming a parent domain also matches entities in its child domains, one naming a database container also matches datasets nested in its schemas, and one naming a glossary node also matches entities tagged with terms beneath it.
+- `TAG`, `TYPE`, `URN`, `OWNER`, `GROUP_MEMBERSHIP` and `DATA_PLATFORM_INSTANCE` match **exactly**. Tags in particular carry no hierarchy here: a criterion matches only entities carrying that precise tag URN.
 - `values` (List of String) Values to match, disjunctively (OR) -- the criterion passes if any value matches. Entity-typed fields take URNs (e.g. `["urn:li:tag:pii"]`); `TYPE` takes entity type names (e.g. `["dataset", "container"]`).
 
 Optional:
