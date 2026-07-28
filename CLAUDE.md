@@ -46,6 +46,7 @@ Some resources and data sources target DataHub Cloud exclusively and will fail w
 | `datahub_schema_assertion` (resource) | The `upsertDatasetSchemaAssertionMonitor` GraphQL mutation and the Monitor entity type do not exist in OSS DataHub. The mutation requires the Cloud-only monitor service layer. |
 | `datahub_action_pipeline` (resource) + `datahub_action_pipelines` (data source) | The `dataHubAction` entity type and the `upsertActionPipeline`/`deleteActionPipeline`/`listActionPipelines` mutations/queries do not exist in OSS DataHub. The feature is also experimental and Cloud-internal -- the mutations carry no external API stability guarantee and may change between Cloud releases. |
 | `datahub_assertion_assignment_rule` (resource) + `datahub_assertion_assignment_rules` (data source) | The `assertionAssignmentRule` entity type and the `createAssertionAssignmentRule`/`updateAssertionAssignmentRule`/`deleteAssertionAssignmentRule`/`listAssertionAssignmentRules` mutations/queries do not exist in OSS DataHub. Rule-based auto-assignment creates freshness/volume monitors, which require the Cloud-only monitor service layer. |
+| `datahub_organization_display_preferences` (resource + data source) | The `updateOrganizationDisplayPreferences` mutation, the `globalSettings` GraphQL read surface it pairs with, the `GlobalVisualSettings` PDL holding `customOrgName`/`customLogoUrl`, and the `MANAGE_ORGANIZATION_DISPLAY_PREFERENCES` privilege all exist only in the closed Cloud fork -- OSS exposes no `globalSettings` query or `updateGlobalSettings` mutation at all, so there is nothing to degrade to. The `globalSettings` entity is additionally marked `category: internal` in `entity-registry.yml`, so it carries no external API stability guarantee. Note OSS contributors cannot see the backing source. See `docs/design/provider-org-settings.md`. |
 
 ## When to mention OSS vs Cloud
 
@@ -146,6 +147,12 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 - Is this entity type platform-level configuration (owned by platform/engineering teams) or per-asset enrichment (owned by business users)?
 - Resources are appropriate for platform-level configuration only. Do not implement resources for managing descriptions, tag assignments, or ownership on individual data assets - those belong to business users and will be overwritten by apply.
 - Data sources are appropriate for looking up asset URNs and metadata without managing them.
+
+**Org-level settings and singletons**
+- Is this a setting on the `globalSettings` singleton (or a similar always-present platform object)? If so, read `docs/design/provider-org-settings.md` before designing it - `datahub_organization_display_preferences` is the reference implementation.
+- **Group by administrative domain**, not by UI page and not by GraphQL mutation. One resource per set of settings that one persona owns, one privilege gates, and one availability tier applies to. Aspect sections are the raw material; merge where a domain spans several. Anchoring on the page breaks because pages mix org-wide and per-user settings and get rearranged; anchoring on the mutation breaks because `updateGlobalSettings` alone spans SSO, notifications, integrations and four AI groups.
+- **Check the scope of every control on the page.** Every DataHub settings page examined so far mixes org-wide settings with per-user ones (`corpUserSettings`). Per-user preferences are out of scope by the provider-scope rule above; only the org-wide half is ever modelled.
+- Do not collapse the settings surface into one fat `datahub_global_settings`: resources here own what they declare, so that would reset unrelated settings when a user manages one of them, and privileges, availability tiers and owning teams all differ per domain.
 
 **Provider-level defaults**
 - Does the entity type carry `customProperties`, `globalTags`, or a structured-property aspect? If so, it is a defaults candidate - see `docs/design/provider-default-labels.md` and the "Provider-level defaults" guide.

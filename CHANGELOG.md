@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `datahub_organization_display_preferences` resource and data source: manage the organization name and logo that brand the DataHub UI for every user (**Settings -> Preferences** in the UI). DataHub Cloud only -- the backing mutation, its read surface, and the privilege gating it do not exist in open-source DataHub, so the resource fails with a clear diagnostic there rather than a raw schema error. These are org-wide platform settings; the language selector on the same settings page is a per-user preference and is deliberately not managed. This is the provider's first singleton resource: DataHub stores the settings once per instance, so there is no id to supply, applying updates the existing settings rather than creating anything, and `terraform destroy` resets the managed fields to DataHub's defaults instead of deleting anything. The resource owns every field it exposes -- omitting an attribute, setting it to an empty string, or destroying resets that field to the default branding, because DataHub provides no way to remove a value once written (an empty value falls back to the default title and logo, so the effect matches). Reads use the strongly-consistent OpenAPI v3 entity endpoint and writes are read-back verified.
+
 ## [0.16.0] - 2026-07-27
 
 ### Added
