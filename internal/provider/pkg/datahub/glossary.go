@@ -118,14 +118,14 @@ type createGlossaryEntityResponse struct {
 // createGlossaryEntity is the shared implementation for CreateGlossaryNode and
 // CreateGlossaryTerm. mutationName is either "createGlossaryNode" or
 // "createGlossaryTerm". urnPrefix is the expected URN prefix used as a
-// fallback if the server returns an empty URN. entityPath and infoAspectName
-// identify the OpenAPI v3 read used for husk detection.
+// fallback if the server returns an empty URN. entityPath, keyAspectName and
+// infoAspectName identify the OpenAPI v3 read used for husk detection.
 //
 // The repairedHusk return is true when the create initially failed with
 // "already exists", the existing entity turned out to be an empty husk left
 // by DataHub's structured-property cleanup writing to a hard-deleted entity
 // (CAT-2583), and the husk was deleted and the create retried successfully.
-func (c *Client) createGlossaryEntity(ctx context.Context, mutationName, urnPrefix, entityPath, infoAspectName string, in CreateGlossaryEntityInput) (urn string, repairedHusk bool, err error) {
+func (c *Client) createGlossaryEntity(ctx context.Context, mutationName, urnPrefix, entityPath, keyAspectName, infoAspectName string, in CreateGlossaryEntityInput) (urn string, repairedHusk bool, err error) {
 	if c == nil {
 		return "", false, errors.New("client is nil")
 	}
@@ -172,7 +172,7 @@ mutation ` + mutationName + `($input: CreateGlossaryEntityInput!) {
 		// entity, remove it and retry the create once. Anything that is not
 		// provably a husk surfaces the original error untouched.
 		huskURN := urnPrefix + in.ID
-		husk, herr := c.isGlossaryHusk(ctx, entityPath, infoAspectName, huskURN)
+		husk, herr := c.isEntityHusk(ctx, entityPath, keyAspectName, infoAspectName, huskURN)
 		if herr != nil || !husk {
 			return "", false, fmt.Errorf("DataHub API error: %s", msg)
 		}
@@ -198,67 +198,13 @@ mutation ` + mutationName + `($input: CreateGlossaryEntityInput!) {
 	return urn, repairedHusk, nil
 }
 
-// isGlossaryHusk reports whether the entity at urn is a resurrection husk:
-// it exists, has no info aspect, and carries nothing beyond its key aspect
-// and an empty structuredProperties aspect. This is exactly the shape
-// DataHub's PropertyDefinitionDeleteSideEffect leaves behind when its
-// cleanup patch lands on a hard-deleted entity (CAT-2583). Any other shape
-// -- an info aspect, values still assigned, or any unexpected aspect --
-// disqualifies the entity so a real pre-existing entity is never touched.
-func (c *Client) isGlossaryHusk(ctx context.Context, entityPath, infoAspectName, urn string) (bool, error) {
-	path := fmt.Sprintf("/openapi/v3/entity/%s/%s", entityPath, urn)
-	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
-	if err != nil {
-		return false, err
-	}
-	res, err := c.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusNotFound {
-		return false, nil
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		return false, fmt.Errorf("unexpected HTTP %d from DataHub entity API", res.StatusCode)
-	}
-
-	var aspects map[string]json.RawMessage
-	if err := json.NewDecoder(res.Body).Decode(&aspects); err != nil {
-		return false, fmt.Errorf("parsing entity response: %w", err)
-	}
-
-	if _, hasInfo := aspects[infoAspectName]; hasInfo {
-		return false, nil
-	}
-	for name, raw := range aspects {
-		switch name {
-		case "urn", "glossaryNodeKey", "glossaryTermKey":
-			// expected on any entity
-		case "structuredProperties":
-			var sp struct {
-				Value struct {
-					Properties []json.RawMessage `json:"properties"`
-				} `json:"value"`
-			}
-			if err := json.Unmarshal(raw, &sp); err != nil || len(sp.Value.Properties) > 0 {
-				return false, nil
-			}
-		default:
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
 // CreateGlossaryNode creates a DataHub glossary node (Term Group) and returns
 // its URN. Always supply a non-empty ID to produce a deterministic URN;
 // omitting it causes the server to generate a random UUID. The bool return
 // is true when an orphaned husk (CAT-2583) was removed to make way for the
 // create; callers should surface that as a warning.
 func (c *Client) CreateGlossaryNode(ctx context.Context, in CreateGlossaryEntityInput) (string, bool, error) {
-	return c.createGlossaryEntity(ctx, "createGlossaryNode", "urn:li:glossaryNode:", "glossarynode", "glossaryNodeInfo", in)
+	return c.createGlossaryEntity(ctx, "createGlossaryNode", "urn:li:glossaryNode:", "glossarynode", "glossaryNodeKey", "glossaryNodeInfo", in)
 }
 
 // CreateGlossaryTerm creates a DataHub glossary term (Term) and returns its
@@ -267,7 +213,7 @@ func (c *Client) CreateGlossaryNode(ctx context.Context, in CreateGlossaryEntity
 // when an orphaned husk (CAT-2583) was removed to make way for the create;
 // callers should surface that as a warning.
 func (c *Client) CreateGlossaryTerm(ctx context.Context, in CreateGlossaryEntityInput) (string, bool, error) {
-	return c.createGlossaryEntity(ctx, "createGlossaryTerm", "urn:li:glossaryTerm:", "glossaryterm", "glossaryTermInfo", in)
+	return c.createGlossaryEntity(ctx, "createGlossaryTerm", "urn:li:glossaryTerm:", "glossaryterm", "glossaryTermKey", "glossaryTermInfo", in)
 }
 
 // setGlossaryProperties writes the glossaryNodeInfo/glossaryTermInfo aspect for a

@@ -5,6 +5,12 @@ All notable changes to this provider will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `datahub_domain`: a domain can now be re-created after a `terraform destroy` that also removed a structured property assigned to it. DataHub's cleanup of a deleted property scans a search index that lags the delete, so the cleanup write can land on a domain that has already gone, resurrecting it as an empty "husk" - an entity with nothing but its key aspect, invisible in the UI and in search, yet enough to make the next `terraform apply` fail with "This Domain already exists!" with no domain anywhere for the operator to find and remove. Create now inspects the blocking entity and, only when it provably holds no `domainProperties` aspect and no data beyond an empty structured-properties aspect, removes the husk, retries the create, and reports what it did as a warning. A domain with any real content - including one that merely collides on `domain_id`, and DataHub's separate sibling-name conflict, which reports "already exists" too - is never touched and its original error reaches the user unchanged. `datahub_glossary_node` and `datahub_glossary_term` have had this repair since 0.16.0; domains, the entity type most often paired with structured properties, were the remaining gap.
+
 ## [0.17.0] - 2026-07-29
 
 ### Added
