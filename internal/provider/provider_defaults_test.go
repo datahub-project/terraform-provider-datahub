@@ -307,7 +307,14 @@ func TestAcc_SPDefaults_AssignmentOverlap(t *testing.T) {
 }
 
 // TestAcc_DefaultTags_NonexistentTag asserts a clear apply-time error when
-// defaults.tags references a tag that does not exist.
+// defaults.tags references a tag that does not exist, and that the failed apply
+// leaves nothing behind on the server.
+//
+// The absence check is the point of the second assertion. The provider used to
+// verify the tag only after writing the entity, so this test passed on the
+// error message while silently orphaning a corp group on every live run: Create
+// returned an error without setting state, leaving Terraform with no state entry
+// and destroy with nothing to remove.
 func TestAcc_DefaultTags_NonexistentTag(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	groupID := tg.Name("tfprovider-dtags-missing")
@@ -316,6 +323,8 @@ func TestAcc_DefaultTags_NonexistentTag(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps:                    datahubtesting.DefaultTagsNonexistentSteps(groupID),
 	})
+
+	tg.AssertEntityAbsent(t, "corpgroup", "urn:li:corpGroup:"+groupID)
 }
 
 // TestAcc_Defaults_ExternalEditStomped covers full-map ownership: a property
