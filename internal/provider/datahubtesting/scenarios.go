@@ -229,7 +229,8 @@ func IngestionSourceCheckDestroy(s *terraform.State) error {
 		}
 		_, getErr := client.GetIngestionSourceByID(ctx, sourceID)
 		if getErr == nil {
-			return fmt.Errorf("datahub_ingestion_source %q still exists after destroy", sourceID)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_ingestion_source",
+				"urn:li:dataHubIngestionSource:"+sourceID)
 		}
 		if errors.Is(getErr, datahub.ErrNotFound) {
 			continue
@@ -261,7 +262,7 @@ func SecretCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_secret %q: %w", urn, getErr)
 		}
 		if secret != nil {
-			return fmt.Errorf("datahub_secret %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_secret", urn)
 		}
 	}
 	return nil
@@ -467,7 +468,7 @@ func RemoteExecutorPoolCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_remote_executor_pool %q: %w", urn, getErr)
 		}
 		if pool != nil {
-			return fmt.Errorf("datahub_remote_executor_pool %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_remote_executor_pool", urn)
 		}
 	}
 	return nil
@@ -873,7 +874,7 @@ func ConnectionCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_connection %q: %w", urn, getErr)
 		}
 		if conn != nil {
-			return fmt.Errorf("datahub_connection %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_connection", urn)
 		}
 	}
 	return nil
@@ -1098,7 +1099,7 @@ func CorpGroupCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_corp_group %q: %w", urn, getErr)
 		}
 		if group != nil {
-			return fmt.Errorf("datahub_corp_group %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_corp_group", urn)
 		}
 	}
 	return nil
@@ -1700,7 +1701,7 @@ func PolicyCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_policy %q: %w", urn, getErr)
 		}
 		if policy != nil {
-			return fmt.Errorf("datahub_policy %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_policy", urn)
 		}
 	}
 	return nil
@@ -2052,7 +2053,7 @@ func CorpUserCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_corp_user %q: %w", urn, getErr)
 		}
 		if user != nil {
-			return fmt.Errorf("datahub_corp_user %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_corp_user", urn)
 		}
 	}
 	return nil
@@ -2294,7 +2295,7 @@ func ServiceAccountCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_service_account %q: %w", urn, getErr)
 		}
 		if sa != nil {
-			return fmt.Errorf("datahub_service_account %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_service_account", urn)
 		}
 	}
 	return nil
@@ -2793,7 +2794,7 @@ func LocalUserLoginCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_local_user_login %q: %w", urn, getErr)
 		}
 		if user != nil {
-			return fmt.Errorf("datahub_local_user_login %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_local_user_login", urn)
 		}
 	}
 	return nil
@@ -3138,6 +3139,13 @@ data "datahub_domains" "all" {
 
 // DomainCheckDestroy verifies every datahub_domain in the post-destroy state
 // has been removed from DataHub.
+//
+// A domain that is still present fails the check via
+// stillExistsAfterDestroyError, which re-reads the raw entity document and
+// classifies the leftover as a CAT-2583 resurrected husk or a genuine delete
+// failure. Domains are where that ambiguity actually bit (an intermittent
+// TestAcc_SPDefaults_AssignmentOverlap failure), because the resource carries
+// structured properties.
 func DomainCheckDestroy(s *terraform.State) error {
 	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
 	if err != nil {
@@ -3157,7 +3165,7 @@ func DomainCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_domain %q: %w", urn, getErr)
 		}
 		if domain != nil {
-			return fmt.Errorf("datahub_domain %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_domain", urn)
 		}
 	}
 	return nil
@@ -3379,7 +3387,7 @@ func GlossaryNodeCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_glossary_node %q: %w", urn, getErr)
 		}
 		if node != nil {
-			return fmt.Errorf("datahub_glossary_node %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_glossary_node", urn)
 		}
 	}
 	return nil
@@ -3615,7 +3623,7 @@ func GlossaryTermCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_glossary_term %q: %w", urn, getErr)
 		}
 		if term != nil {
-			return fmt.Errorf("datahub_glossary_term %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_glossary_term", urn)
 		}
 	}
 	return nil
@@ -4003,7 +4011,7 @@ func TagCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_tag %q: %w", urn, getErr)
 		}
 		if tag != nil {
-			return fmt.Errorf("datahub_tag %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_tag", urn)
 		}
 	}
 	return nil
@@ -4242,7 +4250,7 @@ func StructuredPropertyCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_structured_property %q: %w", urn, getErr)
 		}
 		if sp != nil {
-			return fmt.Errorf("datahub_structured_property %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_structured_property", urn)
 		}
 	}
 	return nil
@@ -4407,7 +4415,7 @@ func OwnershipTypeCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_ownership_type %q: %w", urn, getErr)
 		}
 		if ot != nil {
-			return fmt.Errorf("datahub_ownership_type %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_ownership_type", urn)
 		}
 	}
 	return nil
@@ -4656,7 +4664,7 @@ func DataProductCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_data_product %q: %w", urn, getErr)
 		}
 		if dp != nil {
-			return fmt.Errorf("datahub_data_product %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_data_product", urn)
 		}
 	}
 	return nil
@@ -4800,7 +4808,7 @@ func CustomAssertionCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking datahub_custom_assertion %q: %w", urn, getErr)
 		}
 		if a != nil {
-			return fmt.Errorf("datahub_custom_assertion %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_custom_assertion", urn)
 		}
 	}
 	return nil
@@ -5292,7 +5300,8 @@ func ActionPipelineCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking action pipeline %q: %w", id, getErr)
 		}
 		if info != nil {
-			return fmt.Errorf("action pipeline %q still exists after destroy", id)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_action_pipeline",
+				datahub.ActionPipelineURNPrefix+id)
 		}
 	}
 	return nil
@@ -5594,7 +5603,7 @@ func assertionCheckDestroy(s *terraform.State, resourceType string) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking %s %q: %w", resourceType, urn, getErr)
 		}
 		if a != nil {
-			return fmt.Errorf("%s %q still exists after destroy", resourceType, urn)
+			return stillExistsAfterDestroyError(ctx, client, resourceType, urn)
 		}
 	}
 	return nil
@@ -5746,7 +5755,7 @@ func AssignmentRuleCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking assignment rule %q: %w", urn, getErr)
 		}
 		if info != nil {
-			return fmt.Errorf("assertion assignment rule %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_assertion_assignment_rule", urn)
 		}
 	}
 	return nil
@@ -5772,7 +5781,7 @@ func DataContractCheckDestroy(s *terraform.State) error {
 			return fmt.Errorf("CheckDestroy: unexpected error checking data contract %q: %w", urn, getErr)
 		}
 		if dc != nil {
-			return fmt.Errorf("data contract %q still exists after destroy", urn)
+			return stillExistsAfterDestroyError(ctx, client, "datahub_data_contract", urn)
 		}
 	}
 	return nil
