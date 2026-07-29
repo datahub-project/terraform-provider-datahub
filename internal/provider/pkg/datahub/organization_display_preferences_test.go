@@ -30,6 +30,20 @@ func TestIsOrganizationDisplayPreferencesCloudOnlyError(t *testing.T) {
 			want: true,
 		},
 		{
+			// Verbatim from the nightly OSS Quickstart job. Variable-type
+			// validation rejects the document before field resolution, so the
+			// mutation never reports as undefined and matching FieldUndefined
+			// alone let a raw GraphQL error reach the user.
+			name: "OSS missing input type",
+			msg:  "Validation error (UnknownType) : Unknown type 'UpdateOrganizationDisplayPreferencesInput'",
+			want: true,
+		},
+		{
+			name: "unknown type unrelated to this resource is not our signal",
+			msg:  "Validation error (UnknownType) : Unknown type 'SomeOtherInput'",
+			want: false,
+		},
+		{
 			name: "undefined field on a different type is not our signal",
 			msg:  "Validation error of type FieldUndefined: Field 'somethingElse' in type 'Query' is undefined",
 			want: false,
@@ -223,6 +237,27 @@ func TestSetOrganizationDisplayPreferences(t *testing.T) {
 
 	t.Run("oss_missing_mutation_maps_to_cloud_only_sentinel", func(t *testing.T) {
 		srv := httptest.NewServer(ossGraphQLHandler("updateOrganizationDisplayPreferences"))
+		defer srv.Close()
+
+		err := newTestClient(t, srv).SetOrganizationDisplayPreferences(t.Context(),
+			OrganizationDisplayPreferences{OrgName: "Acme Data"})
+		if !errors.Is(err, ErrOrganizationDisplayPreferencesCloudOnly) {
+			t.Fatalf("error = %v, want ErrOrganizationDisplayPreferencesCloudOnly", err)
+		}
+	})
+
+	t.Run("oss_missing_input_type_maps_to_cloud_only_sentinel", func(t *testing.T) {
+		// The shape OSS Quickstart really returns. The mutation-level handler
+		// above passed while this path emitted a raw GraphQL error, so the
+		// nightly OSS job caught what the unit tests did not.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"errors": []map[string]any{
+					{"message": "Validation error (UnknownType) : Unknown type 'UpdateOrganizationDisplayPreferencesInput'"},
+				},
+			})
+		}))
 		defer srv.Close()
 
 		err := newTestClient(t, srv).SetOrganizationDisplayPreferences(t.Context(),

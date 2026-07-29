@@ -33,9 +33,23 @@ var ErrOrganizationDisplayPreferencesCloudOnly = errors.New(
 
 // isOrganizationDisplayPreferencesCloudOnlyError reports whether a GraphQL
 // error message indicates the mutation is missing from the schema (OSS).
+//
+// Two distinct graphql-java error codes appear in practice, and which one fires
+// depends on the order validation rules run in:
+//   - FieldUndefined: the mutation field itself is absent from the schema.
+//   - UnknownType: the operation's variable declaration names an input type the
+//     schema does not register, so variable validation rejects the document
+//     before field resolution is ever reached. This is what OSS Quickstart
+//     actually returns ("Unknown type
+//     'UpdateOrganizationDisplayPreferencesInput'"), which is why matching
+//     FieldUndefined alone is not enough. Same trap as isCloudOnlyError.
 func isOrganizationDisplayPreferencesCloudOnlyError(msg string) bool {
-	return strings.Contains(msg, "FieldUndefined") &&
-		strings.Contains(msg, "in type 'Mutation'")
+	if strings.Contains(msg, "FieldUndefined") &&
+		strings.Contains(msg, "in type 'Mutation'") {
+		return true
+	}
+	return strings.Contains(msg, "UnknownType") &&
+		strings.Contains(msg, "OrganizationDisplayPreferences")
 }
 
 // OrganizationDisplayPreferences is the org-wide branding stored at
