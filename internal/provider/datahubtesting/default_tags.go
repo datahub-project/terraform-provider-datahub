@@ -48,6 +48,27 @@ resource "datahub_tag" "marker" {
 `, tagID)
 }
 
+// tagBootstrapStep creates the marker tag on its own, with defaults off. It
+// must be the first step of any scenario whose next step turns defaults.tags
+// on, for two reasons.
+//
+// Correctness: defaults.tags names the tag by literal URN, because provider
+// configuration cannot reference resources. No dependency edge therefore
+// exists between the tag resource and the resources that consume the default,
+// so Terraform applies them concurrently. When a consumer wins that race,
+// ensureTagsExist finds no tag and the apply fails - observed once in CI, and
+// reproducible on demand by inverting the order with depends_on.
+//
+// Fidelity: creating the tag in a prior apply is exactly what the provider
+// documents users must do. A scenario that creates the tag alongside its
+// consumers is asserting that an unsupported configuration works, and passes
+// only because the create happens to win.
+func tagBootstrapStep(tagID string) resource.TestStep {
+	return resource.TestStep{
+		Config: tagProviderBlock("") + tagResourceConfig(tagID),
+	}
+}
+
 // CorpGroupDefaultTagsLifecycleSteps covers the full latch lifecycle on
 // datahub_corp_group: created unlatched (no defaults, tags_all null), latched
 // onto an existing resource when defaults.tags appears, plan idempotency
@@ -120,6 +141,7 @@ resource "datahub_corp_user" "test" {
 }
 `, username)
 	return []resource.TestStep{
+		tagBootstrapStep(tagID),
 		{
 			Config: cfg,
 			ConfigStateChecks: []statecheck.StateCheck{
@@ -141,13 +163,24 @@ resource "datahub_corp_user" "test" {
 func DataProductDefaultTagsAtCreateSteps(dataProductID, tagID string) []resource.TestStep {
 	const addr = "datahub_data_product.test"
 	tagURN := "urn:li:tag:" + tagID
+	// The data product is given a domain so the post-test destroy authorizes.
+	// DataHub Cloud's deleteDataProduct denies the mutation outright for a
+	// domain-less product; the fix (OSS #18446) is not yet on Cloud, and until
+	// it is, a domain-less product here fails destroy and leaves debris behind.
 	cfg := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Default Tags Home Domain"
+}
+
 resource "datahub_data_product" "test" {
   data_product_id = %q
   name            = "Default Tags Product"
+  domain          = datahub_domain.test.urn
 }
-`, dataProductID)
+`, dataProductID+"-dom", dataProductID)
 	return []resource.TestStep{
+		tagBootstrapStep(tagID),
 		{
 			Config: cfg,
 			ConfigStateChecks: []statecheck.StateCheck{
@@ -267,6 +300,7 @@ resource "datahub_custom_assertion" "test" {
 	without := tagProviderBlock("") + tagResourceConfig(tagID) + assertion
 
 	return []resource.TestStep{
+		tagBootstrapStep(tagID),
 		{
 			Config: with,
 			ConfigStateChecks: []statecheck.StateCheck{
@@ -301,6 +335,7 @@ func typedAssertionDefaultTagsSteps(addr, assertionConfig, tagID string) []resou
 	with := tagProviderBlock(tagURN) + tagResourceConfig(tagID) + assertionConfig
 	without := tagProviderBlock("") + tagResourceConfig(tagID) + assertionConfig
 	return []resource.TestStep{
+		tagBootstrapStep(tagID),
 		{
 			Config: with,
 			ConfigStateChecks: []statecheck.StateCheck{
