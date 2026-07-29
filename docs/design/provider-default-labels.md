@@ -109,6 +109,38 @@ provider "datahub" {
 
 (Two applies: the definition must exist before the provider defaults reference it.)
 
+## Bootstrap ordering: why it cannot be solved provider-side
+
+`defaults.tags` and `defaults.structured_properties` name their targets by **literal URN**, because provider configuration cannot reference resources. That is the root of the bootstrap-ordering requirement, and it is worth recording why the obvious fixes are all closed off - each was investigated rather than assumed.
+
+**The reference cannot be expressed in HCL.** Writing `tags = [datahub_tag.marker.urn]` is not merely discouraged, it is a dependency cycle, and Terraform says so:
+
+```
+Error: Cycle: provider["registry.terraform.io/datahub-project/datahub"], datahub_tag.marker
+```
+
+Every resource served by a provider depends on that provider's configuration node, so `datahub_tag.marker -> provider.datahub`. Referencing the tag from provider config adds `provider.datahub -> datahub_tag.marker`. The provider must be configured before it can create the tag; if configuring it requires the tag, the graph is circular. This is inherent to Terraform's node model, not a validation quirk.
+
+**The provider cannot add the edge itself.** Graph construction happens entirely in core, before any provider is consulted for planning, and no response message carries dependency information. Even granted an edge-injection API, the edge required is the cycle above.
+
+**The provider cannot see the graph, or state.** Every RPC is scoped to a single resource instance: `PlanResourceChange` and `ApplyResourceChange` receive only that instance's own prior state, config and planned state. There is no message conveying the configuration, the graph, other instances' state, or even the calling resource's own address. Private state is per-instance, so one resource cannot learn anything about another through it. State may not be local at all (S3, TFC, Consul backends), and providers must never read it directly.
+
+**There is no post-apply hook.** The protocol has no "apply complete" callback - `StopProvider` is cancellation, not completion - so the provider cannot reconcile ordering after the fact.
+
+The only levers are the user's: create the tag or property definition in a prior apply (the documented approach, and what every example does), or add `depends_on` from each consuming resource to the tag. The latter works within a single apply but does not scale, since defaults apply to every resource of every supported type.
+
+## Why `ensureTagsExist` stays, though the server tolerates dangling URNs
+
+Probed live 2026-07-29: writing a `globalTags` aspect that references a tag URN confirmed absent returns HTTP 200, persists, and reads back verbatim. DataHub enforces no referential integrity on aspect writes - `globalTags` is a list of URN strings. A dangling reference therefore self-heals the moment the tag is created.
+
+So `ensureTagsExist` is the *only* reason a bootstrap-ordering mistake fails at all. Do not remove it on the strength of "the server allows this":
+
+- It catches **typos**, which are far likelier than a same-apply ordering race. A mistyped marker URN would otherwise be written silently to every managed entity in the estate, resolving nowhere, and surface weeks later.
+- DataHub tags feed policy scoping (`resources.filter` can match on `TAG`). A silently untagged or wrongly-tagged resource can fall outside an access policy's intended scope, so under-application here has security consequences that a failed apply does not.
+- Downgrading it to a warning is worse than either option: the resource would still write the dangling URN, `tags_all` would record a tag that does not exist, the read-back check would pass because stored matches written, and CI would ignore the warning.
+
+The cost is bounded and self-correcting: the failure can only occur on the apply that first creates the tag, the diagnostic names the fix, and re-running usually succeeds because the tag resource completed anyway. Reads use the strongly-consistent OpenAPI v3 entity endpoint, so a tag created in a prior apply is immediately visible - there is no index-lag window.
+
 ## Empirical verification log
 
 To be verified against a live DataHub during rollout and recorded here:

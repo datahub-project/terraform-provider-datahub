@@ -68,6 +68,23 @@ Structured property defaults are applied only to resources whose entity type app
 
 Provider configuration cannot depend on resources created in the same apply. Tags referenced in `defaults.tags` and definitions referenced in `defaults.structured_properties` must already exist - create them in a prior apply (or a bootstrap stack). Referencing a missing tag fails at apply time with a clear error; a missing property definition produces a warning and the property is skipped until it exists.
 
+Because provider configuration names these by URN string rather than by reference, Terraform has no dependency edge between the tag and the resources that consume the default, and applies them concurrently. So a configuration that creates the marker tag *and* sets `defaults.tags` *and* declares a tagged resource, all in one apply, may succeed or fail depending on which resource Terraform happens to create first. This can only happen on the apply that creates the tag; once it exists, every later apply is deterministic, and re-running a failed apply normally succeeds because the tag was created anyway.
+
+Two ways to make it deterministic:
+
+- **Bootstrap in a separate apply** (recommended). Create tags and property definitions first, then enable `defaults` in a later apply. The `data-product-simple` example does this with a variable toggle.
+- **Add `depends_on`** from each consuming resource to the tag, if you must keep a single apply:
+
+```terraform
+resource "datahub_corp_group" "team" {
+  group_id   = "data-platform"
+  name       = "Data Platform"
+  depends_on = [datahub_tag.managed]
+}
+```
+
+  This works, but does not scale: defaults apply to every resource of every supported type, so every one of them needs the same `depends_on`.
+
 ## Destroy ordering
 
 When destroying a configuration that contains both a marker tag (or property definition) and entities still carrying it, remove the defaults first:
