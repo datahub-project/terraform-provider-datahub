@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `resources.filter` addition is additive: existing configurations using `resources.type` / `resources.resources` / `resources.all_resources` are unaffected, and prior state upgrades with no schema version bump and no plan churn (covered by `TestAcc_Policy_UpgradeFromPublished`, which applies with the last published provider and then re-plans with the new one).
 - One case does gain a plan diff, by design. A `datahub_policy` whose **server-side** scope carries a criteria filter that the configuration does not declare - typically one imported from the DataHub UI, or one edited in the UI after Terraform created it - now shows that filter in state and therefore plans to remove it. Under earlier versions the filter was invisible to the provider and the next apply silently widened the policy to every resource; the diff is that latent widening becoming visible before it happens. Add the filter to the configuration to keep the scope.
 
+### Fixed
+
+- Provider-level `defaults.tags`: a tag URN that does not exist in DataHub no longer leaves an orphaned entity behind. The existence check ran *after* the resource had already been written to DataHub, so `Create` wrote the entity, failed the tag check, and returned an error without setting state - leaving Terraform with no state entry, `destroy` with nothing to remove, and the entity stranded on the server where neither plan nor state could see it. The next apply with a corrected tag then failed with "already exists". Affected every resource that supports `defaults.tags`: `datahub_corp_user`, `datahub_corp_group`, `datahub_service_account`, `datahub_data_product`, and all six assertion resources. The check now runs before any write, so a bad tag fails with no side effects. `Update` is unchanged and did not need this: the entity is already in state there, so a failed update is an ordinary retryable error rather than an orphan.
+
 ## [0.16.0] - 2026-07-27
 
 ### Added

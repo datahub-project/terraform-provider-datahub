@@ -525,6 +525,30 @@ func planTagsAll(ctx context.Context, defaults entityDefaults, resp *resource.Mo
 // the URN list to write (nil when tags_all is null). The planned value is
 // normally known at apply time; recomputing from the provider defaults is the
 // defensive fallback and produces the identical result by purity.
+// resolveAndVerifyTags resolves the effective tag list and confirms every
+// referenced tag actually exists, so callers can validate before writing
+// anything to DataHub.
+//
+// Call this before the resource's first server write. Verifying afterwards
+// leaves a real hazard: the entity is created, the tag check then fails, and
+// Create returns an error without setting state - so Terraform holds no state
+// entry, destroy has nothing to remove, and the entity is orphaned server-side
+// where it is invisible to both plan and state. The user then hits "already
+// exists" when they correct the tag and re-apply.
+//
+// The existence check is memoised per provider instance, so hoisting it costs
+// at most one read per distinct tag per run.
+func resolveAndVerifyTags(ctx context.Context, pd *providerData, defaults entityDefaults, planned types.Set) (types.Set, []string, diag.Diagnostics) {
+	tagsAll, tagURNs, diags := resolvePlannedTagsAll(ctx, defaults, planned)
+	if diags.HasError() || len(tagURNs) == 0 {
+		return tagsAll, tagURNs, diags
+	}
+	if err := pd.ensureTagsExist(ctx, tagURNs); err != nil {
+		diags.AddError("Invalid provider defaults.tags", err.Error())
+	}
+	return tagsAll, tagURNs, diags
+}
+
 func resolvePlannedTagsAll(_ context.Context, defaults entityDefaults, planned types.Set) (types.Set, []string, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	if planned.IsUnknown() {

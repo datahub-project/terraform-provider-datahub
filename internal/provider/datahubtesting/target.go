@@ -139,6 +139,50 @@ func (tg *Target) Name(base string) string {
 // DataHub) succeed. A t.Cleanup is registered to hard-delete the entity after
 // the test ends. On the in-memory mock this is a no-op: the mock does not
 // validate entity existence before accepting GraphQL mutations.
+// AssertEntityAbsent fails the test if the entity exists, reading through the
+// strongly-consistent OpenAPI v3 entity endpoint so there is no index-lag
+// window. entityPath is the lowercase path segment (e.g. "corpgroup").
+//
+// Its purpose is to catch a resource that was written to the server and then
+// abandoned. When a Create writes an entity and only afterwards hits an error,
+// it returns without setting state: Terraform holds no state entry, destroy has
+// nothing to remove, and the entity is orphaned where neither plan nor state
+// can see it. Asserting the error alone cannot detect that; only asking the
+// server can.
+//
+// Works against the mock as well as live targets, since both serve the same
+// entity endpoint.
+func (tg *Target) AssertEntityAbsent(t *testing.T, entityPath, entityURN string) {
+	t.Helper()
+
+	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
+	token := os.Getenv("DATAHUB_GMS_TOKEN")
+
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		fmt.Sprintf("%s/openapi/v3/entity/%s/%s", gmsURL, entityPath, url.PathEscape(entityURN)), nil)
+	if err != nil {
+		t.Fatalf("AssertEntityAbsent: build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Fatalf("AssertEntityAbsent: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		t.Fatalf("AssertEntityAbsent: unexpected HTTP %d checking %s", resp.StatusCode, entityURN)
+	}
+	t.Errorf("entity %s still exists on the server (HTTP %d) after the apply failed; "+
+		"it was written and then abandoned, so Terraform holds no state for it and "+
+		"destroy cannot remove it", entityURN, resp.StatusCode)
+}
+
 func (tg *Target) EnsureDatasetEntity(t *testing.T, entityURN string) {
 	t.Helper()
 	if tg.Kind == TargetMock {

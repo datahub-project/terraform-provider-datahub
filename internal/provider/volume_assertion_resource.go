@@ -246,6 +246,14 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
+	// Verify default tags before creating anything: see resolveAndVerifyTags.
+	tagsAll, tagURNs, td := resolveAndVerifyTags(ctx, r.pd, r.defaults, plan.TagsAll)
+	resp.Diagnostics.Append(td...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.TagsAll = tagsAll
+
 	onSuccess, d := listToStrings(ctx, plan.OnSuccessActions)
 	resp.Diagnostics.Append(d...)
 	onFailure, d := listToStrings(ctx, plan.OnFailureActions)
@@ -284,17 +292,7 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	tagsAll, tagURNs, td := resolvePlannedTagsAll(ctx, r.defaults, plan.TagsAll)
-	resp.Diagnostics.Append(td...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	plan.TagsAll = tagsAll
 	if len(tagURNs) > 0 {
-		if err := r.pd.ensureTagsExist(ctx, tagURNs); err != nil {
-			resp.Diagnostics.AddError("Invalid provider defaults.tags", err.Error())
-			return
-		}
 		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, urn, tagURNs); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
