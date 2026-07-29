@@ -11,12 +11,39 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 )
+
+// NeutralizeDevOverride points TF_CLI_CONFIG_FILE at an empty Terraform CLI
+// configuration for the duration of the test, so that a dev_overrides block in the
+// developer's own CLI config cannot influence how Terraform resolves providers.
+//
+// Every test step that uses resource.ExternalProvider must call this first.
+// dev_overrides makes Terraform serve datahub-project/datahub from a local build
+// and ignore required_providers entirely, so the step silently runs against the
+// build under test instead of the published version it named -- and the comparison
+// the step exists to make evaluates against the wrong provider, passing whatever
+// happens. `make dev-override` sets TF_CLI_CONFIG_FILE via .mise.env, which makes
+// that vacuous mode the default locally: an upgrade test pointed at a nonexistent
+// provider version passed until the override was defeated.
+//
+// Steps using ProtoV6ProviderFactories do not need this. The framework serves the
+// provider in-process via TF_REATTACH_PROVIDERS, which takes precedence over
+// dev_overrides -- verified by breaking the provider source without rebuilding the
+// binary the override points at, and observing the test still fail.
+func NeutralizeDevOverride(t *testing.T) {
+	t.Helper()
+	empty := filepath.Join(t.TempDir(), "empty.tfrc")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatalf("NeutralizeDevOverride: writing empty CLI config: %v", err)
+	}
+	t.Setenv("TF_CLI_CONFIG_FILE", empty)
+}
 
 // TargetKind identifies which DataHub backend an acceptance test is running
 // against. The active target is derived at setup time from whether

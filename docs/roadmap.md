@@ -108,7 +108,7 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
-| `createPolicy` / `updatePolicy` / `deletePolicy` + OpenAPI policy entity | M | covered | no | `datahub_policy` resource + `datahub_policies` data source (v0.4.0). PLATFORM and METADATA policy types; deterministic `policy_id`; full-state ownership of privileges/actors/resources lists. |
+| `createPolicy` / `updatePolicy` / `deletePolicy` + OpenAPI policy entity | M | covered | no | `datahub_policy` resource + `datahub_policies` data source (v0.4.0). PLATFORM and METADATA policy types; deterministic `policy_id`; full-state ownership of privileges/actors/resources lists. Both resource-scope forms are covered: the criteria `resources.filter` (tag/domain/container/multi-type scoping) and the deprecated `type`/`resources`/`all_resources`. `resources.privilegeConstraints` (sub-resource modification constraints, same `PolicyMatchFilter` shape as `filter`) is **not** yet modelled -- the provider owns the full `resources` map, so a constraint set outside Terraform is dropped on the next apply. |
 | `createGroup` / `removeGroup` / `updateCorpGroupProperties` + `corpGroup(urn)` | M/Q | covered | no | `datahub_corp_group` resource + `datahub_corp_group` / `datahub_corp_groups` data sources (v0.4.0). |
 | `addGroupMembers` / `removeGroupMembers` | M | covered | no | `datahub_corp_group_member` resource (v0.4.0). |
 | `batchAssignRole` + `dataHubRole(urn)` | M | covered | no | `datahub_role_assignment` resource + `datahub_role` / `datahub_roles` data sources (v0.4.0). |

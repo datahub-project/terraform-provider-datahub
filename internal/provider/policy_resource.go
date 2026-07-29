@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -22,9 +24,10 @@ import (
 const dataHubPolicyURNPrefix = "urn:li:dataHubPolicy:"
 
 var (
-	_ resource.Resource                = &policyResource{}
-	_ resource.ResourceWithConfigure   = &policyResource{}
-	_ resource.ResourceWithImportState = &policyResource{}
+	_ resource.Resource                   = &policyResource{}
+	_ resource.ResourceWithConfigure      = &policyResource{}
+	_ resource.ResourceWithImportState    = &policyResource{}
+	_ resource.ResourceWithValidateConfig = &policyResource{}
 )
 
 type policyResource struct {
@@ -54,10 +57,36 @@ type policyActorsModel struct {
 }
 
 type policyResourcesModel struct {
-	Type         types.String `tfsdk:"type"`
-	Resources    types.Set    `tfsdk:"resources"`
-	AllResources types.Bool   `tfsdk:"all_resources"`
+	Type         types.String            `tfsdk:"type"`
+	Resources    types.Set               `tfsdk:"resources"`
+	AllResources types.Bool              `tfsdk:"all_resources"`
+	Filter       *policyMatchFilterModel `tfsdk:"filter"`
 }
+
+type policyMatchFilterModel struct {
+	Criteria []policyMatchCriterionModel `tfsdk:"criteria"`
+}
+
+type policyMatchCriterionModel struct {
+	Field     types.String `tfsdk:"field"`
+	Values    types.List   `tfsdk:"values"`
+	Condition types.String `tfsdk:"condition"`
+}
+
+// policyMatchFields is the EntityFieldType enum accepted as a criterion field.
+// The server rejects anything outside this set at aspect-write time via
+// PolicyFieldTypeValidator, so validating here turns a failed apply into a plan
+// error. RESOURCE_TYPE and RESOURCE_URN are deprecated aliases of TYPE and URN
+// (resolved by the same field resolver providers); they are accepted so that a
+// policy created before the rename still round-trips through import.
+var policyMatchFields = []string{
+	"TYPE", "URN", "OWNER", "DOMAIN", "GROUP_MEMBERSHIP",
+	"DATA_PLATFORM_INSTANCE", "TAG", "CONTAINER", "GLOSSARY",
+	"RESOURCE_TYPE", "RESOURCE_URN",
+}
+
+// policyMatchConditions is the PolicyMatchCondition enum.
+var policyMatchConditions = []string{"EQUALS", "STARTS_WITH", "NOT_EQUALS"}
 
 func NewPolicyResource() resource.Resource {
 	return &policyResource{}
@@ -86,6 +115,30 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"`MANAGE_INGESTION`). Omit the `resources` block.\n" +
 			"- `METADATA` -- privileges over metadata entities (e.g. `EDIT_ENTITY_TAGS`), optionally " +
 			"scoped via the `resources` block.\n\n" +
+			"## Resource scoping\n\n" +
+			"`resources` accepts two mutually exclusive forms:\n\n" +
+			"- **`filter`** -- a list of criteria. The only form that can scope by tag, domain or " +
+			"container, or across several entity types at once. This is what the DataHub UI writes.\n" +
+			"- **`type` + `resources` + `all_resources`** -- a single entity type plus an explicit list " +
+			"of resource URNs. The original form, since deprecated by DataHub. Still supported, but it " +
+			"cannot express any of the scopes listed above.\n\n" +
+			"Prefer `filter`. A criteria scope looks like this:\n\n" +
+			"```terraform\n" +
+			"resources = {\n" +
+			"  filter = {\n" +
+			"    criteria = [\n" +
+			"      { field = \"TYPE\", values = [\"dataset\", \"container\"] },\n" +
+			"      { field = \"TAG\", values = [\"urn:li:tag:pii\"] },\n" +
+			"    ]\n" +
+			"  }\n" +
+			"}\n" +
+			"```\n\n" +
+			"Criteria combine with AND; the `values` within one criterion combine with OR. The example " +
+			"above matches datasets and containers that also carry the `pii` tag. There is no top-level " +
+			"OR -- a scope such as \"tagged `pii` OR in domain `finance`\" needs two policies.\n\n" +
+			"The two forms cannot be combined: setting `filter` alongside `type`, `resources` or " +
+			"`all_resources` is rejected at plan time, because DataHub would silently evaluate the " +
+			"filter alone and ignore the rest.\n\n" +
 			"## Naming\n\n" +
 			"`policy_id` becomes the URN suffix (`urn:li:dataHubPolicy:<policy_id>`). Supplying an " +
 			"explicit id keeps the URN deterministic and stable, avoiding the random UUID the DataHub " +
@@ -184,27 +237,138 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				},
 			},
 			"resources": schema.SingleNestedAttribute{
-				Optional:            true,
-				MarkdownDescription: "Resource scope for METADATA policies. Omit for platform-wide PLATFORM policies.",
+				Optional: true,
+				MarkdownDescription: "Resource scope for METADATA policies. Omit for platform-wide PLATFORM policies.\n\n" +
+					"Set either `filter` (criteria-based) or the deprecated `type` / `resources` / " +
+					"`all_resources` trio, never both. Only `filter` can scope by tag, domain or container, " +
+					"or across several entity types at once.",
 				Attributes: map[string]schema.Attribute{
 					"type": schema.StringAttribute{
 						Optional:            true,
-						MarkdownDescription: "The resource type the policy applies to (e.g. `dataset`).",
+						MarkdownDescription: "The resource type the policy applies to (e.g. `dataset`). Deprecated by DataHub in favour of a `filter` criterion on `TYPE`; conflicts with `filter`.",
 					},
 					"resources": schema.SetAttribute{
 						Optional:            true,
 						ElementType:         types.StringType,
-						MarkdownDescription: "Set of specific resource URNs the policy applies to.",
+						MarkdownDescription: "Set of specific resource URNs the policy applies to. Deprecated by DataHub in favour of a `filter` criterion on `URN`; conflicts with `filter`.",
 					},
 					"all_resources": schema.BoolAttribute{
 						Optional:            true,
 						Computed:            true,
 						Default:             booldefault.StaticBool(false),
-						MarkdownDescription: "Apply to all resources of `type`. Defaults to `false`.",
+						MarkdownDescription: "Apply to all resources of `type`. Defaults to `false`. Deprecated by DataHub in favour of a `filter` with no `URN` criterion; conflicts with `filter`.",
+					},
+					"filter": schema.SingleNestedAttribute{
+						Optional: true,
+						MarkdownDescription: "Criteria-based resource scope. Mirrors the `resources.filter` form of the " +
+							"`dataHubPolicyInfo` aspect, so a policy built in the DataHub UI can be transcribed " +
+							"directly.\n\n" +
+							"Mutually exclusive with `type`, `resources` and `all_resources`: when `filter` is " +
+							"present DataHub evaluates it alone and ignores the legacy attributes entirely.",
+						Attributes: map[string]schema.Attribute{
+							"criteria": schema.ListNestedAttribute{
+								Required: true,
+								MarkdownDescription: "Conjunction (AND) of criteria -- every criterion must match for the policy to apply. " +
+									"At least one criterion is required.\n\n" +
+									"There is no top-level OR: a scope such as \"tagged `pii` OR in domain `finance`\" " +
+									"needs two policies.",
+								NestedObject: schema.NestedAttributeObject{
+									Attributes: map[string]schema.Attribute{
+										"field": schema.StringAttribute{
+											Required: true,
+											MarkdownDescription: "Entity field to match on. One of `TYPE`, `URN`, `OWNER`, `DOMAIN`, " +
+												"`GROUP_MEMBERSHIP`, `DATA_PLATFORM_INSTANCE`, `TAG`, `CONTAINER`, `GLOSSARY`. " +
+												"(`RESOURCE_TYPE` and `RESOURCE_URN` are accepted deprecated aliases of `TYPE` and `URN`.)\n\n" +
+												"**Some fields match hierarchically and some do not**, which is not visible from the " +
+												"configuration and materially changes how much a criterion covers:\n\n" +
+												"- `DOMAIN`, `CONTAINER` and `GLOSSARY` match **descendants**. DataHub resolves an " +
+												"entity's value set for these fields by expanding ancestors, so a criterion naming a " +
+												"parent domain also matches entities in its child domains, one naming a database " +
+												"container also matches datasets nested in its schemas, and one naming a glossary node " +
+												"also matches entities tagged with terms beneath it.\n" +
+												"- `TAG`, `TYPE`, `URN`, `OWNER`, `GROUP_MEMBERSHIP` and `DATA_PLATFORM_INSTANCE` " +
+												"match **exactly**. Tags in particular carry no hierarchy here: a criterion matches only " +
+												"entities carrying that precise tag URN.",
+											Validators: []validator.String{enumString(policyMatchFields...)},
+										},
+										"values": schema.ListAttribute{
+											Required:    true,
+											ElementType: types.StringType,
+											MarkdownDescription: "Values to match, disjunctively (OR) -- the criterion passes if any value matches. " +
+												"Entity-typed fields take URNs (e.g. `[\"urn:li:tag:pii\"]`); `TYPE` takes entity " +
+												"type names (e.g. `[\"dataset\", \"container\"]`).",
+										},
+										"condition": schema.StringAttribute{
+											Optional:            true,
+											Computed:            true,
+											Default:             stringdefault.StaticString("EQUALS"),
+											MarkdownDescription: "Match condition: `EQUALS`, `STARTS_WITH` or `NOT_EQUALS`. Defaults to `EQUALS`.",
+											Validators:          []validator.String{enumString(policyMatchConditions...)},
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			},
 		},
+	}
+}
+
+// ValidateConfig rejects a resources block that mixes the criteria filter with
+// the deprecated legacy attributes. The server accepts both without complaint
+// and then silently evaluates only the filter (PolicyEngine.getFilter returns
+// early when it is set), so a policy configured with both would appear to be
+// scoped more narrowly than it actually is. Failing at plan time is the only
+// place a user finds out.
+func (r *policyResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg policyResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() || cfg.Resources == nil || cfg.Resources.Filter == nil {
+		return
+	}
+
+	res := cfg.Resources
+	resourcesPath := path.Root("resources")
+	const conflictSummary = "Conflicting resource scope"
+	const conflictDetail = "%s cannot be combined with resources.filter. DataHub evaluates the " +
+		"filter alone and ignores the legacy attributes, so the policy would not be scoped as " +
+		"written. Express the same scope as a %s criterion instead."
+
+	if !res.Type.IsNull() && res.Type.ValueString() != "" {
+		resp.Diagnostics.AddAttributeError(resourcesPath.AtName("type"), conflictSummary,
+			fmt.Sprintf(conflictDetail, "resources.type", "TYPE"))
+	}
+	if !res.Resources.IsNull() && len(res.Resources.Elements()) > 0 {
+		resp.Diagnostics.AddAttributeError(resourcesPath.AtName("resources"), conflictSummary,
+			fmt.Sprintf(conflictDetail, "resources.resources", "URN"))
+	}
+	if !res.AllResources.IsNull() && res.AllResources.ValueBool() {
+		resp.Diagnostics.AddAttributeError(resourcesPath.AtName("all_resources"), conflictSummary,
+			"resources.all_resources cannot be combined with resources.filter. A filter already "+
+				"applies to every resource matching its criteria; drop all_resources.")
+	}
+
+	criteriaPath := resourcesPath.AtName("filter").AtName("criteria")
+	if len(res.Filter.Criteria) == 0 {
+		resp.Diagnostics.AddAttributeError(criteriaPath,
+			"Empty criteria list",
+			"resources.filter.criteria must contain at least one criterion. An empty filter matches "+
+				"every resource of every type, which is rarely intended -- omit the resources block "+
+				"entirely if the policy really is unscoped.")
+	}
+
+	for i, c := range res.Filter.Criteria {
+		if c.Values.IsNull() || c.Values.IsUnknown() {
+			continue
+		}
+		if len(c.Values.Elements()) == 0 {
+			resp.Diagnostics.AddAttributeError(criteriaPath.AtListIndex(i).AtName("values"),
+				"Empty values list",
+				"values must contain at least one value. A criterion with no values never matches "+
+					"any resource, so the policy would silently grant nothing.")
+		}
 	}
 }
 

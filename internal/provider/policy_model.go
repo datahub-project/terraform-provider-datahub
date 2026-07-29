@@ -53,6 +53,19 @@ func policyInputFromModel(ctx context.Context, m *policyResourceModel) (datahub.
 			Resources:    resources,
 			AllResources: m.Resources.AllResources.ValueBool(),
 		}
+		if f := m.Resources.Filter; f != nil {
+			criteria := make([]datahub.PolicyMatchCriterion, 0, len(f.Criteria))
+			for _, c := range f.Criteria {
+				values, d := listToStrings(ctx, c.Values)
+				diags.Append(d...)
+				criteria = append(criteria, datahub.PolicyMatchCriterion{
+					Field:     c.Field.ValueString(),
+					Values:    values,
+					Condition: c.Condition.ValueString(),
+				})
+			}
+			in.Resources.Filter = &datahub.PolicyMatchFilter{Criteria: criteria}
+		}
 	}
 
 	return in, diags
@@ -96,6 +109,19 @@ func applyPolicyToModel(ctx context.Context, p *datahub.Policy, m *policyResourc
 			Type:         nullIfEmpty(p.Resources.Type),
 			Resources:    resources,
 			AllResources: types.BoolValue(p.Resources.AllResources),
+		}
+		if f := p.Resources.Filter; f != nil {
+			criteria := make([]policyMatchCriterionModel, 0, len(f.Criteria))
+			for _, c := range f.Criteria {
+				values, d := stringsToList(ctx, c.Values)
+				diags.Append(d...)
+				criteria = append(criteria, policyMatchCriterionModel{
+					Field:     types.StringValue(c.Field),
+					Values:    values,
+					Condition: types.StringValue(c.Condition),
+				})
+			}
+			m.Resources.Filter = &policyMatchFilterModel{Criteria: criteria}
 		}
 	} else {
 		m.Resources = nil

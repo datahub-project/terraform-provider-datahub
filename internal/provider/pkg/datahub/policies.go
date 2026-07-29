@@ -24,12 +24,30 @@ type PolicyActors struct {
 	ResourceOwnersTypes []string
 }
 
-// PolicyResources mirrors the (legacy) DataHubResourceFilter form: a resource
-// type plus an explicit list of resource URNs, or all resources of the type.
+// PolicyMatchCriterion mirrors a single PolicyMatchCriterion: one field matched
+// against a set of values. The values are disjunctive (the criterion passes if
+// any value matches), and Condition is one of EQUALS, STARTS_WITH, NOT_EQUALS.
+type PolicyMatchCriterion struct {
+	Field     string
+	Values    []string
+	Condition string
+}
+
+// PolicyMatchFilter mirrors PolicyMatchFilter: a list of criteria applied
+// conjunctively (every criterion must pass).
+type PolicyMatchFilter struct {
+	Criteria []PolicyMatchCriterion
+}
+
+// PolicyResources mirrors DataHubResourceFilter. Filter is the current form and
+// takes precedence server-side: PolicyEngine.getFilter returns Filter verbatim
+// when set and never consults Type/Resources/AllResources, which are deprecated
+// and only synthesised into an equivalent filter when Filter is absent.
 type PolicyResources struct {
 	Type         string
 	Resources    []string
 	AllResources bool
+	Filter       *PolicyMatchFilter
 }
 
 // PolicyInput is the write-shape for UpsertPolicy.
@@ -120,6 +138,23 @@ func (c *Client) UpsertPolicy(ctx context.Context, urn string, in PolicyInput) (
 		if len(in.Resources.Resources) > 0 {
 			res["resources"] = in.Resources.Resources
 		}
+		if f := in.Resources.Filter; f != nil {
+			criteria := make([]map[string]any, 0, len(f.Criteria))
+			for _, c := range f.Criteria {
+				condition := c.Condition
+				if condition == "" {
+					condition = "EQUALS"
+				}
+				// PolicyMatchCriterionInput declares condition non-null, unlike
+				// the PDL record which defaults it, so it is always sent.
+				criteria = append(criteria, map[string]any{
+					"field":     c.Field,
+					"values":    c.Values,
+					"condition": condition,
+				})
+			}
+			res["filter"] = map[string]any{"criteria": criteria}
+		}
 		input["resources"] = res
 	}
 
@@ -174,6 +209,13 @@ type dataHubPolicyEntity struct {
 				Type         string   `json:"type"`
 				Resources    []string `json:"resources"`
 				AllResources bool     `json:"allResources"`
+				Filter       *struct {
+					Criteria []struct {
+						Field     string   `json:"field"`
+						Values    []string `json:"values"`
+						Condition string   `json:"condition"`
+					} `json:"criteria"`
+				} `json:"filter"`
 			} `json:"resources"`
 		} `json:"value"`
 	} `json:"dataHubPolicyInfo,omitempty"`
@@ -252,6 +294,21 @@ func (c *Client) GetPolicyByURN(ctx context.Context, urn string) (*Policy, error
 			Type:         v.Resources.Type,
 			Resources:    v.Resources.Resources,
 			AllResources: v.Resources.AllResources,
+		}
+		if f := v.Resources.Filter; f != nil {
+			criteria := make([]PolicyMatchCriterion, 0, len(f.Criteria))
+			for _, c := range f.Criteria {
+				condition := c.Condition
+				if condition == "" {
+					condition = "EQUALS" // PolicyMatchCriterion.condition defaults to EQUALS
+				}
+				criteria = append(criteria, PolicyMatchCriterion{
+					Field:     c.Field,
+					Values:    c.Values,
+					Condition: condition,
+				})
+			}
+			p.Resources.Filter = &PolicyMatchFilter{Criteria: criteria}
 		}
 	}
 	return p, nil

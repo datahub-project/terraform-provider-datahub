@@ -27,6 +27,15 @@ type mockPolicy struct {
 	ResType             string
 	ResResources        []string
 	ResAll              bool
+	HasResFilter        bool
+	ResFilterCriteria   []mockPolicyCriterion
+}
+
+// mockPolicyCriterion mirrors one PolicyMatchCriterion of resources.filter.
+type mockPolicyCriterion struct {
+	Field     string
+	Values    []string
+	Condition string
 }
 
 // handleUpsertPolicy handles the updatePolicy mutation (used for both create and
@@ -57,6 +66,21 @@ func (s *mockServer) handleUpsertPolicy(w http.ResponseWriter, variables map[str
 		p.ResType = asString(resources["type"])
 		p.ResResources = asStrings(resources["resources"])
 		p.ResAll, _ = resources["allResources"].(bool)
+		if filter, ok := resources["filter"].(map[string]any); ok {
+			p.HasResFilter = true
+			raw, _ := filter["criteria"].([]any)
+			for _, e := range raw {
+				c, ok := e.(map[string]any)
+				if !ok {
+					continue
+				}
+				p.ResFilterCriteria = append(p.ResFilterCriteria, mockPolicyCriterion{
+					Field:     asString(c["field"]),
+					Values:    asStrings(c["values"]),
+					Condition: asString(c["condition"]),
+				})
+			}
+		}
 	}
 
 	s.mu.Lock()
@@ -66,6 +90,56 @@ func (s *mockServer) handleUpsertPolicy(w http.ResponseWriter, variables map[str
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"updatePolicy": urn},
 	})
+}
+
+// handleSeedPolicy injects a filter-scoped policy into the mock store without
+// going through the updatePolicy mutation -- standing in for a policy authored in
+// the DataHub UI. Import tests need this: importing a policy the provider itself
+// wrote cannot catch a read path that drops a field the provider never sent.
+//
+//	POST /test-control/seed-policy
+//	{"id":"...","name":"...","criteria":[{"field":"TAG","values":["urn:li:tag:x"],"condition":"EQUALS"}]}
+func (s *mockServer) handleSeedPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Criteria []struct {
+			Field     string   `json:"field"`
+			Values    []string `json:"values"`
+			Condition string   `json:"condition"`
+		} `json:"criteria"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" || len(body.Criteria) == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	p := mockPolicy{
+		ID:             body.ID,
+		Name:           body.Name,
+		Type:           "METADATA",
+		State:          "ACTIVE",
+		Privileges:     []string{"EDIT_ENTITY_TAGS"},
+		ResourceOwners: true,
+		HasResources:   true,
+		HasResFilter:   true,
+	}
+	for _, c := range body.Criteria {
+		p.ResFilterCriteria = append(p.ResFilterCriteria, mockPolicyCriterion{
+			Field:     c.Field,
+			Values:    c.Values,
+			Condition: c.Condition,
+		})
+	}
+
+	s.mu.Lock()
+	s.policies[body.ID] = p
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *mockServer) handleDeletePolicy(w http.ResponseWriter, variables map[string]any) {
@@ -137,11 +211,23 @@ func (s *mockServer) handleDataHubPolicyItem(w http.ResponseWriter, r *http.Requ
 		},
 	}
 	if p.HasResources {
-		value["resources"] = map[string]any{
+		resources := map[string]any{
 			"type":         p.ResType,
 			"resources":    orEmpty(p.ResResources),
 			"allResources": p.ResAll,
 		}
+		if p.HasResFilter {
+			criteria := make([]map[string]any, 0, len(p.ResFilterCriteria))
+			for _, c := range p.ResFilterCriteria {
+				criteria = append(criteria, map[string]any{
+					"field":     c.Field,
+					"values":    orEmpty(c.Values),
+					"condition": c.Condition,
+				})
+			}
+			resources["filter"] = map[string]any{"criteria": criteria}
+		}
+		value["resources"] = resources
 	}
 
 	w.Header().Set("Content-Type", "application/json")
