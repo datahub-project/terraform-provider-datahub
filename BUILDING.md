@@ -61,6 +61,22 @@ Sets `TF_ACC=1` and runs the Plugin Framework acceptance tests in `internal/prov
 
 The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automatically skipped if an older CLI is found.
 
+### Tests that pin against a published release (`ExternalProviders`)
+
+A test that compares this build against a released one -- for example asserting that a config written for the last published provider still plans empty after a schema change -- must neutralise `dev_overrides` first, or it silently tests nothing.
+
+`make dev-override` writes a `dev.tfrc` that serves `datahub-project/datahub` from `./bin/` and, by design, makes Terraform **ignore `required_providers` version constraints entirely**. An `ExternalProviders` step that asks for version `0.16.0` therefore gets the local build instead, both steps run on the same binary, and the comparison passes no matter what the schema does. Because `make dev-override` is the normal state of a working tree, this is the default behaviour locally, and it fails open rather than loudly. It went unnoticed until such a test was pointed at a provider version that does not exist and still passed.
+
+Wrap those tests with the helper:
+
+```go
+datahubtesting.NeutralizeDevOverride(t)
+```
+
+It points `TF_CLI_CONFIG_FILE` at an empty CLI configuration for the duration of the test, so the `ExternalProviders` step genuinely downloads the requested release from the Registry. Preferred over skipping when an override is detected, which would silently skip for every local developer.
+
+Steps that use `ProtoV6ProviderFactories` are unaffected: the framework serves the provider in-process via `TF_REATTACH_PROVIDERS`, which takes precedence over `dev_overrides`. So ordinary acceptance tests always exercise current source, and a stale `./bin/` binary is harmless to them.
+
 ### Live tests: target overview
 
 Each Makefile target enforces WHERE and HOW tests run. The target name is the source of truth for location and launch method. Cloud vs OSS is **auto-detected** from the live instance via `GET /config`; no flag is required.
