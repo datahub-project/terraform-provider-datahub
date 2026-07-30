@@ -35,16 +35,19 @@ type policyResource struct {
 }
 
 type policyResourceModel struct {
-	ID          types.String          `tfsdk:"id"`
-	URN         types.String          `tfsdk:"urn"`
-	PolicyID    types.String          `tfsdk:"policy_id"`
-	Name        types.String          `tfsdk:"name"`
-	Type        types.String          `tfsdk:"type"`
-	State       types.String          `tfsdk:"state"`
-	Description types.String          `tfsdk:"description"`
-	Privileges  types.Set             `tfsdk:"privileges"`
-	Actors      *policyActorsModel    `tfsdk:"actors"`
-	Resources   *policyResourcesModel `tfsdk:"resources"`
+	ID          types.String `tfsdk:"id"`
+	URN         types.String `tfsdk:"urn"`
+	PolicyID    types.String `tfsdk:"policy_id"`
+	Name        types.String `tfsdk:"name"`
+	Type        types.String `tfsdk:"type"`
+	State       types.String `tfsdk:"state"`
+	Description types.String `tfsdk:"description"`
+	Privileges  types.Set    `tfsdk:"privileges"`
+	// Object rather than a Go pointer: a nested block fed from a variable or
+	// for_each plans its Optional+Computed descendants as unknown, which a
+	// pointer cannot hold. See the comment at the top of policy_model.go.
+	Actors    types.Object `tfsdk:"actors"`
+	Resources types.Object `tfsdk:"resources"`
 }
 
 type policyActorsModel struct {
@@ -57,14 +60,14 @@ type policyActorsModel struct {
 }
 
 type policyResourcesModel struct {
-	Type         types.String            `tfsdk:"type"`
-	Resources    types.Set               `tfsdk:"resources"`
-	AllResources types.Bool              `tfsdk:"all_resources"`
-	Filter       *policyMatchFilterModel `tfsdk:"filter"`
+	Type         types.String `tfsdk:"type"`
+	Resources    types.Set    `tfsdk:"resources"`
+	AllResources types.Bool   `tfsdk:"all_resources"`
+	Filter       types.Object `tfsdk:"filter"`
 }
 
 type policyMatchFilterModel struct {
-	Criteria []policyMatchCriterionModel `tfsdk:"criteria"`
+	Criteria types.List `tfsdk:"criteria"`
 }
 
 type policyMatchCriterionModel struct {
@@ -325,11 +328,27 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 func (r *policyResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var cfg policyResourceModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
-	if resp.Diagnostics.HasError() || cfg.Resources == nil || cfg.Resources.Filter == nil {
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	res := cfg.Resources
+	// Anything still unknown at validate time cannot be checked: the value is
+	// only resolved during plan. Skipping is correct rather than lenient - the
+	// conflicts below are re-derivable from the plan, and refusing to validate
+	// an unknown is what lets a variable-driven or for_each-driven block through
+	// at all.
+	res, ok, d := policyResourcesFromObject(ctx, cfg.Resources)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() || !ok || res.Filter.IsNull() || res.Filter.IsUnknown() {
+		return
+	}
+
+	var filter policyMatchFilterModel
+	resp.Diagnostics.Append(res.Filter.As(ctx, &filter, objectAsOptions)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	resourcesPath := path.Root("resources")
 	const conflictSummary = "Conflicting resource scope"
 	const conflictDetail = "%s cannot be combined with resources.filter. DataHub evaluates the " +
@@ -351,7 +370,13 @@ func (r *policyResource) ValidateConfig(ctx context.Context, req resource.Valida
 	}
 
 	criteriaPath := resourcesPath.AtName("filter").AtName("criteria")
-	if len(res.Filter.Criteria) == 0 {
+	criteria, ok, d := policyCriteriaFromList(ctx, filter.Criteria)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() || !ok {
+		return
+	}
+
+	if len(criteria) == 0 {
 		resp.Diagnostics.AddAttributeError(criteriaPath,
 			"Empty criteria list",
 			"resources.filter.criteria must contain at least one criterion. An empty filter matches "+
@@ -359,7 +384,7 @@ func (r *policyResource) ValidateConfig(ctx context.Context, req resource.Valida
 				"entirely if the policy really is unscoped.")
 	}
 
-	for i, c := range res.Filter.Criteria {
+	for i, c := range criteria {
 		if c.Values.IsNull() || c.Values.IsUnknown() {
 			continue
 		}
