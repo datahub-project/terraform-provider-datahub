@@ -25,6 +25,21 @@ func TestAcc_Policy_CriteriaFromVariable(t *testing.T) {
 	})
 }
 
+// TestAcc_Policy_ReportedRepro is the reporter's config as written, rather than a
+// paraphrase of it: value from the variable's own default, no actors block, and
+// their criterion. See PolicyReportedReproSteps for the two deviations the test
+// harness forces.
+func TestAcc_Policy_ReportedRepro(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	policyID := tg.Name("tfprovider-pol-repro")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyReportedReproSteps(policyID),
+	})
+}
+
 // TestAcc_Policy_ActorsFromVariable establishes whether the same defect predates
 // the criteria feature. actors is backed by a Go pointer and holds three
 // Optional+Computed booleans, so it should fail identically if the cause is the

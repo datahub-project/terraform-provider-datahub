@@ -69,6 +69,42 @@ resource "datahub_policy" "test" {
 	}
 }
 
+// PolicyReportedReproSteps is the reporter's config, reproduced as closely as a
+// test can. It differs from PolicyCriteriaFromVariableSteps in three ways that
+// are worth covering rather than assuming equivalent:
+//
+//   - the value arrives from the variable's own default rather than from
+//     ConfigVariables, so Terraform resolves it internally instead of being
+//     handed it;
+//   - the criterion targets dataHubIngestionSource rather than dataset.
+//
+// Three deviations the harness forces, none of which touch the mechanism. The
+// reported snippet is abbreviated and not runnable as posted: both name and
+// actors are Required, and without them the config fails validation with
+// "The argument actors is required" long before conversion is attempted, so the
+// snippet cannot exhibit the bug verbatim. Both are added at their minimum. The
+// third is policy_id, randomised rather than the literal "repro" so the test is
+// safe to run against a shared instance.
+func PolicyReportedReproSteps(policyID string) []resource.TestStep {
+	cfg := providerBlock + `
+variable "crit" {
+  type    = list(object({ field = string, values = list(string) }))
+  default = [{ field = "TYPE", values = ["dataHubIngestionSource"] }]
+}
+` + fmt.Sprintf(`
+resource "datahub_policy" "x" {
+  policy_id  = %q
+  name       = "Reported Repro"
+  type       = "METADATA"
+  privileges = ["VIEW_ENTITY_PAGE"]
+  actors     = { all_users = true }
+  resources  = { filter = { criteria = var.crit } }
+}
+`, policyID)
+
+	return []resource.TestStep{{Config: cfg}}
+}
+
 // StructuredPropertySettingsFromVariableSteps drives the settings block of
 // datahub_structured_property from an input variable.
 //
