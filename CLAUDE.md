@@ -154,6 +154,13 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 - **Check the scope of every control on the page.** Every DataHub settings page examined so far mixes org-wide settings with per-user ones (`corpUserSettings`). Per-user preferences are out of scope by the provider-scope rule above; only the org-wide half is ever modelled.
 - Do not collapse the settings surface into one fat `datahub_global_settings`: resources here own what they declare, so that would reset unrelated settings when a user manages one of them, and privileges, availability tiers and owning teams all differ per domain.
 
+**Nested attributes and unknown values**
+- Does the resource have a nested attribute (`SingleNestedAttribute`, `ListNestedAttribute`)? If so, read the "Unknown Values in Nested Attributes" section of `docs/design/datahub-model-and-resource-design.md` - this class of bug shipped twice, in `datahub_policy` and in two assertion resources.
+- **Model nested attributes with framework types** (`types.Object`, `types.List`), never `*fooModel` or `[]fooModel`. A Go pointer or slice cannot hold an unknown value, so a block fed from a variable or `for_each` fails conversion before the provider runs.
+- **Never write `!x.IsNull() && x.ValueString() != ""`** to test presence in `ValidateConfig`/`ModifyPlan`. `ValueString()` returns `""` for unknown, so a set-but-unresolved attribute reads as absent and the resource rejects a valid config. Check `IsUnknown()` explicitly and skip.
+- **Add one non-literal test per resource with nested attributes.** A literal in a test config resolves schema defaults and never produces unknown, so the whole suite can pass while every module use is broken. Use `ConfigVariables` on the `TestStep`, or feed from `terraform_data.seed.output`; see `internal/provider/datahubtesting/policy_unknown.go`.
+- Remember `Default` requires `Computed: true`, so giving an attribute a schema default is what makes it unknown-able. For a new attribute, consider applying the default in `Create`/`Update` and leaving it plain `Optional` instead.
+
 **Provider-level defaults**
 - Does the entity type carry `customProperties`, `globalTags`, or a structured-property aspect? If so, it is a defaults candidate - see `docs/design/provider-default-labels.md` and the "Provider-level defaults" guide.
 - Add the entity's kind to the relevant mechanism(s) in `defaultsSupport` (`internal/provider/defaults.go`) and wire the resource's ModifyPlan/Create/Update/Read/Import the same way the existing default-capable resources do. Getting this wrong is silent: the resource just never picks up defaults, with no error to notice.

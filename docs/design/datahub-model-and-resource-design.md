@@ -104,6 +104,43 @@ The provider does not need any special cross-environment logic (such as URN rewr
 
 **Practical pattern for recipes:** recipe content often contains environment-specific values (database hostnames, secret references). These should use DataHub's own `${DATAHUB_SECRET_<NAME>}` substitution syntax in the recipe string, combined with separate `datahub_secret` resources (when that resource is implemented) or pre-existing secrets managed outside Terraform. This keeps credentials out of Terraform state and out of the recipe attribute value.
 
+## Unknown Values in Nested Attributes
+
+The section above tells practitioners to parameterise with variables. This section is about what stops that working, because the provider broke it twice before anyone noticed.
+
+Terraform marks an attribute **unknown** when its value is not resolvable yet. Two everyday situations produce that:
+
+- The value comes from another resource's computed attribute, so it does not exist until apply.
+- The value comes from a variable, a `for_each`, or any other non-literal expression whose object type omits an attribute that the schema declares **Optional+Computed**. Terraform cannot resolve that attribute's default itself, so it plans it unknown. Note this happens with a variable that has a default: during the `terraform validate` walk, root module inputs are unknown regardless.
+
+Two distinct bugs follow, both of which shipped in this provider:
+
+1. **A Go-native model field cannot hold unknown.** `*fooModel` and `[]fooModel` have no representation for it, so `Config.Get` fails outright with `Received unknown value, however the target type cannot handle unknown values`, naming the path and the offending Go type. This made every nested block of `datahub_policy` literal-only - fixed by moving `actors`, `resources`, `filter` and `criteria` to `types.Object`/`types.List`.
+2. **An accessor silently reads unknown as a zero value.** `ValueString()` returns `""` for unknown, `ValueBool()` returns `false`, and neither errors. Code shaped `!x.IsNull() && x.ValueString() != ""` therefore treats a set-but-unresolved attribute as *absent*, which made `datahub_freshness_assertion` and `datahub_field_assertion` reject valid configurations with a spurious "Missing ..." pointing at the very line supplying the value.
+
+### Four practices, in descending order of value
+
+**1. Model every nested attribute with a framework type.** `types.Object`, `types.List`, `types.Set`, `types.Map` - never a Go pointer or slice. Keep the plain struct as the target of `As()` and `ObjectValueFrom` so the read and write paths stay readable; guard null and unknown before descending into it. The framework's own diagnostic recommends this (it prints `Suggested Type: basetypes.ListValue`), which is a good sign of how routinely it is hit.
+
+**2. Exercise at least one non-literal input per resource with nested attributes.** This is the highest-leverage practice, because it explains how both bugs survived a full green suite and a release: **a literal in a test config resolves schema defaults at plan time and never produces unknown.** The whole acceptance suite can pass while every module consumer is broken. Reach unknown with `ConfigVariables` on the `TestStep`, or by feeding the attribute from another resource's computed attribute (`terraform_data.seed.output` works and needs no DataHub call). See `PolicyCriteriaFromVariableSteps` in `internal/provider/datahubtesting/policy_unknown.go` for the worked pattern - before that, no test in this repo used either technique.
+
+**3. Treat every `Computed: true` as a deliberate cost.** This is the root of the exposure rather than a side issue: **the framework requires `Computed: true` in order to set a schema `Default`.** Wanting a default is ordinary, so providers acquire unknown-ability by being helpful, not by choosing risk. Every attribute implicated in the policy bug (`all_users`, `all_groups`, `resource_owners`, `all_resources`, `condition`) got there exactly that way. The alternative - plain `Optional`, with the default applied in `Create`/`Update` - keeps the attribute un-unknownable, at the cost of a null in state and read-path normalisation to avoid perpetual drift. That trade is worth taking for a *new* attribute and generally not worth taking retroactively, because changing it alters state semantics for existing users.
+
+**4. Consider a structural test rather than vigilance.** No linter catches either bug. A `go/ast` test asserting that no `tfsdk`-tagged field has a non-framework type would catch the first class exhaustively and cover resources added later - the same shape as `TestDefaultTagsVerifiedBeforeAnyWrite`. Hand-sweeping works once; a structural test keeps working.
+
+### Validating a config you cannot fully see
+
+`ValidateConfig` and `ModifyPlan` both run while values may be unknown, so both must decide what to do about that. Skipping an unknown is correct rather than lenient: an unknown carries nothing to check, and refusing to validate one is what lets a variable-driven config through at all.
+
+There are two granularities, and the codebase currently uses both:
+
+- **Block-level early return** - `if x.IsUnknown() { return }` at the top. Simple, and what `datahub_policy`, `datahub_volume_assertion` and `datahub_sql_assertion` do. It drops validation for the whole resource when any gating attribute is unresolved.
+- **Per-attribute skip** - check each attribute and validate the rest. More thorough, since a config with one unknown attribute still gets its other rules checked.
+
+Prefer per-attribute where the checks are independent. Whichever is chosen, apply it consistently within a resource family: the freshness/field bugs exist precisely because two of the four assertion `ValidateConfig` hooks were written with a guard and two without, so nothing looked wrong next to its neighbours.
+
+Be aware of what a block-level skip gives up. `datahub_policy`'s filter-versus-legacy conflict check lives only in `ValidateConfig`, so a wholly-unknown `resources` block bypasses it and DataHub then silently honours only the filter. That residual hole is inherent to validate-time checking; closing it needs the same assertion repeated in `Create`/`Update`, where values are resolved.
+
 ## The Terraform Provider as a Control Plane
 
 DataHub provides both a Terraform provider (this project) and an MCP server for AI agent integration. These are complementary, not competing:
