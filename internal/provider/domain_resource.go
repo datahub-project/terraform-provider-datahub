@@ -91,7 +91,15 @@ func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"## Naming\n\n" +
 			"`domain_id` becomes the URN suffix (`urn:li:domain:<domain_id>`). Supplying an " +
 			"explicit, deterministic id avoids the random UUID that the DataHub UI assigns, and " +
-			"keeps the URN stable and predictable.",
+			"keeps the URN stable and predictable.\n\n" +
+			"## Orphaned-husk repair\n\n" +
+			"A DataHub server bug can leave an invisible, empty \"husk\" entity behind when a " +
+			"structured property and entities carrying it are deleted around the same time " +
+			"(e.g. one `terraform destroy`), which then blocks re-creation with an " +
+			"\"already exists\" error. When create hits that error and the blocking entity is " +
+			"provably such a husk (no `domainProperties` aspect, no data beyond an empty " +
+			"structured-properties aspect), the provider removes the husk, retries the create, " +
+			"and reports a warning. Domains with any real content are never touched.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed: true,
@@ -167,7 +175,7 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	plan.CustomPropertiesAll = all
 
-	urn, err := r.client.CreateDomain(ctx, datahub.CreateDomainInput{
+	urn, repairedHusk, err := r.client.CreateDomain(ctx, datahub.CreateDomainInput{
 		ID:           plan.DomainID.ValueString(),
 		Name:         plan.Name.ValueString(),
 		Description:  strVal(plan.Description),
@@ -176,6 +184,14 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
+	}
+	if repairedHusk {
+		resp.Diagnostics.AddWarning(
+			"Repaired orphaned domain",
+			fmt.Sprintf("An empty domain husk existed at %s - debris left by DataHub's "+
+				"structured-property cleanup writing to a hard-deleted entity (CAT-2583). "+
+				"The provider removed it and created the domain normally.", urn),
+		)
 	}
 
 	// custom_properties is not carried by the GraphQL createDomain mutation, so

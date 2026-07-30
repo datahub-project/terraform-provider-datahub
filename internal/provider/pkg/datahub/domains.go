@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // Domain is the read-shape returned by GetDomainByURN.
@@ -66,16 +68,21 @@ type createDomainResponse struct {
 // CreateDomain creates a DataHub domain via the GraphQL API and returns its
 // URN. Always supply a non-empty ID to produce a deterministic URN; omitting
 // it causes the server to generate a random UUID.
-func (c *Client) CreateDomain(ctx context.Context, in CreateDomainInput) (string, error) {
+//
+// The repairedHusk return is true when the create initially failed with
+// "already exists", the blocking entity turned out to be an empty husk left by
+// DataHub's structured-property cleanup writing to a hard-deleted entity
+// (CAT-2583), and the husk was deleted and the create retried successfully.
+func (c *Client) CreateDomain(ctx context.Context, in CreateDomainInput) (urn string, repairedHusk bool, err error) {
 	if c == nil {
-		return "", errors.New("client is nil")
+		return "", false, errors.New("client is nil")
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.ID == "" {
-		return "", errors.New("id is required")
+		return "", false, errors.New("id is required")
 	}
 	if in.Name == "" {
-		return "", errors.New("name is required")
+		return "", false, errors.New("name is required")
 	}
 
 	const q = `
@@ -101,17 +108,45 @@ mutation createDomain($input: CreateDomainInput!) {
 
 	var gqlResp createDomainResponse
 	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if len(gqlResp.Errors) > 0 {
-		return "", fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+		msg := gqlResp.Errors[0].Message
+		if !strings.Contains(strings.ToLower(msg), "already exists") {
+			return "", false, fmt.Errorf("DataHub API error: %s", msg)
+		}
+		// CAT-2583 husk repair: if the blocking entity is an empty husk left
+		// by the structured-property cleanup cascade patching a hard-deleted
+		// domain, remove it and retry the create once. Anything that is not
+		// provably a husk surfaces the original error untouched -- including
+		// createDomain's sibling-name conflict, which also says "already
+		// exists" but leaves this URN absent, so the husk read 404s and the
+		// original error stands.
+		huskURN := "urn:li:domain:" + in.ID
+		husk, herr := c.isEntityHusk(ctx, "domain", "domainKey", "domainProperties", huskURN)
+		if herr != nil || !husk {
+			return "", false, fmt.Errorf("DataHub API error: %s", msg)
+		}
+		if derr := c.DeleteDomain(ctx, huskURN); derr != nil {
+			return "", false, fmt.Errorf("DataHub API error: %s (husk repair failed: %w)", msg, derr)
+		}
+		tflog.Warn(ctx, "removed orphaned domain husk before create (CAT-2583)",
+			map[string]any{"urn": huskURN})
+		gqlResp = createDomainResponse{}
+		if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
+			return "", false, err
+		}
+		if len(gqlResp.Errors) > 0 {
+			return "", false, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+		}
+		repairedHusk = true
 	}
 
-	urn := gqlResp.Data.CreateDomain
+	urn = gqlResp.Data.CreateDomain
 	if urn == "" {
 		urn = "urn:li:domain:" + in.ID
 	}
-	return urn, nil
+	return urn, repairedHusk, nil
 }
 
 // GetDomainByURN fetches a DataHub domain directly by URN via the OpenAPI v3

@@ -10,6 +10,8 @@ description: |-
   Set parent_domain to the .urn attribute of another datahub_domain resource (rather than a raw URN string) so Terraform's dependency graph creates parents before children and destroys children before parents. DataHub hard-deletes domains and refuses deletion if any child domains exist; correct ordering is required for terraform destroy to succeed.
   Naming
   domain_id becomes the URN suffix (urn:li:domain:<domain_id>). Supplying an explicit, deterministic id avoids the random UUID that the DataHub UI assigns, and keeps the URN stable and predictable.
+  Orphaned-husk repair
+  A DataHub server bug can leave an invisible, empty "husk" entity behind when a structured property and entities carrying it are deleted around the same time (e.g. one terraform destroy), which then blocks re-creation with an "already exists" error. When create hits that error and the blocking entity is provably such a husk (no domainProperties aspect, no data beyond an empty structured-properties aspect), the provider removes the husk, retries the create, and reports a warning. Domains with any real content are never touched.
 ---
 
 # datahub_domain (Resource)
@@ -27,6 +29,10 @@ Set `parent_domain` to the `.urn` attribute of another `datahub_domain` resource
 ## Naming
 
 `domain_id` becomes the URN suffix (`urn:li:domain:<domain_id>`). Supplying an explicit, deterministic id avoids the random UUID that the DataHub UI assigns, and keeps the URN stable and predictable.
+
+## Orphaned-husk repair
+
+A DataHub server bug can leave an invisible, empty "husk" entity behind when a structured property and entities carrying it are deleted around the same time (e.g. one `terraform destroy`), which then blocks re-creation with an "already exists" error. When create hits that error and the blocking entity is provably such a husk (no `domainProperties` aspect, no data beyond an empty structured-properties aspect), the provider removes the husk, retries the create, and reports a warning. Domains with any real content are never touched.
 
 ## Example Usage
 

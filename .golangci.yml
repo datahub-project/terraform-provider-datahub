@@ -40,6 +40,24 @@ linters:
       - std-error-handling
     paths:
       - examples$
+    rules:
+      # SA5011 false-positives in tests. The pattern is
+      #   if x == nil { t.Fatal(...) }
+      #   if x.Field != want { ... }
+      # which is safe, because t.Fatal does not return. staticcheck only knows
+      # that if it resolves the noreturn fact for testing.common.Fatal, and it
+      # does so inconsistently: the same golangci-lint version on the same code
+      # reports these in CI (linux/amd64) and nothing locally (darwin/arm64).
+      #
+      # Scoped deliberately to SA5011 in test files only. Production code keeps
+      # full coverage, which matters because the nested-model nil guards in
+      # policy_resource.go are exactly what SA5011 protects, and a nil deref
+      # there is a provider panic during a user's apply rather than a loud test
+      # failure. Prefer fixing a real finding over widening this rule.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA5011"
 
 issues:
   max-issues-per-linter: 0
