@@ -15,8 +15,14 @@ output "current_branding" {
   }
 }
 
-# A preference that has never been set comes back as null, so supply a fallback
+# A preference with no value stored comes back as null, so supply a fallback
 # wherever the value is reused in a configuration and has to be non-empty.
+#
+# Null covers two situations that are indistinguishable here: a preference never
+# configured, and one that was configured and later reset. DataHub has no way to
+# remove one of these fields, so resetting stores an empty string, which reads
+# back as null. That is also why the branding recorded above cannot be recovered
+# afterwards - once reset, nothing on the instance says what it used to be.
 output "display_name" {
   description = "Organization name to show in reports, with a fallback when unset."
   value       = coalesce(data.datahub_organization_display_preferences.current.org_name, "DataHub")
