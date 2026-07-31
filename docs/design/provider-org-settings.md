@@ -54,6 +54,25 @@ Conventions established here, for reuse by the settings siblings that follow (`h
 - **Canonical empty => null on read.** `canonicalDisplayPreference` keeps an omitted attribute null in state when the server reports empty, so an unset field does not drift `null -> ""` forever. A server value that is empty while the config asked for something is still surfaced, so real drift stays visible.
 - **Read-back verification after write**, per the established silent-no-op guard.
 
+### Why Delete resets rather than restoring or doing nothing
+
+`Delete` is the one operation on an update-only resource with no obviously right answer, so the alternatives are recorded here. The setting always exists, so "delete" cannot mean what it means elsewhere, and the provider has to choose.
+
+The choice made at design time was **clear versus no-op**, and it was contingent on whether DataHub even permitted clearing. It does, but only by writing `""` - an explicit `null` in the mutation input is silently ignored - so clearing won. Restoring the pre-adoption values was not considered at the time. It should have been, if only to be rejected on the record.
+
+**Restore is worse than it first sounds.** It would mean capturing the values at create and holding them in state, and four things go wrong:
+
+- **Import makes it incoherent.** Import adopts the current values, so "previous" and "current" are the same and restore-on-destroy silently degrades to a no-op. Identical configurations would behave differently depending on whether the resource was created or imported.
+- **It goes stale.** An admin changing branding in the UI mid-management leaves the stored value predating that change. Restoring resurrects something nobody wants, and only reveals it afterwards.
+- **State loss breaks it.** Rebuild state by importing and the remembered value is gone, so `Delete` needs a fallback - which means two behaviours for one operation, selected by state history.
+- **It puts undeclared values in state.** State holds desired and actual; this would add history the configuration never mentions and the practitioner cannot see until it surprises them.
+
+More fundamentally, Terraform has no concept of the world before it started managing something. `destroy` removes what was created, and this resource creates nothing.
+
+**No-op was the genuinely arguable alternative**, and is a common shape elsewhere for a resource managing a field on a pre-existing object it did not create. Two things decided against it. Reset is *predictable*: the outcome is the same regardless of what happened while the resource was managed, whereas no-op leaves the instance carrying a value that nothing now owns, and a later re-adoption sees drift against it. And it follows the full-ownership convention above - under no-op the provider would stop owning values that still visibly bear its fingerprints.
+
+The cost of reset is real and must stay documented: **removing the resource from a configuration is an active change, not a withdrawal.** Terraform calls `Delete` for a removed block exactly as it does for `terraform destroy`. A practitioner who wants to stop managing branding without resetting it needs `terraform state rm`, or a `removed {}` block with `destroy = false`. The resource and data source examples both carry that warning, and the data source is the only way to capture the current values beforehand - after a reset, nothing on the instance records what they were, because a reset value and a never-configured one both read back as null.
+
 ### Not every singleton needs a resource
 
 Restating the roadmap's rule because it applied here: prefer a singleton resource when the aspect section carries multiple coherent fields (as `visual`'s name+logo do), or when a flag-on-member would create a cross-instance invariant Terraform cannot check at plan time. A one-field singleton already projected onto another resource's attribute - like the remote-executor default pointer on `datahub_remote_executor_pool.is_default` - does not warrant its own resource.
