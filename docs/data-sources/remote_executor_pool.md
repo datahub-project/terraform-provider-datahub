@@ -74,8 +74,8 @@ resource "datahub_ingestion_source" "warehouse" {
       config = {
         host_port = "postgres.internal:5432"
         database  = "warehouse"
-        username  = "${POSTGRES_USER}"
-        password  = "${POSTGRES_PASSWORD}"
+        username  = "$${POSTGRES_USER}"
+        password  = "$${POSTGRES_PASSWORD}"
       }
     }
   })
