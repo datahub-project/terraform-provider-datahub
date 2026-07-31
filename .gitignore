@@ -42,6 +42,12 @@ override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+# Throwaway Terraform configurations kept alongside a branch for reproducing or
+# demonstrating a bug. Lives inside the worktree so that cd-ing in activates
+# .mise.env, which points TF_CLI_CONFIG_FILE at this worktree's dev.tfrc - so
+# `terraform plan` uses the local build with nothing to export by hand.
+/scratch/
+
 .terraformrc
 terraform.rc
 dev.tfrc
