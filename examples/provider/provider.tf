@@ -24,8 +24,10 @@ terraform {
 #     gms_token = var.datahub_gms_token
 #   }
 #
-# Both attributes can also be omitted entirely to fall back to the local
-# DataHub CLI config at ~/.datahubenv.
+# One of the two must be supplied, in the configuration or the environment.
+# The provider deliberately does not read the DataHub CLI's ~/.datahubenv:
+# the target instance should be determined by this configuration, not by
+# whichever instance the machine's CLI was last pointed at.
 #
 # Provider-level defaults (optional) attach labels to every resource the
 # provider manages, wherever the entity type supports them - see the

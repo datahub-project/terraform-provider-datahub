@@ -7,10 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The provider now warns when the resolved GMS endpoint uses plaintext `http://` and the host is not loopback. The GMS token is sent as an `Authorization` bearer credential on every request, so over `http` it travels in cleartext and is readable by anything on the network path. A warning rather than an error, because `http` to a private-network or tunnelled endpoint is legitimate; `localhost`, `127.0.0.0/8` and `::1` are exempt, since plaintext loopback is the documented DataHub Quickstart setup.
+
+### Removed
+
+- **BREAKING: the provider no longer reads credentials from the DataHub CLI's `~/.datahubenv`.** `gms_url` and `gms_token` now resolve from the provider configuration, then from `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN`, and nowhere else. If a configuration supplied neither, the provider previously fell back to `gms.server` and `gms.token` in `~/.datahubenv` -- so `provider "datahub" {}` with an empty body was not inert: it authenticated against whichever instance that machine's CLI had last been pointed at, which could be production, with nothing in the Terraform configuration to say so. Two engineers running the same configuration against the same state could target different instances, which defeats the reproducibility Terraform exists to provide. It is appropriate for the CLI, where a human drives one command at a time, and a category error for a declarative tool.
+
+- The `gopkg.in/yaml.v3` dependency, which existed only to parse `~/.datahubenv`. One fewer transitive dependency for anyone vendoring or auditing the provider's supply chain.
+
 ### Fixed
 
+- A whitespace-only `gms_url` or `gms_token` is now treated as absent and reported with the same actionable diagnostic as a missing value, instead of being passed to the API client as a malformed endpoint or a bearer token of spaces.
+
 - `datahub_policy`: the `actors` and `resources` blocks can now be built from a variable, a `for_each`, or any other computed expression. Previously any non-literal value failed the plan with `Received unknown value, however the target type cannot handle unknown values`, naming `resources.filter.criteria`, `resources` or `actors` depending on which block was fed. Terraform marks an optional-but-computed attribute as unknown when it cannot resolve that attribute's default itself, which is what happens when the object you supply omits it - `actors` has three such attributes, `resources` has `all_resources`, and each filter criterion has `condition` - and the provider's internal representation of those blocks could not carry an unknown. The practical effect was that every nested block had to be written out literally, which rules out expressing a policy scope in a reusable module and is most of the reason to want criteria in the first place. Note this is not new in 0.17.0: `actors` has behaved this way since it shipped, so a module that assembles either block is fixed by this release rather than merely restored. Plan-time validation of the filter now defers on values it cannot yet see, and still reports the same conflicts once they resolve. No configuration change is needed and no state is migrated.
+
 - `datahub_domain`: a domain can now be re-created after a `terraform destroy` that also removed a structured property assigned to it. DataHub's cleanup of a deleted property scans a search index that lags the delete, so the cleanup write can land on a domain that has already gone, resurrecting it as an empty "husk" - an entity with nothing but its key aspect, invisible in the UI and in search, yet enough to make the next `terraform apply` fail with "This Domain already exists!" with no domain anywhere for the operator to find and remove. Create now inspects the blocking entity and, only when it provably holds no `domainProperties` aspect and no data beyond an empty structured-properties aspect, removes the husk, retries the create, and reports what it did as a warning. A domain with any real content - including one that merely collides on `domain_id`, and DataHub's separate sibling-name conflict, which reports "already exists" too - is never touched and its original error reaches the user unchanged. `datahub_glossary_node` and `datahub_glossary_term` have had this repair since 0.16.0; domains, the entity type most often paired with structured properties, were the remaining gap.
+
+### Upgrade notes
+
+- **A configuration that supplied no credentials at all now fails.** If your provider block sets neither `gms_url` nor `gms_token`, and `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` are not in the environment, `terraform plan` now stops with a diagnostic instead of authenticating from `~/.datahubenv`. Set them in the provider block, or export them -- including from the CLI's own values if that is what you want: `DATAHUB_GMS_URL=$(yq '.gms.server' ~/.datahubenv) DATAHUB_GMS_TOKEN=$(yq '.gms.token' ~/.datahubenv)`. Everything else in this release is additive.
 
 ## [0.17.0] - 2026-07-29
 

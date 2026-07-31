@@ -47,8 +47,10 @@ terraform {
 #     gms_token = var.datahub_gms_token
 #   }
 #
-# Both attributes can also be omitted entirely to fall back to the local
-# DataHub CLI config at ~/.datahubenv.
+# One of the two must be supplied, in the configuration or the environment.
+# The provider deliberately does not read the DataHub CLI's ~/.datahubenv:
+# the target instance should be determined by this configuration, not by
+# whichever instance the machine's CLI was last pointed at.
 #
 # Provider-level defaults (optional) attach labels to every resource the
 # provider manages, wherever the entity type supports them - see the
@@ -87,8 +89,8 @@ in the repository. Each subdirectory has a README with prerequisites and instruc
 - `auto_property_strategy` (String) When auto properties are stamped. `CREATION_ONLY` (default): markers are added only when an entity is created and their values are frozen at creation, so upgrading the provider never produces diffs on existing resources. `PROACTIVE`: markers and their current values are enforced on every managed entity on every apply. Use `PROACTIVE` once to converge an estate created before this feature (or with earlier provider versions), or leave it on to keep `provider-version` current at the cost of diffs after every provider upgrade.
 - `defaults` (Attributes) Default labels attached to every resource this provider manages, wherever the underlying DataHub entity type supports them (similar in spirit to the AWS provider's `default_tags`). Resource-level values win over provider defaults on a per-key basis; a differing value raises a plan-time warning. Resources whose entity type supports no default mechanism (for example `datahub_ingestion_source`, `datahub_secret`, `datahub_policy`) are unaffected. (see [below for nested schema](#nestedatt--defaults))
 - `frontend_url` (String) DataHub frontend URL for native user operations (sign-up, password reset). For example: `https://datahub.example.com:9002`. If not set, the provider reads `DATAHUB_FRONTEND_URL` from the environment, or derives it from `gms_url` by stripping any `/gms` suffix and replacing port 8080 with 9002. Only needed when using `datahub_local_user_login`.
-- `gms_token` (String, Sensitive) DataHub GMS token for authentication. If not set, the provider will read the token from the `DATAHUB_GMS_TOKEN` environment variable, or fall back to the local DataHub CLI configuration at `~/.datahubenv`.
-- `gms_url` (String) DataHub GMS URL. For example: `https://datahub.example.com`. If not set, the provider will read `DATAHUB_GMS_URL` from the environment, or fall back to `gms.server` in `~/.datahubenv`.
+- `gms_token` (String, Sensitive) DataHub GMS token for authentication. If not set, the provider reads `DATAHUB_GMS_TOKEN` from the environment. There is no further fallback -- see `gms_url`. Prefer supplying a short-lived token from a secrets manager or credential broker over a long-lived personal access token held in a variables file.
+- `gms_url` (String) DataHub GMS URL. For example: `https://datahub.example.com`. If not set, the provider reads `DATAHUB_GMS_URL` from the environment. There is no further fallback: the provider does not read the DataHub CLI's `~/.datahubenv`, so the target instance is determined by this configuration or the environment rather than by the machine it runs on. A plaintext `http://` endpoint to a non-loopback host raises a warning, because the token travels as a bearer credential in cleartext.
 
 <a id="nestedatt--defaults"></a>
 ### Nested Schema for `defaults`

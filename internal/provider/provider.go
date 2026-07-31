@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
@@ -19,7 +18,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"gopkg.in/yaml.v3"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 
@@ -30,40 +28,30 @@ import (
 	_ "github.com/datahub-project/terraform-provider-datahub/internal/provider/importtarget/targets"
 )
 
-type datahubEnvConfig struct {
-	Gms struct {
-		Server string `yaml:"server"`
-		Token  string `yaml:"token"`
-	} `yaml:"gms"`
-}
-
-func readDatahubEnvConfig() (datahubEnvConfig, bool, error) {
-	var cfg datahubEnvConfig
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return cfg, false, fmt.Errorf("determining home directory: %w", err)
-	}
-
-	path := filepath.Join(home, ".datahubenv")
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return cfg, false, nil
-		}
-		return cfg, false, fmt.Errorf("checking %s: %w", path, err)
-	}
-
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return cfg, false, fmt.Errorf("reading %s: %w", path, err)
-	}
-
-	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return cfg, false, fmt.Errorf("parsing %s: %w", path, err)
-	}
-
-	return cfg, true, nil
-}
+// removedCLIConfigFallbackHint is appended to both missing-credential
+// diagnostics. Earlier versions fell back to reading gms.server and gms.token
+// from the DataHub CLI's ~/.datahubenv whenever the configuration and the
+// environment were both empty, so a config that supplied neither still
+// authenticated - against whichever instance the operator's CLI had last been
+// pointed at. A user upgrading hits this message at precisely the moment the
+// removal affects them, which is the only moment the explanation is useful.
+//
+// Deliberately does not name the release the removal landed in. The version
+// would be a hardcoded literal that silently becomes a lie if the change ships
+// in a different release than planned, and nothing in a diagnostic can verify
+// it. The CHANGELOG carries the version, is maintained as part of release prep,
+// and is where a reader goes for "which version" anyway.
+const removedCLIConfigFallbackHint = "\n\n" +
+	"If this configuration previously worked without either, the provider was " +
+	"authenticating from ~/.datahubenv (your DataHub CLI configuration). That " +
+	"fallback has been removed: it made the target instance depend on the " +
+	"machine rather than on the configuration, so the same Terraform could apply " +
+	"to different environments - including production - with nothing in the " +
+	"configuration to say so. See the CHANGELOG for the release this changed in. " +
+	"Set the values explicitly instead; to keep using the CLI's values, export " +
+	"them: " +
+	`DATAHUB_GMS_URL=$(yq '.gms.server' ~/.datahubenv) ` +
+	`DATAHUB_GMS_TOKEN=$(yq '.gms.token' ~/.datahubenv)`
 
 // Ensure datahubProvider satisfies various provider interfaces.
 var _ provider.Provider = &datahubProvider{}
@@ -121,14 +109,20 @@ func (p *datahubProvider) Schema(_ context.Context, _ provider.SchemaRequest, re
 		Attributes: map[string]schema.Attribute{
 			"gms_url": schema.StringAttribute{
 				MarkdownDescription: "DataHub GMS URL. For example: `https://datahub.example.com`. " +
-					"If not set, the provider will read `DATAHUB_GMS_URL` from the environment, " +
-					"or fall back to `gms.server` in `~/.datahubenv`.",
+					"If not set, the provider reads `DATAHUB_GMS_URL` from the environment. " +
+					"There is no further fallback: the provider does not read the DataHub CLI's " +
+					"`~/.datahubenv`, so the target instance is determined by this configuration " +
+					"or the environment rather than by the machine it runs on. " +
+					"A plaintext `http://` endpoint to a non-loopback host raises a warning, " +
+					"because the token travels as a bearer credential in cleartext.",
 				Optional: true,
 			},
 			"gms_token": schema.StringAttribute{
 				MarkdownDescription: "DataHub GMS token for authentication. " +
-					"If not set, the provider will read the token from the `DATAHUB_GMS_TOKEN` environment variable, " +
-					"or fall back to the local DataHub CLI configuration at `~/.datahubenv`.",
+					"If not set, the provider reads `DATAHUB_GMS_TOKEN` from the environment. " +
+					"There is no further fallback -- see `gms_url`. Prefer supplying a short-lived " +
+					"token from a secrets manager or credential broker over a long-lived personal " +
+					"access token held in a variables file.",
 				Optional:  true,
 				Sensitive: true,
 			},
@@ -274,48 +268,40 @@ func (p *datahubProvider) Configure(ctx context.Context, req provider.ConfigureR
 		gmsToken = config.GmsToken.ValueString()
 	}
 
-	// Last resort: Datahub CLI local configuration at ~/.datahubenv
-	if host == "" || gmsToken == "" {
-		envCfg, exists, err := readDatahubEnvConfig()
-		if err != nil {
-			resp.Diagnostics.AddError(
-				"Unable to Read Datahub CLI Configuration",
-				"The provider attempted to read ~/.datahubenv but encountered an error. "+err.Error(),
-			)
-			return
-		}
-		if exists {
-			if host == "" && envCfg.Gms.Server != "" {
-				host = strings.TrimSpace(envCfg.Gms.Server)
-			}
-			if gmsToken == "" && envCfg.Gms.Token != "" {
-				gmsToken = envCfg.Gms.Token
-			}
-		}
-	}
+	// Trim before the emptiness checks below, so a whitespace-only value fails
+	// with the actionable diagnostic rather than being handed to the HTTP client
+	// as a malformed endpoint or a bearer token of spaces.
+	host = strings.TrimSpace(host)
+	gmsToken = strings.TrimSpace(gmsToken)
 
+	// There is deliberately no third fallback. Earlier versions read
+	// gms.server / gms.token from the DataHub CLI's ~/.datahubenv when both the
+	// configuration and the environment were empty. See
+	// removedCLIConfigFallbackHint and docs/design/provider-credential-resolution.md.
 	if host == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("gms_url"),
 			"Missing DataHub GMS URL (DATAHUB_GMS_URL)",
-			"The provider cannot create the Datahub API client as there is a missing or empty value for the DataHub GMS URL. "+
-				"Set gms_url in the configuration or use the DATAHUB_GMS_URL environment variable. "+
-				"If unconfigured, run `datahub init` to create ~/.datahubenv.",
+			"The provider cannot create the DataHub API client because no GMS URL was supplied. "+
+				"Set gms_url in the provider configuration, or the DATAHUB_GMS_URL environment variable."+
+				removedCLIConfigFallbackHint,
 		)
 	}
 	if gmsToken == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("gms_token"),
 			"Missing DataHub GMS Token (DATAHUB_GMS_TOKEN)",
-			"The provider cannot create the Datahub API client as there is a missing or empty value for the Datahub GMS token. "+
-				"Set the gms_token value in the configuration or use the DATAHUB_GMS_TOKEN environment variable. "+
-				"If unconfigured, run `datahub init` to create ~/.datahubenv.",
+			"The provider cannot create the DataHub API client because no GMS token was supplied. "+
+				"Set gms_token in the provider configuration, or the DATAHUB_GMS_TOKEN environment variable."+
+				removedCLIConfigFallbackHint,
 		)
 	}
 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	warnIfPlaintextEndpoint(resp, host)
 
 	// Create a new Datahub client using the configuration values
 	client, err := datahub.NewClient(host, gmsToken)
