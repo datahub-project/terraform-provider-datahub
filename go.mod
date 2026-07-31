@@ -11,7 +11,6 @@ require (
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
 	github.com/zclconf/go-cty v1.19.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
