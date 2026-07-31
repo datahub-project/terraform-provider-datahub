@@ -241,9 +241,9 @@ func (r *fieldAssertionResource) ValidateConfig(ctx context.Context, req resourc
 		return
 	}
 
-	hasMetric := !cfg.Metric.IsNull() && cfg.Metric.ValueString() != ""
-	hasTransform := !cfg.TransformType.IsNull() && cfg.TransformType.ValueString() != ""
-	hasThreshType := !cfg.FailThresholdType.IsNull() && cfg.FailThresholdType.ValueString() != ""
+	hasMetric := configSupplies(cfg.Metric)
+	hasTransform := configSupplies(cfg.TransformType)
+	hasThreshType := configSupplies(cfg.FailThresholdType)
 	hasThreshVal := !cfg.FailThresholdValue.IsNull()
 
 	switch cfg.FieldAssertionType.ValueString() {

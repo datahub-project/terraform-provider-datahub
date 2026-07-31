@@ -228,10 +228,10 @@ func (r *freshnessAssertionResource) ValidateConfig(ctx context.Context, req res
 		return
 	}
 
-	hasUnit := !cfg.FixedIntervalUnit.IsNull() && cfg.FixedIntervalUnit.ValueString() != ""
+	hasUnit := configSupplies(cfg.FixedIntervalUnit)
 	hasMultiple := !cfg.FixedIntervalMultiple.IsNull()
-	hasCron := !cfg.CronSchedule.IsNull() && cfg.CronSchedule.ValueString() != ""
-	hasCronTZ := !cfg.CronTimezone.IsNull() && cfg.CronTimezone.ValueString() != ""
+	hasCron := configSupplies(cfg.CronSchedule)
+	hasCronTZ := configSupplies(cfg.CronTimezone)
 
 	reject := func(p string, msg string) {
 		resp.Diagnostics.AddAttributeError(path.Root(p), "Unexpected attribute", msg)
