@@ -37,3 +37,35 @@ func configSupplies(v types.String) bool {
 	}
 	return !v.IsNull() && v.ValueString() != ""
 }
+
+// configSuppliesSet reports whether the configuration supplies a non-empty
+// collection, on the same reading as configSupplies: an unknown counts as
+// supplied.
+//
+// The distinction that matters here is between a collection that is itself
+// unknown and one that is known but holds unknown elements. Only the former
+// reads as empty from Elements(); the latter already reports its true length. So
+// a wholly computed set is what this guards, and a literal list containing a
+// computed element needed no guarding.
+func configSuppliesSet(v types.Set) bool {
+	if v.IsUnknown() {
+		return true
+	}
+	return !v.IsNull() && len(v.Elements()) > 0
+}
+
+// configSuppliesTrueBool reports whether the configuration supplies a bool that
+// is, or may turn out to be, true.
+//
+// Unlike the string and set cases this is not a pure presence test: the callers
+// care specifically about a true value, since all_resources = false is a
+// meaningful and harmless setting. An unknown counts as possibly-true, because
+// accepting it and being wrong ships an over-permissive policy, whereas
+// rejecting it and being wrong costs the practitioner one edit. Asymmetric
+// consequences, so the check errs toward reporting.
+func configSuppliesTrueBool(v types.Bool) bool {
+	if v.IsUnknown() {
+		return true
+	}
+	return !v.IsNull() && v.ValueBool()
+}
