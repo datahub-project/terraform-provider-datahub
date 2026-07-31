@@ -355,15 +355,15 @@ func (r *policyResource) ValidateConfig(ctx context.Context, req resource.Valida
 		"filter alone and ignores the legacy attributes, so the policy would not be scoped as " +
 		"written. Express the same scope as a %s criterion instead."
 
-	if !res.Type.IsNull() && res.Type.ValueString() != "" {
+	if configSupplies(res.Type) {
 		resp.Diagnostics.AddAttributeError(resourcesPath.AtName("type"), conflictSummary,
 			fmt.Sprintf(conflictDetail, "resources.type", "TYPE"))
 	}
-	if !res.Resources.IsNull() && len(res.Resources.Elements()) > 0 {
+	if configSuppliesSet(res.Resources) {
 		resp.Diagnostics.AddAttributeError(resourcesPath.AtName("resources"), conflictSummary,
 			fmt.Sprintf(conflictDetail, "resources.resources", "URN"))
 	}
-	if !res.AllResources.IsNull() && res.AllResources.ValueBool() {
+	if configSuppliesTrueBool(res.AllResources) {
 		resp.Diagnostics.AddAttributeError(resourcesPath.AtName("all_resources"), conflictSummary,
 			"resources.all_resources cannot be combined with resources.filter. A filter already "+
 				"applies to every resource matching its criteria; drop all_resources.")
