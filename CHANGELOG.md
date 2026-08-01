@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [0.19.0] - 2026-08-01
 
-- The `assertion-volume-sqlite` runnable example is now valid Terraform. Its `datahub_ingestion_source` block used `name`, `type` and a `schedule` block, none of which the resource has ever accepted -- the attributes are `source_name`, a computed `source_type`, and `cron_interval`/`timezone`. `terraform validate` rejected the example outright, so anyone following it hit four errors before reaching a plan. Broken since the example was added in 0.9.0.
+This release changes no provider behaviour. Every resource, data source and schema is identical to 0.18.0; what changes is the documentation the registry serves and the tests that keep it honest.
+
+### Added
+
+- Example Usage sections for 22 registry pages that had none: the `datahub_action_pipeline`, `datahub_custom_assertion`, `datahub_data_product`, `datahub_field_assertion`, `datahub_freshness_assertion`, `datahub_ownership_type`, `datahub_schema_assertion`, `datahub_sql_assertion`, `datahub_structured_property`, `datahub_tag` and `datahub_volume_assertion` resources, and the `datahub_action_pipelines`, `datahub_assertion`, `datahub_assertions`, `datahub_data_product`, `datahub_data_products`, `datahub_ownership_type`, `datahub_ownership_types`, `datahub_structured_properties`, `datahub_structured_property`, `datahub_tag` and `datahub_tags` data sources. The documentation generator omits the heading entirely when no snippet exists rather than rendering an empty one, so nothing on the page indicated anything was missing -- a reader landing on the `datahub_freshness_assertion` page found a complete attribute reference and no illustration of how the attributes fit together. The typed assertions are the pages this hurt most, since their nested schedule and threshold blocks are difficult to assemble from the reference alone.
+- The `datahub_organization_display_preferences` data source has its own example instead of sharing the resource's, which showed a write where the reader wanted a read.
 
 ### Changed
 
-- `make test-examples` runs `terraform validate` over every example in the repository against a freshly built provider, and CI now runs it on every pull request. Examples were previously unverified by anything: `make generate` renders a snippet into the registry page without asking the provider whether it is valid, so an attribute that had been renamed or removed produced clean, committed docs and a green build, and failed only for the user who copied it. The check needs no DataHub instance and no network, and takes about two seconds.
+- `make test-examples` runs `terraform validate` over every example in the repository against a freshly built provider, and CI now runs it on every pull request. Examples were previously verified by nothing: `make generate` renders a snippet into its registry page without asking the provider whether the snippet is valid, so an attribute that had been renamed or removed produced clean, committed documentation and a green build, and failed only for the person who copied it. A new kind of example directory reached by neither the snippet walk nor the whole-configuration walk now fails the build rather than silently validating nothing. The check needs no DataHub instance and no network, and takes about two seconds.
+- The nightly registry smoke test now launches the released binary rather than only downloading it. `terraform init` verifies a provider's checksum and unpacks it but never starts the process, so a build for the wrong architecture, or one that crashed on startup, passed the test that existed to catch exactly that.
+
+### Fixed
+
+- The `assertion-volume-sqlite` runnable example is now valid Terraform. Its `datahub_ingestion_source` block used `name`, `type` and a `schedule` block, none of which the resource has ever accepted -- the attributes are `source_name`, a computed `source_type`, and `cron_interval`/`timezone`. `terraform validate` rejected the example outright, so anyone following it hit four errors before reaching a plan. Broken since the example was added in 0.9.0 and shipped that way in every release since.
 
 ## [0.18.0] - 2026-07-31
 
@@ -335,7 +345,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.15.0...v0.16.0
