@@ -15,13 +15,10 @@ provider "datahub" {}
 # sends only the metadata (row count, schema) - the database itself is never
 # queried by DataHub Cloud.
 resource "datahub_ingestion_source" "sqlite_profile" {
-  source_id = "tf-example-sqlite-assertion"
-  name      = "TF Example - SQLite Assertion Dataset"
-  type      = "sqlalchemy"
-  schedule = {
-    interval = "0 * * * *"
-    timezone = "UTC"
-  }
+  source_id     = "tf-example-sqlite-assertion"
+  source_name   = "TF Example - SQLite Assertion Dataset"
+  cron_interval = "0 * * * *"
+  timezone      = "UTC"
   recipe = jsonencode({
     source = {
       type = "sqlalchemy"

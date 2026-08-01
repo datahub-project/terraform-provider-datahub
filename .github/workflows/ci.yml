@@ -78,9 +78,26 @@ jobs:
           slug: datahub-project/terraform-provider-datahub
           fail_ci_if_error: false
 
+  examples:
+    name: Examples
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Builds the provider, then runs terraform validate over every example
+      # against it. No DataHub instance and no network: the test writes its own
+      # CLI config with a dev override, so terraform never runs init.
+      - run: make test-examples
+
   check:
     name: Check
-    needs: [build, generate, test]
+    needs: [build, generate, test, examples]
     if: always()
     runs-on: ubuntu-latest
     steps:

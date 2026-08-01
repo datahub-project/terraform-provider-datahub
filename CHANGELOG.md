@@ -5,6 +5,16 @@ All notable changes to this provider will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The `assertion-volume-sqlite` runnable example is now valid Terraform. Its `datahub_ingestion_source` block used `name`, `type` and a `schedule` block, none of which the resource has ever accepted -- the attributes are `source_name`, a computed `source_type`, and `cron_interval`/`timezone`. `terraform validate` rejected the example outright, so anyone following it hit four errors before reaching a plan. Broken since the example was added in 0.9.0.
+
+### Changed
+
+- `make test-examples` runs `terraform validate` over every example in the repository against a freshly built provider, and CI now runs it on every pull request. Examples were previously unverified by anything: `make generate` renders a snippet into the registry page without asking the provider whether it is valid, so an attribute that had been renamed or removed produced clean, committed docs and a green build, and failed only for the user who copied it. The check needs no DataHub instance and no network, and takes about two seconds.
+
 ## [0.18.0] - 2026-07-31
 
 ### Added
