@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The provider no longer writes credentials to the Terraform debug log.** With `TF_LOG=DEBUG` (or `TRACE`) set, `datahub_local_user_login` logged the sign-up request body and the outgoing request headers verbatim, which meant the new user's password, the org invite token, and the `gms_token` bearer credential were all written to the log in clear text. `datahub_ingestion_source` separately logged the full upsert response body, and because the OpenAPI v3 entity endpoint echoes the stored aspects back, a recipe holding a literal credential rather than a `${SECRET}` reference was written there too. All three call sites now log a length instead of the value.
+
+  **Affected versions: 0.4.0 through 0.19.0** for the sign-up leak (the resource has behaved this way since it shipped), and all versions for the ingestion-source response. Nothing leaks unless debug logging is explicitly enabled, and nothing is written to state, to plan output, or to the network -- but Terraform debug logs are routinely attached to bug reports, pasted into chat, and retained as CI artifacts. **If you have ever run this provider with `TF_LOG=DEBUG` and shared the resulting log, treat the `gms_token` it contains as disclosed and rotate it**, along with any password or recipe credential that appeared in the same run.
+
+  Note that `initial_password` is declared both `Sensitive` and `WriteOnly`, and those markers were working correctly: they govern state serialization, plan rendering, and diagnostics. They do not reach `tflog`, which writes exactly the fields the provider hands it. That gap is why the leak survived sixteen releases, and a new structural test (`TestNoSecretsInLogFields`) now fails the build if any log call carries a credential-bearing field key.
+
 ## [0.19.0] - 2026-08-01
 
 This release changes no provider behaviour. Every resource, data source and schema is identical to 0.18.0; what changes is the documentation the registry serves and the tests that keep it honest.

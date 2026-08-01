@@ -557,9 +557,13 @@ func (r *ingestionSourceResource) createOrUpdate(ctx context.Context, plan inges
 		return createOrUpdateResult{}, diags
 	}
 
+	// Log the response size, not the response. The OpenAPI v3 entity endpoint
+	// echoes the stored aspects back, recipe included, so a recipe holding a
+	// literal credential rather than a ${SECRET} reference would be written
+	// verbatim into the debug log.
 	tflog.Debug(ctx, "DataHub ingestion source upsert response", map[string]any{
 		"source_id": sourceID,
-		"body":      string(respBody),
+		"body_len":  len(respBody),
 	})
 
 	return createOrUpdateResult{

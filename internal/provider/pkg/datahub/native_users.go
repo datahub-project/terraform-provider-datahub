@@ -209,11 +209,16 @@ func (c *Client) doSignUp(ctx context.Context, signUpURL string, payloadBytes []
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	// Log neither the payload nor the headers. The payload carries the user's
+	// password and the invite token; the headers carry the Authorization bearer
+	// credential. tflog writes exactly what it is handed -- the schema's
+	// Sensitive/WriteOnly markers on initial_password govern state and plan
+	// rendering, not this channel -- and a debug log is a file that gets attached
+	// to bug reports and left in CI artifacts.
 	tflog.Debug(ctx, "DataHub signUp request", map[string]any{
-		"url":      signUpURL,
-		"payload":  string(payloadBytes),
-		"has_auth": authHeader != "",
-		"headers":  fmt.Sprintf("%v", req.Header),
+		"url":         signUpURL,
+		"payload_len": len(payloadBytes),
+		"has_auth":    authHeader != "",
 	})
 
 	noRedirectClient := &http.Client{
