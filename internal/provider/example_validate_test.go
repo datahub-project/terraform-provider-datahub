@@ -52,19 +52,49 @@ var exampleExemptions = map[string]string{
 		"would require terraform init and network access",
 }
 
+// Examples come in two shapes, and the difference decides how each is validated.
+//
+// fragmentRoots hold bare resource and data blocks with no terraform or provider
+// block of their own, because that is the shape tfplugindocs renders into a
+// registry page. Each file is wrapped before validating.
+//
+// Everything else under examples/ is a whole configuration carrying its own
+// blocks, and is validated in place. TestEveryExampleIsValidated asserts that
+// those two sets between them account for every .tf file in the tree.
+var fragmentRoots = []string{"resources", "data-sources"}
+
+// completeExampleDirs returns the directories holding a whole configuration,
+// relative to examples/.
+//
+// examples/provider is one of them: it is the snippet tfplugindocs renders onto
+// the provider index page, and unlike the per-resource snippets it is already a
+// complete configuration.
+func completeExampleDirs(t *testing.T, examplesDir string) []string {
+	t.Helper()
+
+	dirs := []string{"provider"}
+
+	entries, err := os.ReadDir(filepath.Join(examplesDir, "runnable"))
+	if err != nil {
+		t.Fatalf("reading examples/runnable: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			dirs = append(dirs, filepath.Join("runnable", e.Name()))
+		}
+	}
+	return dirs
+}
+
 // TestExampleSnippetsValidate runs terraform validate over every registry
 // snippet under examples/resources and examples/data-sources.
-//
-// Snippets are bare resource and data blocks with no terraform or provider
-// block, because that is the shape tfplugindocs renders. Each is therefore
-// wrapped in the minimum needed to make it a configuration.
 func TestExampleSnippetsValidate(t *testing.T) {
 	t.Parallel()
 
 	env := setupExampleValidate(t)
 
 	var paths []string
-	for _, dir := range []string{"resources", "data-sources"} {
+	for _, dir := range fragmentRoots {
 		root := filepath.Join(env.examplesDir, dir)
 		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -125,39 +155,30 @@ provider "datahub" {}
 	}
 }
 
-// TestRunnableExamplesValidate runs terraform validate over each complete
-// example under examples/runnable.
+// TestCompleteExamplesValidate runs terraform validate over each example that is
+// already a whole configuration: everything under examples/runnable, plus
+// examples/provider.
 //
-// These already carry their own terraform and provider blocks, so they are
-// validated in place rather than wrapped. validate with a dev override performs
-// no installation and writes nothing to the directory.
-func TestRunnableExamplesValidate(t *testing.T) {
+// These carry their own terraform and provider blocks, so they are validated in
+// place rather than wrapped. validate with a dev override performs no
+// installation and writes nothing to the directory.
+func TestCompleteExamplesValidate(t *testing.T) {
 	t.Parallel()
 
 	env := setupExampleValidate(t)
 
-	root := filepath.Join(env.examplesDir, "runnable")
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		t.Fatalf("reading %s: %v", root, err)
-	}
-
 	var checked int
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		rel := filepath.Join("runnable", e.Name())
+	for _, rel := range completeExampleDirs(t, env.examplesDir) {
 		if reason, exempt := exampleExemptions[rel]; exempt {
 			t.Logf("%s: skipped, exempt (%s)", rel, reason)
 			continue
 		}
 		checked++
 
-		t.Run(e.Name(), func(t *testing.T) {
+		t.Run(rel, func(t *testing.T) {
 			t.Parallel()
 
-			if out, err := env.validate(t, filepath.Join(root, e.Name())); err != nil {
+			if out, err := env.validate(t, filepath.Join(env.examplesDir, rel)); err != nil {
 				t.Errorf("terraform validate rejected examples/%s:\n\n%s", rel, out)
 			}
 		})
@@ -165,9 +186,63 @@ func TestRunnableExamplesValidate(t *testing.T) {
 
 	const wantAtLeast = 15
 	if checked < wantAtLeast {
-		t.Errorf("only %d runnable examples validated, expected at least %d; the "+
-			"scan of examples/runnable is probably not finding them", checked, wantAtLeast)
+		t.Errorf("only %d complete examples validated, expected at least %d; the "+
+			"scan of examples/ is probably not finding them", checked, wantAtLeast)
 	}
+}
+
+// TestEveryExampleIsValidated asserts that every .tf file under examples/ is
+// reached by one of the two tests above.
+//
+// Without this, adding a new kind of example directory silently adds nothing to
+// the coverage: the two tests keep passing over the files they already knew
+// about, and the new one is never validated by anything. That is not
+// hypothetical -- examples/provider was missed exactly this way, because it is
+// neither a per-resource snippet nor a runnable example, and the omission was
+// invisible until someone reconciled the file count by hand.
+func TestEveryExampleIsValidated(t *testing.T) {
+	t.Parallel()
+
+	env := setupExampleValidate(t)
+
+	covered := make([]string, 0, len(fragmentRoots)+20)
+	covered = append(covered, fragmentRoots...)
+	covered = append(covered, completeExampleDirs(t, env.examplesDir)...)
+
+	var total, uncovered int
+	err := filepath.WalkDir(env.examplesDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".tf") {
+			return nil
+		}
+		total++
+
+		rel := mustRel(t, env.examplesDir, p)
+		for _, prefix := range covered {
+			if rel == prefix || strings.HasPrefix(rel, prefix+string(filepath.Separator)) {
+				return nil
+			}
+		}
+		uncovered++
+		t.Errorf("examples/%s is validated by nothing. It sits outside the fragment "+
+			"roots %v and outside every complete-example directory, so neither "+
+			"TestExampleSnippetsValidate nor TestCompleteExamplesValidate reaches it. "+
+			"Add its directory to completeExampleDirs, or to fragmentRoots if it holds "+
+			"bare blocks.", rel, fragmentRoots)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking examples/: %v", err)
+	}
+
+	const wantAtLeast = 100
+	if total < wantAtLeast {
+		t.Errorf("only %d .tf files found under examples/, expected at least %d; the "+
+			"walk is probably not working", total, wantAtLeast)
+	}
+	t.Logf("%d .tf files under examples/, %d uncovered", total, uncovered)
 }
 
 // exampleValidateEnv holds the paths a validate run needs.

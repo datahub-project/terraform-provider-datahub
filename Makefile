@@ -183,7 +183,8 @@ testacc:
 # override, so terraform loads the provider from disk and never calls init.
 test-examples: install
 	TF_EXAMPLE_VALIDATE=1 $(GO) test -v -timeout 10m -parallel=10 \
-		-run 'TestExampleSnippetsValidate|TestRunnableExamplesValidate' ./internal/provider/
+		-run 'TestExampleSnippetsValidate|TestCompleteExamplesValidate|TestEveryExampleIsValidated' \
+		./internal/provider/
 
 testacc-local: install
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
