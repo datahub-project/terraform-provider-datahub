@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-08-01
+
 ### Security
 
 - **The provider no longer writes credentials to the Terraform debug log.** With `TF_LOG=DEBUG` (or `TRACE`) set, `datahub_local_user_login` logged the sign-up request body and the outgoing request headers verbatim, which meant the new user's password, the org invite token, and the `gms_token` bearer credential were all written to the log in clear text. `datahub_ingestion_source` separately logged the full upsert response body, and because the OpenAPI v3 entity endpoint echoes the stored aspects back, a recipe holding a literal credential rather than a `${SECRET}` reference was written there too. All three call sites now log a length instead of the value.
@@ -353,7 +355,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.16.0...v0.17.0
