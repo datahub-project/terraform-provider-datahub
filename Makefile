@@ -24,7 +24,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples deps-outdated deps-outdated-all deps-update deps-update-all test testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
+.PHONY: all help build install clean fmt lint generate bump-examples deps-outdated deps-outdated-all deps-update deps-update-all test test-examples testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -43,6 +43,8 @@ help:
 	@echo "  deps-update        Update direct dependencies to latest + go mod tidy; review 'git diff' before commit"
 	@echo "  deps-update-all    Update all dependencies (direct + indirect) to latest + go mod tidy; review before commit"
 	@echo "  test          Run unit tests"
+	@echo "  test-examples Run terraform validate over every example against the built provider"
+	@echo "                (needs terraform on PATH; no DataHub instance and no network)"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
 	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
 	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
@@ -174,6 +176,14 @@ test:
 
 testacc:
 	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= $(GO) test -v -cover -timeout 120m ./...
+
+# Runs terraform validate over every example against the freshly built provider.
+# Needs the binary (hence the install prerequisite) and terraform on PATH, but no
+# DataHub instance and no network: the test writes its own CLI config with a dev
+# override, so terraform loads the provider from disk and never calls init.
+test-examples: install
+	TF_EXAMPLE_VALIDATE=1 $(GO) test -v -timeout 10m -parallel=10 \
+		-run 'TestExampleSnippetsValidate|TestRunnableExamplesValidate' ./internal/provider/
 
 testacc-local: install
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \

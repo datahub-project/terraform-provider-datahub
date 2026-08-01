@@ -80,6 +80,14 @@ make test       # unit tests only
 make testacc    # full acceptance tests against the in-memory mock
 ```
 
+If you added or edited anything under `examples/`, also run:
+
+```bash
+make test-examples   # terraform validate over every example, against a built provider
+```
+
+This needs `terraform` on your `PATH` but no DataHub instance and no network. Nothing else catches a broken example: `make generate` regenerates the docs from a snippet without ever asking the provider whether the snippet is valid, so a resource attribute that was renamed or removed sails through CI and fails only for the user who copies it off the registry page.
+
 For changes that touch provider-DataHub API interaction, also run against a local Quickstart if possible:
 
 ```bash
@@ -102,6 +110,7 @@ PRs are squash-merged. The squash commit message is taken from the PR title, so 
 
 - [ ] `make fmt` and `make lint` pass
 - [ ] `make testacc` passes
+- [ ] `make test-examples` passes (if anything under `examples/` changed)
 - [ ] `make generate` run and `docs/` output committed (if schema changed)
 - [ ] New files have the correct license header
 - [ ] README / BUILDING.md updated if user-facing behaviour changed

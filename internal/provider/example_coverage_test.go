@@ -35,9 +35,10 @@ var snippetExemptions = map[string]string{}
 // reading the published page.
 //
 // This checks presence, not correctness: a snippet referencing an attribute that
-// does not exist would satisfy it while still misleading every reader. Running
-// terraform validate over each snippet is the stronger check and is tracked
-// separately, since it needs a built provider and a Terraform binary.
+// does not exist would satisfy it while still misleading every reader. That is
+// TestExampleSnippetsValidate's job, which runs terraform validate over each
+// snippet. It lives behind `make test-examples` rather than here because it needs
+// a built provider binary and terraform on PATH.
 func TestExampleSnippetCoverage(t *testing.T) {
 	t.Parallel()
 

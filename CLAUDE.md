@@ -89,6 +89,7 @@ Discretion example - `datahub_service_account`: a service account has no distinc
 - Verify: `go build ./...` and `go vet ./...`
 - Generate docs: `cd tools && go generate ./...`
 - Tests: `make test` (unit + mock acceptance); `make testacc` (live acceptance, requires a running DataHub instance)
+- Example validation: `make test-examples` runs `terraform validate` over every file under `examples/` against a freshly built provider. Needs `terraform` on `PATH`; needs no DataHub instance and no network. **Run this after editing any example** -- a snippet naming an attribute the provider does not have passes every other check, including `make generate`, and only fails for the user who copies it off the registry page. Exemptions live in `exampleExemptions` in `internal/provider/example_validate_test.go` and each carries a reason.
 - Lint: `make lint` -- **always run before raising a PR**. The linter includes `gofmt`; misaligned comment spacing (e.g., `"foo",   // comment` with wrong tab count) will fail CI even if the code compiles and tests pass.
 - New worktree: after creating a git worktree for a new branch, run `make dev-override` inside the worktree directory before running any Terraform commands. This generates the gitignored `dev.tfrc` with the absolute path to that worktree's binary, and sets `TF_CLI_CONFIG_FILE` via `.mise.env`. Without it, Terraform picks up the wrong (or no) provider binary.
 
