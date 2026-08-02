@@ -2,7 +2,9 @@
 
 This document catalogs the DataHub API surface — OpenAPI REST + GraphQL — and classifies each area by relevance to the Terraform provider. It is the basis for deciding what to build next.
 
-**Current provider state (v0.7.0 + main):** `datahub_ingestion_source` (resource + data source), `datahub_secret` (resource), `datahub_remote_executor_pool` (resource + data source, Cloud-only), `datahub_connection` (resource), `datahub_me` (data source), `datahub_ingestion_sources` / `datahub_secrets` / `datahub_connections` (bulk-enumerate data sources), `datahub_corp_group` (resource + data source), `datahub_corp_groups` (data source), `datahub_corp_group_member` (resource), `datahub_corp_user` (resource + data source), `datahub_local_user_login` (resource), `datahub_role` / `datahub_roles` (data sources), `datahub_role_assignment` (resource), `datahub_policy` (resource), `datahub_policies` (data source), `datahub_domain` (resource + data source), `datahub_domains` (data source), `datahub_glossary_node` (resource + data source), `datahub_glossary_nodes` (data source), `datahub_glossary_term` (resource + data source), `datahub_glossary_terms` (data source), `datahub_tag` (resource + data source), `datahub_tags` (data source), `datahub_structured_property` (resource + data source), `datahub_structured_properties` (data source), `datahub_ownership_type` (resource + data source), `datahub_ownership_types` (data source), `datahub_data_product` (resource + data source), `datahub_data_products` (data source).
+**Current provider state:** see [the docs index](index.md), or `internal/provider/provider.go` for the authoritative registration list.
+
+This line used to enumerate every resource and data source. It drifted twice — it read "v0.7.0 + main" while the provider was on v0.19.1, twelve releases later, which caused a 2026-08-02 re-survey to re-raise six gaps that had already shipped. A hand-maintained inventory inside a planning document has no mechanism keeping it honest, so it is not worth having. The tier tables below carry shipped/unshipped state per candidate, and those are what this document is actually for.
 
 ## Scope principles
 
@@ -78,6 +80,7 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | `createOwnershipType` / `updateOwnershipType` / `deleteOwnershipType` + OpenAPI entity | M/Q | covered | no | `datahub_ownership_type` resource + data source + `datahub_ownership_types` bulk-enumerate data source ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50)). User-supplied `type_id`; create/update write via OpenAPI v3 aspect endpoint (GraphQL `createOwnershipType` mints a server-side UUID and is not used). `type_id` values beginning `__system__` rejected at plan time. |
 | `addRelatedTerms` / `removeRelatedTerms` | M | MEDIUM | no | Possible `datahub_glossary_term_relationship` resource (typed: isA, hasA, contains, values, relatedTerm). Aspect-list ownership applies. |
 | `createApplication` / `updateApplication` / `deleteApplication` + `application(urn)` | M/Q | MEDIUM | verify | Newer entity type; semantic overlap with `data_product` unclear. Confirmed present on Cloud. Defer until stable. |
+| `relationshipType` entity (`RelationshipTypeInfo`) | entity | **WATCH** | Cloud today | Added to the Cloud fork 2026-07-18 alongside `StructuredPropertySettings.isRelationship` (see Category 3) — first-class user-defined relationship types, letting a structured property act as a graph edge. HIGH-shaped if it ships: a slow-moving, admin-owned taxonomy object, exactly this provider's remit. Not yet deployed — `RelationshipType` introspects as null on demo.acryl.io v2.0.3 (2026-08-02) — and absent from OSS entirely (no PDL package, no `entity-registry.yml` entry). Track the two together; neither is buildable until Cloud finishes shipping the pair. |
 | `createGlossaryTermVersion` / versioning queries | M/Q | LOW | yes | Cloud-only temporal feature; not declarative. |
 | `setDomain` / `unsetDomain` / `batchSetDomain` / `batchSet*Application` / `batchSet*DataProduct` | M | IRRELEVANT | no | Per-asset enrichment — deny-list. |
 | `getRootGlossaryNodes` / `getRootGlossaryTerms` / `listDomains` / `listDataProductAssets` | Q | LOW | no | OpenSearch-backed; data-source-only with documented lag. |
@@ -94,10 +97,11 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
 | `createStructuredProperty` / `updateStructuredProperty` / `deleteStructuredProperty` + `structuredProperty(urn)` | M/Q | covered | no | `datahub_structured_property` resource + data source + `datahub_structured_properties` bulk-enumerate data source (v0.7.0, [PR #49](https://github.com/datahub-project/terraform-provider-datahub/pull/49)). User-supplied `property_id`; `value_type`, `cardinality`, `entity_types`, `allowed_values`, `settings {}`. Additive-only update constraint (list fields + cardinality) forces replacement on removal. Value assignments to assets remain deny-list. |
+| `StructuredPropertySettings.isRelationship` | aspect field | **WATCH — do not build yet** | Cloud today | New field on the existing `datahub_structured_property.settings {}`. Live on demo.acryl.io v2.0.3 (verified 2026-08-02); absent from OSS master `53064c2d` (2026-08-01, checked one day old). **Do not read that as a settled Cloud-only boundary.** It landed in the Cloud fork on 2026-07-18 as part of `feat(model): first-class relationshipType entity + structured-property graph edges` — a whole feature spanning `metadata-models`, `GraphService`, a graph-edge extractor, a new `relationshipType` entity and an ontology-graph UI. That is core metadata-model territory, the layer DataHub has historically upstreamed, and fifteen days of OSS absence is indistinguishable from "not upstreamed yet". It is also **half-deployed**: the field is live on Cloud but the `RelationshipType` GraphQL type is not (both probed 2026-08-02), so Cloud is running the toggle without the entity it toggles into. Building now buys churn. Re-probe both before promoting. When it does land, it needs OSS/Cloud-conditional emission — sending it unconditionally would break OSS users. |
 | `createForm` / `updateForm` / `deleteForm` + `form(urn)` | M/Q | **HIGH** | no | **New:** `datahub_form` resource + data source. Metadata-collection forms (governance/compliance prompts). |
 | `createDynamicFormAssignment` + `formInfo`/`dynamicFormAssignment` aspects | M | MEDIUM | verify | Declarative rule-based form assignment ("attach this form to all datasets in domain X"). Model as a nested attribute on `datahub_form` rather than a separate resource — assignment rules are a property of the form. |
 | `createBusinessAttribute` / `updateBusinessAttribute` / `deleteBusinessAttribute` + `businessAttribute(urn)` | M/Q | MEDIUM | verify | Newer than structured properties; overlapping concept. Confirmed present on Cloud. Defer until patterns settle. |
-| `upsertStructuredProperties` / `removeStructuredProperties` | M | IRRELEVANT | no | Per-asset value assignment — deny-list. |
+| `upsertStructuredProperties` / `removeStructuredProperties` | M | **covered (partial)** | no | `datahub_structured_property_assignment` resource. **Not a deny-list exception — the deny-list rule applied correctly.** The rule targets ingestion-owned and business-user-owned *data assets*; it has never covered platform-config entities that this provider already manages. So assignment is supported for `domain`, `glossaryNode`, `glossaryTerm`, `dataProduct`, `corpuser` (including service accounts), `corpGroup` and `dataContract`, and **rejected** for datasets, charts, dashboards and everything else ingestion owns. This entry read `IRRELEVANT | deny-list` until 2026-08-02 and contradicted shipped code; the same correction applies to Category 8. |
 | `batchAssignForm` / `batchRemoveForm` / `verifyForm` / `submitFormPrompt` / async batch variants | M | IRRELEVANT | mostly Cloud | Runtime form-filling — deny-list. |
 | `addBusinessAttribute` / `removeBusinessAttribute` | M | IRRELEVANT | no | Per-asset assignment — deny-list. |
 | `formAnalytics` / `formAnalyticsConfig` / `getFormsForActor` / `sendFormNotificationRequest` | Q/M | IRRELEVANT | yes | Telemetry/notifications. |
@@ -118,7 +122,7 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | `upsertOAuthAuthorizationServer` / `deleteOAuthAuthorizationServer` + `oauthAuthorizationServer(urn)` | M/Q | **HIGH** | yes | **New:** `datahub_oauth_authorization_server` resource. Config for external OAuth IdPs. Cleanest "config" object in the access space. |
 | `updateServiceAccountDefaultView` | M | MEDIUM | no (OSS 1.4.0+) | Single attribute on `datahub_service_account`; also present in OSS `auth.graphql`. |
 | `createAccessToken` / `revokeAccessToken` + `getAccessToken` | M/Q | MEDIUM | no | Write-once tokens with TTL; rotation = constant churn. Skip unless customers ask. |
-| `service(urn)` / `listServices` | Q | MEDIUM | yes | Cloud-only registered services — data source candidate. |
+| `service(urn)` / `listServices` | Q | MEDIUM | yes (queries only) | Cloud-only registered services — data source candidate. Narrower than it looks: the `service` and `aiAgent` **entity models** have been upstreamed to OSS, but the `service` / `listServices` **GraphQL queries** remain Cloud-only. The Cloud-only marking stands, for the read surface rather than the model. |
 | `createInviteToken` / `sendUserInvitations` / `revokeUserInvitation` | M/Q | LOW | varies | Invite workflows; `datahub_local_user_login` handles the native-auth case. `sendUserInvitations` (Cloud-only per-user email invite) is a future follow-up. |
 | `removeUser` / `updateUserStatus` / user-settings family | M | LOW/IRRELEVANT | no | Per-user state and UI prefs. |
 | `resetLinkedIdentities` / `updateLinkedIdentities` | M | LOW | yes | SCIM/SSO identity linking; niche. |
@@ -152,9 +156,10 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 |---|---|---|---|---|
 | `upsertDataContract` + read via `entity()` or OpenAPI | M | **HIGH** | yes | **New:** `datahub_data_contract` resource. Bundles freshness/schema/quality/SLA assertions on a dataset. **Concerns:** (1) no dedicated `dataContract(urn)` GraphQL query confirmed missing on live probe — Read must use OpenAPI v3; (2) no dedicated `deleteDataContract` mutation — investigate soft-delete via aspect removal. Implement after `datahub_assertion_assignment_rule`. |
 | `createAssertionAssignmentRule` / `updateAssertionAssignmentRule` / `deleteAssertionAssignmentRule` + `assertionAssignmentRule(urn)` | M/Q | **HIGH** | yes | **New:** `datahub_assertion_assignment_rule` resource. Declarative rule-based assignment of assertions/monitors to entities matching a filter — much higher leverage than per-asset assertions. Ship this first. |
-| `createSqlAssertion` / `createDatasetAssertion` / `createFieldAssertion` / `createFreshnessAssertion` / `createVolumeAssertion` / `updateDatasetAssertion` / `deleteAssertion` / `upsertCustomAssertion` | M | MEDIUM | mostly Cloud | Per-asset assertions. Tension: config is TF-friendly but lifecycle is often runtime/UI-driven. Defer until rules + contracts are in place. |
+| `createSqlAssertion` / `createDatasetAssertion` / `createFieldAssertion` / `createFreshnessAssertion` / `createVolumeAssertion` / `updateDatasetAssertion` / `deleteAssertion` / `upsertCustomAssertion` | M | **covered** | mostly Cloud | Six resources shipped — `datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`, `datahub_field_assertion`, `datahub_schema_assertion`, `datahub_custom_assertion` — plus `datahub_assertion` / `datahub_assertions` data sources. The "defer until rules + contracts are in place" sequencing was followed: rules ([PR #75](https://github.com/datahub-project/terraform-provider-datahub/pull/75)) and contracts ([PR #80](https://github.com/datahub-project/terraform-provider-datahub/pull/80)) landed first, and scope is limited to `NATIVE`-source assertions so the runtime/UI-driven lifecycle tension the row identified never arises. |
 | `upsertDataset*AssertionMonitor` (5 variants) / `createAssertionMonitor` / `updateAssertionMonitorSettings` / `updateMonitorStatus` / `deleteMonitor` | M | MEDIUM | yes | Cloud-only monitor management. Defer. |
-| `assertion(urn)` / `listAssertions` | Q | HIGH/LOW | mostly Cloud | `assertion(urn)` could back a data source. |
+| `assertion(urn)` / `listAssertions` | Q | **covered** | mostly Cloud | `datahub_assertion` + `datahub_assertions` data sources. |
+| `assertionInferenceAdjustmentRule` family | M/Q | MEDIUM | yes (`category: core`) | **New since the 2026-05-26 baseline.** Deterministic user-supplied `id`, so URN determinism is satisfied. GraphQL is read-only, so writes would go via OpenAPI v3 — the inverse of this provider's usual split, and worth confirming no service-layer logic is bypassed before relying on it. No UI and no create resolver yet. Tier 4 watch, with an explicit promotion trigger: **if it stays API-only, Terraform becomes the natural authoring surface** and this moves up rather than staying deferred. |
 | Run/report/backfill family | M/Q | IRRELEVANT | yes | Runtime/operational. |
 | `proposeDataContract` | M | LOW | yes | Governance flow. |
 | Incident lifecycle | M | IRRELEVANT | yes | Operational. |
@@ -183,6 +188,7 @@ Several system-level singletons remain on the horizon (the rest of this category
 |---|---|---|---|---|
 | `updateGlobalSettings` / `globalSettings` | M/Q | **HIGH** | yes | **Not one resource.** This single mutation spans SSO, notifications, integrations and four AI groups, so it is a transport, not a domain — split per the granularity rule above. Also note this whole surface is Cloud-only (OSS exposes no `globalSettings` query or `updateGlobalSettings` mutation at all) and the entity is `category: internal`. |
 | AI settings (`aiAssistant`, `documentationAi`, `aiContext`, `mcpSettings`) | M/Q | **HIGH** | yes | **New:** one `datahub_ai_settings` covering all four — one persona, one page, one tier. `aiPlugins`/`mcpServers` are object lists with independent lifecycles, so they are child resources (e.g. `datahub_ai_plugin`), not attributes. Per-user siblings (`updateCorpUserAiAssistantSettings`, `updateUserAiPluginSettings`, `updateUserContextDocumentsSettings`) are out of scope. |
+| MCP servers (`mcpSettings` / `mcpServers` / `defaultMcpServerOverrides`) | M/Q | MEDIUM | yes | **New since the 2026-05-26 baseline**, live on `GlobalSettings` / `UpdateGlobalSettingsInput`. Superficially attractive — `McpServerConfigInput` carries a user-supplied `slug`, so URNs would be deterministic. **BLOCKED on shape churn, same treatment as the brand-colour row.** Two specific blockers: (1) the shape already differs structurally between deployed v2.0.3 and fork HEAD (fields relocated into `McpSettings`, a master `enabled` switch added), so anything built today targets a moving object; (2) `UpdateGlobalSettingsInput.servers` is **merge-by-slug**, which is the direct opposite of this provider's full-list-ownership rule — a resource owning the list could not remove a server, and one owning a single entry could not detect drift. Resolve the semantics before designing, not during. Belongs with the AI-settings domain by the granularity rule. |
 | `ssoSettings` | M/Q | **excluded** | yes | Argued against: Terraform managing the mechanism that authenticates Terraform is a lockout risk, and recovery is manual regardless. |
 | `updateAssetSettings` | M | **HIGH** | yes | **New:** `datahub_asset_settings` resource. |
 | `updateDocPropagationSettings` / `docPropagationSettings` | M/Q | MEDIUM | no | Doc propagation feature toggle. |
@@ -210,7 +216,7 @@ Several system-level singletons remain on the horizon (the rest of this category
 **Domain assignments:** `setDomain`, `unsetDomain`, `batchSetDomain`
 **Data product assignments:** `batchSetDataProduct`, `batchAddToDataProducts`, `batchRemoveFromDataProducts`
 **Application assignments:** `batchSetApplication`, `batchUnsetApplication`
-**Structured-property values on assets:** `upsertStructuredProperties`, `removeStructuredProperties`
+**Structured-property values on assets:** `upsertStructuredProperties`, `removeStructuredProperties` — *on data assets only.* The provider ships `datahub_structured_property_assignment` for the config entities it already manages; see the Caveat below and the Category 3 row.
 **Form assignments on assets:** `batchAssignForm`, `batchRemoveForm`, `refreshFormAssignment`, and all `verifyForm`/`submitFormPrompt`/async variants
 **Business-attribute assignments:** `addBusinessAttribute`, `removeBusinessAttribute`
 **Asset descriptions/names:** `updateDescription`, `updateShortDescription`, `updateName` (when applied to data assets), `updateDisplayProperties`, `updateDeprecation`, `batchUpdateDeprecation`, `batchUpdateSoftDeleted`, `updateEmbed`
@@ -219,7 +225,9 @@ Several system-level singletons remain on the horizon (the rest of this category
 **Manual lineage edits:** `updateLineage`
 **Generic passthrough:** `patchEntity`, `patchEntities`, `deleteReferences`, `reportOperation`
 
-**Caveat:** setting `ownership` or `domains` *on a config entity that the provider manages* (e.g. the domain itself, a glossary term, a data product) is legitimate — the deny-list applies to these aspects on *data assets* (datasets, charts, etc.).
+**Caveat:** setting `ownership`, `domains` or **structured-property values** *on a config entity that the provider manages* (e.g. the domain itself, a glossary term, a data product) is legitimate — the deny-list applies to these aspects on *data assets* (datasets, charts, etc.).
+
+This is the whole of the rule, and it is worth stating positively because reading the list above as "these mutations are banned" gets it wrong: the deny-list is scoped by **who owns the entity**, not by which mutation writes it. `upsertStructuredProperties` against `urn:li:domain:finance` is platform configuration; the identical call against `urn:li:dataset:...` is enrichment that apply would overwrite. `datahub_structured_property_assignment` enforces exactly that split in code, accepting seven config entity types and rejecting the rest.
 
 **Runtime/operational deny-list (also out of scope):** `runAssertion(s)`, `runAssertionsForAsset`, `testAssertion`, `reportAssertionResult`, `runTests`, `runTestDefinition`, `createIngestionExecutionRequest`, `cancelIngestionExecutionRequest`, `rollbackIngestion`, action-pipeline lifecycle mutations, incident lifecycle mutations, `bulkUpdateAnomalies`, `reportAnomalyFeedback`, `retryMonitorBackfill`, proposal accept/reject/propose mutations, all `*Notification*` mutations.
 
@@ -230,7 +238,7 @@ Several system-level singletons remain on the horizon (the rest of this category
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
 | `upsertActionWorkflow` / `deleteActionWorkflow` / `listActionWorkflows` | M/Q | MEDIUM | yes | Governance/approval workflows. Configuration-flavored but early. Confirmed present on this Cloud instance. Revisit when stable. |
-| `createActionPipeline` / `upsertActionPipeline` / `deleteActionPipeline` / `bootstrapActionPipeline` | M | MEDIUM | yes | Newer than action workflows; relationship unclear. Defer. |
+| `createActionPipeline` / `upsertActionPipeline` / `deleteActionPipeline` / `bootstrapActionPipeline` | M | **covered** | yes | `datahub_action_pipeline` resource + `datahub_action_pipelines` data source. Shipped despite the "defer" verdict because a concrete request arrived; the experimental/Cloud-internal caveat still applies and is recorded in `CLAUDE.md`'s Cloud-only table. |
 | Pipeline lifecycle / proposal handling | M/Q | IRRELEVANT | yes | Operational. |
 
 ---
@@ -259,7 +267,7 @@ All Cloud-only, runtime/per-user, or experimental. No TF resource shape:
 - `subscription` family — per-user notifications
 - `createAgent`/`updateAgent`/`deleteAgent`/`createTask`/`runTask` — AI agents (experimental)
 - `createEval`/`runEvals` — AI evals (experimental)
-- `upsertAiPlugin`/`deleteAiPlugin` — AI plugin config (borderline; revisit if customers ask)
+- `upsertAiPlugin`/`deleteAiPlugin` — AI plugin config (borderline; revisit if customers ask). **Confirmed live** on demo.acryl.io v2.0.3 (2026-08-02) rather than assumed present; classification unchanged.
 - `createDraftEntity` — governance drafts
 
 `upsertPageModule`/`deletePageModule`/`upsertPageTemplate`/`deletePageTemplate` (UI page customization) previously sat in this bucket. Moved out to Category 13 (2026-07-28): verified directly against the OSS repo (not just schema surface) that these are `category: core` entities with a real `GLOBAL` org-default scope, not a Cloud-only or purely per-user mechanism -- see Category 13.
@@ -278,6 +286,7 @@ No TF resource shape. Listed so nothing is silently excluded:
 - **Iceberg REST catalog** (6 controllers, ~22 paths) — DataHub-as-Iceberg-catalog is a separate product surface
 - **Entity Registry / Lineage Registry / Entity Consistency / Timeline / Logical Models** — internal/legacy/operational
 - **Generic Relationships / Generic Timeseries / Relationships (v1) / Entities (v1) / Platform Entities** — legacy endpoints superseded by v2/v3
+- *Added at the 2026-08-02 re-survey, all IRRELEVANT, listed so nothing is silently dropped:* **messaging operations** (`/openapi/operations/messaging/*`, 6), **rate limits** (`/openapi/v1/rate-limits/*`, 2), **billing** (`/openapi/v1/billing/*`, 2), plus support-bundle, entity-counts and `/openapi/v3/lineage` controllers present in the fork but not yet deployed to demo.acryl.io
 
 ---
 
@@ -305,11 +314,13 @@ The provider supports `default_tags`-style automatic labelling (`defaults` block
 
 GraphQL has no inline `category: internal` markers. Stability is inferred from schema file location:
 
-- **OSS-stable:** file present in `repos/datahub/datahub-graphql-core/src/main/resources/`
-- **Cloud-stable:** `*.saas.graphql` / `*.acryl.graphql` in `repos/datahub-fork`
+- **OSS-stable:** file present in `~/src/datahub/datahub-graphql-core/src/main/resources/`
+- **Cloud-stable:** `*.saas.graphql` / `*.acryl.graphql` in `~/src/datahub-fork`
 - **Cloud-experimental:** file only in fork, no OSS equivalent — includes `aiPlugin`, `agents`, `aimemory`, `evals`, `share`, `draft`, `actions`, `actions_pipeline`, `ai`, `constraints`, `versioning.glossary`
 
 Resources in the experimental bucket carry no external stability guarantee. Apply the same disclaimer convention as `datahub_remote_executor_pool`.
+
+**Source location is necessary but not sufficient — check what the instance actually deploys.** The 2026-08-02 re-survey found two cases where the fork contains a feature that Cloud has not finished shipping (`relationshipType`, and the not-yet-deployed support-bundle / entity-counts / `/openapi/v3/lineage` controllers), and one where the fork has restructured a surface that is already live in an older shape (MCP servers). A file's presence in the fork tells you a feature exists somewhere; it does not tell you it is deployed, stable, or shaped the way trunk shows it. Live GraphQL introspection against demo.acryl.io settles the question in one query and works today — see the corrected note under "Survey methodology".
 
 ### URN determinism (per design doc requirement)
 
@@ -388,7 +399,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | ~~8~~ | ~~`datahub_policy`~~ | resource + data source | yes | **Shipped v0.4.0** |
 | 9 | `datahub_form` | resource + data source | yes | Prompts list; `dynamicFormAssignment` as nested attr |
 | 10 | `datahub_metadata_test` | resource + data source | yes (API) | API mutations confirmed OSS; management UI is Cloud-only; no nav entry in OSS frontend |
-| 14 | `datahub_service_account` | resource + data source | yes (1.4.0+) | Moved from Tier 3 - OSS since Core v1.4.0. Deterministic aspect write (`service_<id>` + `subTypes=[SERVICE_ACCOUNT]`) like `ownership_type`/`domain`, subtype-guarded read; token is a separate write-once resource; needs Metadata Service Auth enabled |
+| ~~14~~ | ~~`datahub_service_account`~~ | resource + data source | yes (1.4.0+) | **Shipped ([PR #72](https://github.com/datahub-project/terraform-provider-datahub/pull/72))**, as designed below. Moved from Tier 3 - OSS since Core v1.4.0. Deterministic aspect write (`service_<id>` + `subTypes=[SERVICE_ACCOUNT]`) like `ownership_type`/`domain`, subtype-guarded read; token is a separate write-once resource; needs Metadata Service Auth enabled |
 | ~~11~~ | ~~`datahub_ownership_type`~~ | resource + data source | yes | **Shipped ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50))** |
 | 17 | `datahub_page_template` + `datahub_page_module` | resource | yes | See Category 13. Template = ordered rows of module references (`form`/`metadata_test`-style nesting); `GLOBAL`-scope only (reject/ignore `PERSONAL` at plan time, same call as excluding per-asset enrichment); admin-gated via `manageHomePageTemplates`. |
 
@@ -396,8 +407,8 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 
 | # | Terraform component | Type | Cloud | Key concern |
 |---|---|---|---|---|
-| 12 | `datahub_assertion_assignment_rule` | resource | yes | Ship before `data_contract` |
-| 13 | `datahub_data_contract` | resource | yes | No GraphQL read query; delete strategy unclear |
+| ~~12~~ | ~~`datahub_assertion_assignment_rule`~~ | resource + data source | yes | **Shipped ([PR #75](https://github.com/datahub-project/terraform-provider-datahub/pull/75))**. The "ship before `data_contract`" sequencing was followed. |
+| ~~13~~ | ~~`datahub_data_contract`~~ | resource + data source | yes | **Shipped ([PR #80](https://github.com/datahub-project/terraform-provider-datahub/pull/80))**. Both listed concerns held and were resolved as anticipated: Read uses the OpenAPI v3 entity endpoint because no `dataContract(urn)` query exists, and delete goes via aspect removal. |
 | ~~14~~ | ~~`datahub_service_account`~~ | resource | ~~yes~~ | **Moved to Tier 2 - OSS since Core v1.4.0, not Cloud-only** (see revised note in Category 4) |
 | 15 | `datahub_oauth_authorization_server` | resource | yes | Stable config object |
 | ~~16~~ | ~~`datahub_corp_group` + `datahub_corp_group_member`~~ | resource + data source | yes | **Shipped v0.4.0** |
@@ -410,7 +421,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 - `datahub_global_settings` / settings family — singleton resources; low-ceremony add-ons
 - `datahub_view` (global views only) — niche
 - `datahub_post` (announcements) — niche
-- `datahub_corp_user` (data source only) — useful URN lookup for owners/policy actors
+- ~~`datahub_corp_user` (data source only)~~ — **shipped as resource + data source** in v0.4.0, not the data-source-only shape assumed here
 
 ### Already open
 
@@ -429,8 +440,13 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 
 ## Survey methodology
 
-Produced 2026-05-26. Sources:
+Produced 2026-05-26. **Re-surveyed 2026-08-02** against demo.acryl.io (DataHub Cloud v2.0.3) via live GraphQL introspection and the OpenAPI group index: **+6 queries, +5 mutations, 0 removals, 0 renames, 1 new entity type addressable at `/openapi/v3/entity/`.** Every addition is Cloud-only and lands in a category already rated IRRELEVANT or MEDIUM-defer, so 68 days produced no new HIGH candidate. The re-survey's value was in what it found wrong about the *method* below, not in drift.
 
-1. **OpenAPI v2 REST** — `api-docs.json` (382 paths, 111 tags). Note: the spec is mostly v2; the v3 namespace is very small.
-2. **GraphQL** — live introspection is gated on DataHub Cloud instances; schema enumerated from the DataHub GraphQL source tree (OSS + Cloud). 286 mutations + 157 queries.
+Sources:
+
+1. **OpenAPI v2 REST** — `api-docs.json` (382 paths, 111 tags). ~~Note: the spec is mostly v2; the v3 namespace is very small.~~ **Wrong, corrected 2026-08-02.** The default `api-docs` document is an aggregate that exposes only 5 `/openapi/v3/*` paths. The real v3 surface lives in a separate springdoc group and is **1,007 paths / 4,322 operations across 87 entity types** (`GET /openapi/v3/api-docs/openapi-v3`, verified live). That is the surface this provider mandates for every Read and ImportState path, so the original note understated the most important namespace by roughly two orders of magnitude. Enumerate the groups first next time — `GET /openapi/v3/api-docs/swagger-config` lists them: `1. DataHub v3 (OpenAPI)`, `2. Events`, `3. OpenLineage`, `4. Operations`, `5. DataHub v2 (OpenAPI)`, `6. DataHub v1 (OpenAPI)`, `Metadata Tests`.
+2. **GraphQL** — ~~live introspection is gated on DataHub Cloud instances;~~ **also wrong: full introspection works on demo.acryl.io** (verified 2026-08-02, and used for the org-settings design in July). The baseline schema was enumerated from the DataHub GraphQL source tree (OSS + Cloud) instead: 286 mutations + 157 queries. A live introspection query is now the cheapest way to re-run this audit, and the only way to see what a given instance actually deploys as opposed to what trunk contains.
 3. **Live Cloud probes** — confirmed present on user's Cloud instance: `assertion`, `application`, `businessAttribute`, `connection`, `structuredProperty`, `test`, `form`, `document`, `role`, `listOAuthAuthorizationServers`, `listServiceAccounts`, `listActionWorkflows`, `listAssertionAssignmentRules`. Confirmed missing as top-level GraphQL query field: `dataContract` (use `entity()` or OpenAPI v3 instead).
+4. **Re-probe 2026-08-02** — the following were re-checked live and are **still accurate**, recorded so a future reader does not re-litigate them: no `dataContract` query and no `deleteDataContract` mutation; the brand-colour field is still absent (BLOCKED note stands); `globalSettings` is still `category: internal`; `dataHubPageTemplate` / `dataHubPageModule` are still `category: core`; `oauthAuthorizationServer` is still Cloud-only.
+
+**Known gap in the re-survey:** no archived copy of the 2026-05-26 OpenAPI spec exists on disk, so of the +39 REST paths observed, 14 were attributed to specific new controllers and **25 were not** — some of that residue is likely version skew between the baseline instance and fork source rather than genuinely new API. Archive the spec JSON alongside this document next time so the delta can be computed rather than reconstructed.
