@@ -57,8 +57,10 @@ The proposed shape, mirroring `exampleExemptions` (`example_validate_test.go:46-
 
 ```go
 // liveExamples are the runnable examples applied and destroyed against a live
-// Quickstart, in the order they run. Order is load-bearing: see the
-// identifier-collision section of docs/design/live-example-execution.md.
+// Quickstart, in the order they run. Order is load-bearing only until the
+// identifier renames and the local-iam member_username override land; after
+// that the sole rule is that provider-install-verification runs first. See
+// the identifier-collision section of docs/design/live-example-execution.md.
 var liveExamples = []liveExample{
     {dir: "tag-simple"},
     {dir: "domain-simple", serialDestroy: true},
@@ -101,7 +103,7 @@ The Go table has a further, decisive advantage: the harness needs the husk class
 
 One export is required. `stillExistsAfterDestroyError` and `describeStillExists` are unexported (`husk_diagnostic.go:142,170`), and `Target.AssertEntityAbsent` (`target.go:155`) checks absence but does not classify a husk. The harness wants both: absence semantics plus the self-diagnosing message. Add an exported `datahubtesting.AssertURNAbsent(t, client, resourceType, urn)` composing the two, and have the existing `CheckDestroy` call sites keep using the unexported form.
 
-## Identifier collisions and why serial execution is forced
+## Identifier collisions, and why execution is serial
 
 Every runnable example uses fixed, human-readable identifiers by house convention (the `tf-example-` prefix rule in `CLAUDE.md`). Fixed identifiers make examples readable and cleanup obvious; they also mean two examples can name the same entity. Terraform has no idea the other configuration exists, so the result is a create that fails with "already exists", or -- worse, because it is silent -- two states both believing they own one entity, where the first `destroy` removes it and the second reports drift or a 404.
 
@@ -121,13 +123,25 @@ Extending the search past the `tf-example-` prefix, which the original list assu
 
 A third near-miss is worth recording because it will become real the moment someone renames something: `domain-simple/main.tf:43` and `glossary-node-term-simple/main.tf:43` both use `tf-example-accounting`, and the display names `TF Example - Finance` and `TF Example - Accounting` are shared verbatim. Display names are not URN-bearing, so they collide harmlessly today.
 
-Two real collisions is enough to force serial execution, and serial execution is the right answer even at one, because the alternative -- renaming ids so that no two examples ever agree -- pays a permanent readability cost in published documentation to buy a test-harness property. The published examples should keep saying `tf-example-revenue`.
-
 **Serial with teardown between each** makes both collisions disappear: at most one configuration holds `urn:li:glossaryTerm:tf-example-revenue` at any instant, and the second example creates it fresh after the first has removed it. This is stronger than serial-then-teardown-at-the-end, which would still have the two configurations coexisting.
 
-Proposed order, and why:
+Two real collisions would be enough to force serial execution on their own. They are being removed anyway (see "Unique identifiers" below), so the case for serial has to stand without them -- and it does. Several examples read instance-wide plural data sources (item 5 under "Flakiness"); those lists return everything on the instance, so two configurations running at the same time appear in each other's outputs no matter what their entities are called. Renaming cannot decouple them. Serial is therefore the default because of that coupling and because a single-threaded run bounds the blast radius of a failed destroy, not because two ids happen to agree.
 
-1. `provider-install-verification` -- creates nothing; fails in seconds if the PAT or GMS URL is wrong, before an hour of Quickstart time is spent.
+The distinction matters for anyone later tempted to parallelise: uniqueness makes it *safe to reorder*, not safe to run concurrently.
+
+### Unique identifiers
+
+**Decision, 2026-08-02: rename the colliding ids rather than rely on serialisation to hide them.** This design originally argued the other way -- that renaming "pays a permanent readability cost in published documentation to buy a test-harness property."
+
+The counter-argument that carried: serialisation makes collisions harmless *while the harness behaves*, and does nothing when it does not. A destroy that fails leaves an entity behind, and the CAT-2583 husk class (item 1 under "Flakiness") is documented, reproduced, and recorded at `CHANGELOG.md:99`. An operator sweeping debris then reads a leftover `urn:li:glossaryTerm:tf-example-revenue` and cannot say which of two examples produced it. That ambiguity lives in the name, so no amount of sequencing removes it.
+
+The readability objection is kept as a constraint on the rename rather than discarded: the replacements must make the example of origin inferable from the identifier, which is precisely the property the change exists to create. A random suffix would satisfy uniqueness and defeat the purpose. Display names get the same treatment -- they are not URN-bearing and cannot collide technically, but an operator sweeping a UI reads the display name, not the URN.
+
+Work is in flight on `chore/unique-example-identifiers`. **Until it lands, the two collisions above are real and the ordering below must respect them.**
+
+Proposed order, and why. Note how little of this survives its own reasoning: entries 5, 6, 11 and 12 exist only because of the collisions being removed, and 14 only because of a default that the harness can override. What is left afterwards is a single rule -- run the preflight first.
+
+1. `provider-install-verification` -- creates nothing; fails in seconds if the PAT or GMS URL is wrong, before an hour of Quickstart time is spent. **This is the one ordering constraint that survives everything below.**
 2. `tag-simple`
 3. `ownership-type-simple`
 4. `domain-simple` -- nested destroy, gets the child-race treatment.
@@ -140,7 +154,7 @@ Proposed order, and why:
 11. `connection-snowflake` -- first owner of `prod-snowflake`.
 12. `connection-snowflake-ingestion-source` -- second owner; must not overlap with 11.
 13. `ingestion-source-lookup` -- read-only, and gated on the `datahub-gc` preflight.
-14. `local-iam` -- **last**, deliberately. It is the only example that mutates an identity the harness itself authenticates as (see "Flakiness" item 4), so anything it breaks breaks nothing downstream.
+14. `local-iam` -- **last**, but only until the harness overrides `member_username` (see "Flakiness" item 4). The hazard is not intrinsic to the example. It exists because the example's default names `datahub`, which is also the account `make quickstart-token` authenticates as -- two independently reasonable defaults that happen to pick the same user. The table already carries a per-example `vars` map (`secret-basic` uses it for `secret_value`), so one entry retires this constraint.
 
 Serial execution solves the collisions but does *not* by itself solve the asynchronous side effect described in "Flakiness" item 1: a structured-property delete in example 6 can land after example 7 has started. That is why the design adds an end-of-run sweep rather than relying on per-example checks alone.
 
@@ -247,7 +261,13 @@ Mitigations: the ephemeral Quickstart makes the first hazard self-healing, which
 
 **I did not verify what DataHub does when a user with the Admin role joins a group assigned Editor** -- whether effective privileges are the union, or whether the group assignment can narrow them. If it can narrow them, the harness's own token loses Admin partway through the run and every subsequent operation fails in a way that looks like an unrelated provider bug. Note also that the resource comment at `main.tf:107-108` states DataHub allows only one role per actor, which makes the question sharper rather than settling it.
 
-Mitigations: run `local-iam` last, so the blast radius is bounded to itself. Add a post-example credential probe (re-read `data.datahub_me` equivalent) that reports the loss explicitly if it happens, rather than letting it surface as a cascade. Resolve the underlying question against a Quickstart before promoting this example out of the tail position -- and if the answer is bad, override `member_username` to a throwaway user instead.
+Mitigations, in preference order.
+
+**Override `member_username` to a throwaway user via the table's `vars` map.** This removes the hazard rather than containing it, and -- the reason it is first -- it needs no answer to the union-versus-narrowing question above. That question is still open, and answering it costs a Quickstart run to settle something the harness can simply route around. The published default stays `datahub`: a runnable example cannot reference a user that may not exist on the reader's instance, and `datahub` is the only account guaranteed to be there. This is a harness concern, so it belongs in the harness.
+
+Failing that, run `local-iam` last so the blast radius is bounded to itself, and add a post-example credential probe (re-read the `data.datahub_me` equivalent) reporting the loss explicitly rather than letting it surface as a cascade of unrelated-looking failures.
+
+With the override in place `local-iam` has no required position, and the only ordering constraint left in the whole run is `provider-install-verification` first.
 
 ### 5. Index-lagged plural data sources
 
