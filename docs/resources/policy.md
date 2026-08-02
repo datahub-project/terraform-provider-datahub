@@ -27,6 +27,11 @@ description: |-
   policy_id becomes the URN suffix (urn:li:dataHubPolicy:<policy_id>). Supplying an explicit id keeps the URN deterministic and stable, avoiding the random UUID the DataHub UI assigns.
   List ownership
   This resource owns the complete privileges, actors, and resources sets and writes the full desired state on every apply. Privileges or actors added outside Terraform are removed on the next apply. These are modeled as sets, so element order is not significant.
+  Role-based actors are not manageable here
+  A DataHub policy can grant to roles (urn:li:dataHubRole:Admin and friends) as well as to users and groups, and actors above has no roles attribute because DataHub's write API has no field for one. The updatePolicy mutation carries users, groups, all_users, all_groups and the resource-owner filter, and the server rebuilds the entire policy from that input -- so any write to a role-bearing policy deletes its role binding, whoever makes it. The DataHub UI writes through the same mutation and so cannot repair the result; only a direct aspect write can. This is a server-side limitation, tracked upstream as OSS-1216, and no provider version avoids it.
+  Rather than make that write, the provider reads the policy first and refuses, naming the roles that would have been lost. terraform import of a role-bearing policy is allowed and warns, so the problem surfaces at import rather than at the first apply.
+  Nine of the sixteen policies DataHub ships bind their actors through roles alone, and they are returned by the datahub_policies data source and enumerated by datahub-tf-extract alongside your own -- so this is reached by bulk-importing an existing estate, not by writing a policy by hand. Leave DataHub's policies to DataHub and add your own beside them.
+  A related flag: DataHub marks its own policies editable = false, which greys them out in the UI. That flag is not carried by updatePolicy either, so an apply resets it to true. The provider warns rather than refusing, since nothing is destroyed -- but DataHub re-ingests its non-editable defaults on every deployment, so managing one here produces drift after every DataHub upgrade.
   Privileges
   privileges are free-form strings and are not validated by the provider, since the valid set differs between DataHub releases and between OSS and DataHub Cloud. See the DataHub PoliciesConfig for the authoritative list.
 ---
@@ -73,6 +78,16 @@ The two forms cannot be combined: setting `filter` alongside `type`, `resources`
 ## List ownership
 
 This resource owns the complete `privileges`, `actors`, and `resources` sets and writes the full desired state on every apply. Privileges or actors added outside Terraform are removed on the next apply. These are modeled as sets, so element order is not significant.
+
+## Role-based actors are not manageable here
+
+A DataHub policy can grant to **roles** (`urn:li:dataHubRole:Admin` and friends) as well as to users and groups, and `actors` above has no `roles` attribute because DataHub's write API has no field for one. The `updatePolicy` mutation carries users, groups, `all_users`, `all_groups` and the resource-owner filter, and the server rebuilds the entire policy from that input -- so any write to a role-bearing policy deletes its role binding, whoever makes it. The DataHub UI writes through the same mutation and so cannot repair the result; only a direct aspect write can. This is a server-side limitation, tracked upstream as OSS-1216, and no provider version avoids it.
+
+Rather than make that write, the provider reads the policy first and refuses, naming the roles that would have been lost. `terraform import` of a role-bearing policy is allowed and warns, so the problem surfaces at import rather than at the first apply.
+
+Nine of the sixteen policies DataHub ships bind their actors through roles alone, and they are returned by the `datahub_policies` data source and enumerated by `datahub-tf-extract` alongside your own -- so this is reached by bulk-importing an existing estate, not by writing a policy by hand. Leave DataHub's policies to DataHub and add your own beside them.
+
+A related flag: DataHub marks its own policies `editable = false`, which greys them out in the UI. That flag is not carried by `updatePolicy` either, so an apply resets it to `true`. The provider warns rather than refusing, since nothing is destroyed -- but DataHub re-ingests its non-editable defaults on every deployment, so managing one here produces drift after every DataHub upgrade.
 
 ## Privileges
 

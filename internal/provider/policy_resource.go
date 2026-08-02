@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -150,6 +151,28 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"This resource owns the complete `privileges`, `actors`, and `resources` sets and writes " +
 			"the full desired state on every apply. Privileges or actors added outside Terraform are " +
 			"removed on the next apply. These are modeled as sets, so element order is not significant.\n\n" +
+			"## Role-based actors are not manageable here\n\n" +
+			"A DataHub policy can grant to **roles** (`urn:li:dataHubRole:Admin` and friends) as well " +
+			"as to users and groups, and `actors` above has no `roles` attribute because DataHub's " +
+			"write API has no field for one. The `updatePolicy` mutation carries users, groups, " +
+			"`all_users`, `all_groups` and the resource-owner filter, and the server rebuilds the " +
+			"entire policy from that input -- so any write to a role-bearing policy deletes its role " +
+			"binding, whoever makes it. The DataHub UI writes through the same mutation and so cannot " +
+			"repair the result; only a direct aspect write can. This is a server-side limitation, " +
+			"tracked upstream as OSS-1216, and no provider version avoids it.\n\n" +
+			"Rather than make that write, the provider reads the policy first and refuses, naming the " +
+			"roles that would have been lost. `terraform import` of a role-bearing policy is allowed " +
+			"and warns, so the problem surfaces at import rather than at the first apply.\n\n" +
+			"Nine of the sixteen policies DataHub ships bind their actors through roles alone, and " +
+			"they are returned by the `datahub_policies` data source and enumerated by " +
+			"`datahub-tf-extract` alongside your own -- so this is reached by bulk-importing an " +
+			"existing estate, not by writing a policy by hand. Leave DataHub's policies to DataHub " +
+			"and add your own beside them.\n\n" +
+			"A related flag: DataHub marks its own policies `editable = false`, which greys them out " +
+			"in the UI. That flag is not carried by `updatePolicy` either, so an apply resets it to " +
+			"`true`. The provider warns rather than refusing, since nothing is destroyed -- but " +
+			"DataHub re-ingests its non-editable defaults on every deployment, so managing one here " +
+			"produces drift after every DataHub upgrade.\n\n" +
 			"## Privileges\n\n" +
 			"`privileges` are free-form strings and are not validated by the provider, since the valid " +
 			"set differs between DataHub releases and between OSS and DataHub Cloud. See the DataHub " +
@@ -397,6 +420,39 @@ func (r *policyResource) ValidateConfig(ctx context.Context, req resource.Valida
 	}
 }
 
+// guardWrite reads the policy currently stored at urn and reports what an
+// upsert would cost, refusing the write when the answer is "its role-based
+// actor bindings" (upstream defect OSS-1216 -- see policy_write_guard.go).
+//
+// This runs at apply time, immediately before the mutation, rather than in
+// ValidateConfig or ModifyPlan alongside the resources.filter conflict checks.
+// Those run against configuration and plan; this needs the live aspect, which
+// only the server has. ValidateConfig cannot reach it at all -- it runs during
+// `terraform validate`, before the provider is configured, with no client. A
+// ModifyPlan probe could reach it, but would still not be a guard: a plan can
+// be written to a file and applied arbitrarily later, and `-refresh=false`
+// skips the read entirely, so an approved plan could destroy roles added in
+// between. Checking immediately before the write leaves no such window. The
+// earliest honest warning on the path that leads here -- bulk import -- is
+// emitted by ImportState instead.
+func (r *policyResource) guardWrite(ctx context.Context, urn string) diag.Diagnostics {
+	var diags diag.Diagnostics
+	live, err := r.client.GetPolicyByURN(ctx, urn)
+	if err != nil {
+		// Fail closed. The whole point of the check is that the write is
+		// irreversible; proceeding without knowing what is there defeats it.
+		diags.AddError("DataHub API Error", fmt.Sprintf(
+			"Could not read the policy currently stored at %s before writing it: %v\n\n"+
+				"The provider inspects a policy's existing actors before every write, because a "+
+				"DataHub policy write deletes any role-based actor binding the policy holds "+
+				"(upstream defect OSS-1216). It refuses to write when it cannot make that check.",
+			urn, err))
+		return diags
+	}
+	diags.Append(policyWriteHazards(live)...)
+	return diags
+}
+
 func (r *policyResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	if r.client == nil {
 		resp.Diagnostics.AddError("Client not configured", "The provider client was not configured. Ensure provider configuration is set.")
@@ -412,6 +468,14 @@ func (r *policyResource) Create(ctx context.Context, req resource.CreateRequest,
 	urn := dataHubPolicyURNPrefix + plan.PolicyID.ValueString()
 	in, diags := policyInputFromModel(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Create is an upsert at a deterministic URN, so it can land on a policy
+	// that already exists and is not in Terraform state -- exactly what
+	// happens when a configuration names a policy_id DataHub already ships.
+	resp.Diagnostics.Append(r.guardWrite(ctx, urn)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -477,6 +541,11 @@ func (r *policyResource) Update(ctx context.Context, req resource.UpdateRequest,
 	urn := state.URN.ValueString()
 	in, diags := policyInputFromModel(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(r.guardWrite(ctx, urn)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -551,6 +620,12 @@ func (r *policyResource) ImportState(ctx context.Context, req resource.ImportSta
 		)
 		return
 	}
+
+	// Warn as early as the provider can. On the documented bulk-import path --
+	// datahub_policies.urns fed into an import {} for_each -- this is the first
+	// point at which the provider sees what it has been pointed at, and it runs
+	// during plan, before any apply can strip the role bindings.
+	resp.Diagnostics.Append(policyImportHazards(policy)...)
 
 	state := policyResourceModel{
 		PolicyID: types.StringValue(policy.ID),

@@ -5,7 +5,23 @@ subcategory: ""
 description: |-
   DataHub ✅ | DataHub Cloud ✅
   Returns the URNs of all DataHub policies visible to the authenticated principal.
-  Backed by listPolicies (OpenSearch). Policies created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing policies into Terraform state. Note that DataHub ships default system policies, which will also be returned.
+  Backed by listPolicies (OpenSearch). Policies created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing policies into Terraform state.
+  Import your own policies, not DataHub's
+  This list is everything the caller can see, which includes the default policies DataHub itself ships and maintains. Those belong to DataHub, and importing them has a specific consequence beyond the usual reasons not to manage a platform's built-ins.
+  Nine of DataHub's sixteen default policies bind their actors entirely through DataHub roles -- Admin, Editor, Reader -- naming no users and no groups. DataHub's policy write API cannot carry a role binding: the updatePolicy mutation has no field for one, and the server rebuilds the whole policy from that mutation's input. So writing such a policy from anywhere -- this provider, the DataHub UI, any other client -- deletes its role binding, and a policy that bound its actors only through roles is then granting nothing to anybody. Repairing it needs a direct aspect write, since saving it in the UI goes through the same mutation. This is a server-side limitation, tracked upstream as OSS-1216; no provider version changes it.
+  datahub_policy will not make that write -- it refuses at apply time and warns as soon as a role-bearing policy is imported -- so the failure mode is a blocked apply rather than a broken deployment. The blocked apply is still yours to unpick, so it is worth not importing them in the first place.
+  Select the policies you mean to own rather than excluding the ones you do not. An allowlist stays correct when a DataHub upgrade adds a default policy; a list of URNs to skip does not:
+  
+  locals {
+    # Only policies this configuration is meant to own, identified by an
+    # id prefix the team applies to everything it creates.
+    managed_policy_urns = [
+      for urn in data.datahub_policies.all.urns :
+      urn if startswith(urn, "urn:li:dataHubPolicy:acme-")
+    ]
+  }
+  
+  For a brownfield estate with no such convention, review the list once by hand: DataHub's default policy URNs are fixed, and are listed in boot/policies.json in the DataHub repository.
 ---
 
 # datahub_policies (Data Source)
@@ -14,7 +30,30 @@ description: |-
 
 Returns the URNs of all DataHub policies visible to the authenticated principal.
 
-Backed by `listPolicies` (OpenSearch). Policies created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing policies into Terraform state. Note that DataHub ships default system policies, which will also be returned.
+Backed by `listPolicies` (OpenSearch). Policies created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing policies into Terraform state.
+
+## Import your own policies, not DataHub's
+
+This list is everything the caller can see, which includes the default policies DataHub itself ships and maintains. Those belong to DataHub, and importing them has a specific consequence beyond the usual reasons not to manage a platform's built-ins.
+
+Nine of DataHub's sixteen default policies bind their actors entirely through DataHub **roles** -- `Admin`, `Editor`, `Reader` -- naming no users and no groups. DataHub's policy write API cannot carry a role binding: the `updatePolicy` mutation has no field for one, and the server rebuilds the whole policy from that mutation's input. So writing such a policy from anywhere -- this provider, the DataHub UI, any other client -- deletes its role binding, and a policy that bound its actors only through roles is then granting nothing to anybody. Repairing it needs a direct aspect write, since saving it in the UI goes through the same mutation. This is a server-side limitation, tracked upstream as OSS-1216; no provider version changes it.
+
+`datahub_policy` will not make that write -- it refuses at apply time and warns as soon as a role-bearing policy is imported -- so the failure mode is a blocked apply rather than a broken deployment. The blocked apply is still yours to unpick, so it is worth not importing them in the first place.
+
+Select the policies you mean to own rather than excluding the ones you do not. An allowlist stays correct when a DataHub upgrade adds a default policy; a list of URNs to skip does not:
+
+```terraform
+locals {
+  # Only policies this configuration is meant to own, identified by an
+  # id prefix the team applies to everything it creates.
+  managed_policy_urns = [
+    for urn in data.datahub_policies.all.urns :
+    urn if startswith(urn, "urn:li:dataHubPolicy:acme-")
+  ]
+}
+```
+
+For a brownfield estate with no such convention, review the list once by hand: DataHub's default policy URNs are fixed, and are listed in `boot/policies.json` in the DataHub repository.
 
 ## Example Usage
 
@@ -23,6 +62,27 @@ data "datahub_policies" "all" {}
 
 output "policy_urns" {
   value = data.datahub_policies.all.urns
+}
+
+# Before feeding these URNs into import {} blocks, narrow them to the policies
+# this configuration is meant to own. The list includes the default policies
+# DataHub ships, several of which grant through DataHub roles -- a binding the
+# policy write API cannot carry, so importing and applying one would leave it
+# granting nothing to anybody. The provider refuses that write, but the cleanest
+# outcome is not to import them at all.
+#
+# Select by a naming convention of your own: an allowlist stays correct when a
+# DataHub upgrade adds a new default policy, whereas a list of URNs to skip does
+# not.
+locals {
+  managed_policy_urns = [
+    for urn in data.datahub_policies.all.urns :
+    urn if startswith(urn, "urn:li:dataHubPolicy:acme-")
+  ]
+}
+
+output "managed_policy_urns" {
+  value = local.managed_policy_urns
 }
 ```
 
