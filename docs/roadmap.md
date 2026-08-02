@@ -112,7 +112,7 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 
 | Operation | Type | Relevance | Cloud-only | Notes |
 |---|---|---|---|---|
-| `createPolicy` / `updatePolicy` / `deletePolicy` + OpenAPI policy entity | M | covered | no | `datahub_policy` resource + `datahub_policies` data source (v0.4.0). PLATFORM and METADATA policy types; deterministic `policy_id`; full-state ownership of privileges/actors/resources lists. Both resource-scope forms are covered: the criteria `resources.filter` (tag/domain/container/multi-type scoping) and the deprecated `type`/`resources`/`all_resources`. `resources.privilegeConstraints` (sub-resource modification constraints, same `PolicyMatchFilter` shape as `filter`) is **not** yet modelled -- the provider owns the full `resources` map, so a constraint set outside Terraform is dropped on the next apply. |
+| `createPolicy` / `updatePolicy` / `deletePolicy` + OpenAPI policy entity | M | covered | no | `datahub_policy` resource + `datahub_policies` data source (v0.4.0). PLATFORM and METADATA policy types; deterministic `policy_id`; full-state ownership of privileges/actors/resources lists. Both resource-scope forms are covered: the criteria `resources.filter` (tag/domain/container/multi-type scoping) and the deprecated `type`/`resources`/`all_resources`. `resources.privilegeConstraints` (sub-resource modification constraints, same `PolicyMatchFilter` shape as `filter`) is **not** yet modelled -- the provider owns the full `resources` map, so a constraint set outside Terraform is dropped on the next apply. Roles are separately guarded — see the re-probe trigger below the table. |
 | `createGroup` / `removeGroup` / `updateCorpGroupProperties` + `corpGroup(urn)` | M/Q | covered | no | `datahub_corp_group` resource + `datahub_corp_group` / `datahub_corp_groups` data sources (v0.4.0). |
 | `addGroupMembers` / `removeGroupMembers` | M | covered | no | `datahub_corp_group_member` resource (v0.4.0). |
 | `batchAssignRole` + `dataHubRole(urn)` | M | covered | no | `datahub_role_assignment` resource + `datahub_role` / `datahub_roles` data sources (v0.4.0). |
@@ -129,6 +129,18 @@ The single largest HIGH bucket. All entities are slow-moving, governance/enginee
 | `listPolicies` / `listGroups` / `listUsers` / `listServiceAccounts` | Q | covered (partial) | varies | `datahub_policies`, `datahub_corp_groups` bulk-enumerate (v0.4.0). `listUsers` available via `datahub_corp_user` import enumeration. |
 | SCIM REST endpoints | REST | LOW | no | Provisioning usually owned by IdP. |
 | SCIM-Configuration / auth-service-controller | REST | IRRELEVANT | no | Auth bootstrap surfaces. |
+
+**RE-PROBE TRIGGER for `actors.roles` (OSS-1216) — check this on every API re-survey.** The provider refuses any policy write that would delete `actors.roles`, because `updatePolicy` rebuilds `dataHubPolicyInfo` from a `PolicyUpdateInput` whose `ActorFilterInput` has no `roles` field. The guard lives in `internal/provider/policy_write_guard.go` and is deliberately unconditional.
+
+**The check to run:** does GraphQL `ActorFilterInput` now have a `roles` field? One introspection query answers it:
+
+```
+{__type(name:"ActorFilterInput"){inputFields{name}}}
+```
+
+Nothing fails when the answer changes to yes. The guard will keep refusing writes DataHub would by then accept, indefinitely, and no test notices — which is why this lives here rather than relying on someone remembering.
+
+**When it does flip, do not simply delete the guard.** The fix will ship in some DataHub version and every server below it still loses roles, so an unconditional removal reinstates the data loss for older instances. The wind-back is a version discriminator (precedent: `datahub_connection`'s OSS/Cloud split, the `datahub_service_account` 1.4.0 floor) plus promoting `Policy.ActorRoles` — already decoded on the read path — into full read/write support. The mock at `internal/provider/datahubtesting/policies.go` reproduces the server strip deliberately and needs the same gate, or the tests stop matching reality. Treat it as a feature with the read half already built, not a rollback.
 
 **`datahub_service_account` note (revised 2026-07-05 after OSS verification):**
 - **OSS + Cloud**, not Cloud-only. Available on DataHub Core >= v1.4.0 and Cloud >= v0.3.17. Verified in `datahub-graphql-core/src/main/resources/auth.graphql` (OSS core) plus OSS resolvers, `ServiceAccountService`, and OSS smoke tests. Below the version floor the endpoints are absent, so the resource needs a graceful "not available" diagnostic (a version-floor discriminator, like `datahub_connection`'s OSS/Cloud handling).
