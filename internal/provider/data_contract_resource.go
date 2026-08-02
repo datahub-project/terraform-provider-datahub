@@ -187,17 +187,20 @@ func (r *dataContractResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	r.upsert(ctx, &plan, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDataContract, plan.StructuredPropertiesDefaults)
+	// Verify default structured properties before creating anything: see
+	// resolveAndVerifySPDefaults.
+	spAll, spVals, sd := resolveAndVerifySPDefaults(ctx, r.pd, r.defaults, kindDataContract, plan.StructuredPropertiesDefaults)
 	resp.Diagnostics.Append(sd...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	plan.StructuredPropertiesDefaults = spAll
+
+	r.upsert(ctx, &plan, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	if len(spVals) > 0 {
 		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, plan.URN.ValueString(), spVals, types.MapNull(spDefaultsElementType))...)
 		if resp.Diagnostics.HasError() {

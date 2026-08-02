@@ -188,6 +188,15 @@ func (r *glossaryNodeResource) Create(ctx context.Context, req resource.CreateRe
 	}
 	plan.CustomPropertiesAll = all
 
+	// Verify default structured properties before creating anything: see
+	// resolveAndVerifySPDefaults.
+	spAll, spVals, sd := resolveAndVerifySPDefaults(ctx, r.pd, r.defaults, kindGlossaryNode, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+
 	urn, repairedHusk, err := r.client.CreateGlossaryNode(ctx, datahub.CreateGlossaryEntityInput{
 		ID:         plan.NodeID.ValueString(),
 		Name:       plan.Name.ValueString(),
@@ -227,12 +236,6 @@ func (r *glossaryNodeResource) Create(ctx context.Context, req resource.CreateRe
 		}
 	}
 
-	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindGlossaryNode, plan.StructuredPropertiesDefaults)
-	resp.Diagnostics.Append(sd...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	plan.StructuredPropertiesDefaults = spAll
 	if len(spVals) > 0 {
 		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
 		if resp.Diagnostics.HasError() {

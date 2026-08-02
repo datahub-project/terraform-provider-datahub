@@ -729,6 +729,45 @@ func resolvePlannedSPDefaults(defaults entityDefaults, spDefs map[string]*datahu
 	return planned, vals, diags
 }
 
+// resolveAndVerifySPDefaults resolves the effective structured-property
+// defaults and verifies each one against its definition: the definition must
+// exist, and the configured values must be legal for its value type.
+//
+// Call this before the resource's first server write. Verifying afterwards
+// leaves a real hazard: the entity is created, the property check then fails,
+// and Create returns an error without setting state - so Terraform holds no
+// state entry, destroy has nothing to remove, and the entity is orphaned
+// server-side where it is invisible to both plan and state. The user then hits
+// "already exists" when they correct the default and re-apply.
+//
+// Definition lookups are memoised per provider instance, so hoisting them
+// costs at most one read per distinct property per run, and the lookup
+// applySPDefaults repeats afterwards is a cache hit.
+func resolveAndVerifySPDefaults(ctx context.Context, pd *providerData, defaults entityDefaults, kind entityKind, planned types.Map) (types.Map, map[string][]string, diag.Diagnostics) {
+	spAll, spVals, diags := resolvePlannedSPDefaults(defaults, pd.spDefs, kind, planned)
+	if diags.HasError() || len(spVals) == 0 {
+		return spAll, spVals, diags
+	}
+	urns := make([]string, 0, len(spVals))
+	for urn := range spVals {
+		urns = append(urns, urn)
+	}
+	sort.Strings(urns)
+	for _, urn := range urns {
+		def, err := pd.ensureSPDef(ctx, urn)
+		if err != nil {
+			diags.AddError("Invalid provider defaults.structured_properties", err.Error())
+			return spAll, spVals, diags
+		}
+		if err := datahub.ValidateStructuredPropertyValues(def.ValueType, spVals[urn]); err != nil {
+			diags.AddError("Invalid provider defaults.structured_properties",
+				fmt.Sprintf("the value set for %s is not valid: %s", urn, err))
+			return spAll, spVals, diags
+		}
+	}
+	return spAll, spVals, diags
+}
+
 // applySPDefaults reconciles the server toward the planned per-property
 // values: keys present in prior state but no longer planned are removed, and
 // every planned key is (re)written, then verified with a read-back so a

@@ -86,6 +86,20 @@ func structuredPropertyValueParams(valueType string, values []string) ([]map[str
 	return out, nil
 }
 
+// ValidateStructuredPropertyValues reports whether values are legal for a
+// property of the given short value type, running exactly the conversion
+// SetStructuredPropertyValues performs and discarding the result.
+//
+// It exists so a caller can reject a bad value before it writes anything else.
+// SetStructuredPropertyValues rejects a non-numeric value for a number-typed
+// property locally, without contacting the server, but by then the entity the
+// values were destined for has already been created - and a Create that errors
+// without setting state leaves that entity orphaned.
+func ValidateStructuredPropertyValues(valueType string, values []string) error {
+	_, err := structuredPropertyValueParams(valueType, values)
+	return err
+}
+
 // lockEntityStructuredProps serializes structuredProperties-aspect writes to a
 // single entity within this provider process, returning an unlock function
 // (unlock := c.lockEntityStructuredProps(urn); defer unlock()).

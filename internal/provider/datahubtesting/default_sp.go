@@ -5,6 +5,7 @@ package datahubtesting
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -45,13 +46,19 @@ func spDefaultsProviderBlock(propURN string, values ...string) string {
 // spDefinitionConfig declares the marker property definition used by the
 // scenarios, targeting the given entity types.
 func spDefinitionConfig(propertyID string, entityTypes string) string {
+	return spDefinitionConfigTyped(propertyID, "string", entityTypes)
+}
+
+// spDefinitionConfigTyped is spDefinitionConfig with an explicit value type,
+// for scenarios that turn on the type's own validation rules.
+func spDefinitionConfigTyped(propertyID, valueType, entityTypes string) string {
 	return fmt.Sprintf(`
 resource "datahub_structured_property" "marker" {
   property_id  = %q
-  value_type   = "string"
+  value_type   = %q
   entity_types = [%s]
 }
-`, propertyID, entityTypes)
+`, propertyID, valueType, entityTypes)
 }
 
 // DomainSPDefaultsLifecycleSteps covers the full per-property latch lifecycle
@@ -340,6 +347,39 @@ resource "datahub_domain" "test" {
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()),
 			},
+		},
+	}
+}
+
+// SPDefaultsInvalidValueSteps asserts that a defaults.structured_properties
+// value the property definition cannot accept fails the apply with a clear
+// error. Pair it with Target.AssertEntityAbsent: the value is checked against
+// the definition before the entity is written, so the failed apply must leave
+// nothing behind.
+//
+// The domain is the subject because it is the cheapest SP-capable resource to
+// create; the hazard is in shared wiring, not in the domain.
+func SPDefaultsInvalidValueSteps(domainID, propertyID string) []resource.TestStep {
+	propURN := "urn:li:structuredProperty:" + propertyID
+	definition := spDefinitionConfigTyped(propertyID, "number", `"domain"`)
+	domain := fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "SP Invalid Value Domain"
+}
+`, domainID)
+
+	return []resource.TestStep{
+		{
+			// The definition alone: provider configuration cannot depend on a
+			// property created in the same apply.
+			Config: spDefaultsProviderBlock("") + definition,
+		},
+		{
+			// A number-typed property cannot hold "gold". The apply must fail
+			// with the domain never created.
+			Config:      spDefaultsProviderBlock(propURN, "gold") + definition + domain,
+			ExpectError: regexp.MustCompile(`not a valid number`),
 		},
 	}
 }
