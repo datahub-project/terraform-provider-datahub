@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-08-02
+
 ### Changed
 
 - Every identifier in the runnable examples is now unique to exactly one example, so an entity left behind on a test instance names the example that created it. Two examples previously created the same DataHub entity -- `glossary-node-term-simple` and `structured-and-custom-properties` both claimed `urn:li:glossaryTerm:tf-example-revenue`, and the two Snowflake examples both defaulted `connection_id` to `prod-snowflake` -- so applying both concurrently failed with "already exists", applying them in sequence left two Terraform states each believing they owned one entity, and an orphan bearing either URN could have come from either directory. That last case is not hypothetical: cleanup does fail, the structured-property resurrection this provider works around survives a `terraform destroy`, and the operator sweeping the debris had no way to attribute it. Three more id strings and four display names were shared across directories without colliding technically, each one rename of an entity type away from becoming a real collision. Identifiers now carry a slug naming their origin (`tf-example-domain-finance` versus `tf-example-glossary-finance`, "TF Example Domain - Finance" versus "TF Example Glossary - Finance"), which buys the attribution the bare names could not. Every `datahub_ingestion_source` in the examples also sets `source_id` explicitly rather than letting DataHub derive `<sanitized-name>-<hash>`, since a derived id is neither predictable nor greppable. **If you applied a runnable example before this release and then pull the new text, Terraform plans a replacement** -- the id is the URN suffix, so changing it forces a new resource. Destroy with the old configuration first if you want the old entities removed rather than orphaned. The published registry snippets under `examples/resources/` and `examples/data-sources/` are unchanged.
@@ -371,7 +373,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.17.0...v0.18.0
