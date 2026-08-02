@@ -157,6 +157,15 @@ func (r *corpGroupResource) Create(ctx context.Context, req resource.CreateReque
 	}
 	plan.TagsAll = tagsAll
 
+	// Verify default structured properties before creating anything: see
+	// resolveAndVerifySPDefaults.
+	spAll, spVals, sd := resolveAndVerifySPDefaults(ctx, r.pd, r.defaults, kindCorpGroup, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+
 	groupID := plan.GroupID.ValueString()
 	urn, err := r.client.CreateGroup(ctx, datahub.CreateGroupInput{
 		ID:   groupID,
@@ -186,12 +195,6 @@ func (r *corpGroupResource) Create(ctx context.Context, req resource.CreateReque
 		}
 	}
 
-	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindCorpGroup, plan.StructuredPropertiesDefaults)
-	resp.Diagnostics.Append(sd...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	plan.StructuredPropertiesDefaults = spAll
 	if len(spVals) > 0 {
 		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
 		if resp.Diagnostics.HasError() {

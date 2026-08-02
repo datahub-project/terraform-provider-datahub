@@ -174,6 +174,15 @@ func (r *corpUserResource) Create(ctx context.Context, req resource.CreateReques
 	}
 	plan.TagsAll = tagsAll
 
+	// Verify default structured properties before creating anything: see
+	// resolveAndVerifySPDefaults.
+	spAll, spVals, sd := resolveAndVerifySPDefaults(ctx, r.pd, r.defaults, kindCorpUser, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+
 	all, customProps, d := resolvePlannedCustomPropertiesAll(ctx, r.defaults, plan.CustomPropertiesAll, plan.CustomProperties, types.MapNull(types.StringType), true)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
@@ -201,12 +210,6 @@ func (r *corpUserResource) Create(ctx context.Context, req resource.CreateReques
 		}
 	}
 
-	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindCorpUser, plan.StructuredPropertiesDefaults)
-	resp.Diagnostics.Append(sd...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	plan.StructuredPropertiesDefaults = spAll
 	if len(spVals) > 0 {
 		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
 		if resp.Diagnostics.HasError() {

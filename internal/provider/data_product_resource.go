@@ -186,6 +186,15 @@ func (r *dataProductResource) Create(ctx context.Context, req resource.CreateReq
 	}
 	plan.TagsAll = tagsAll
 
+	// Verify default structured properties before creating anything: see
+	// resolveAndVerifySPDefaults.
+	spAll, spVals, sd := resolveAndVerifySPDefaults(ctx, r.pd, r.defaults, kindDataProduct, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+
 	dataProductID := plan.DataProductID.ValueString()
 	urn := dataProductURNPrefix + dataProductID
 
@@ -215,12 +224,6 @@ func (r *dataProductResource) Create(ctx context.Context, req resource.CreateReq
 		}
 	}
 
-	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDataProduct, plan.StructuredPropertiesDefaults)
-	resp.Diagnostics.Append(sd...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	plan.StructuredPropertiesDefaults = spAll
 	if len(spVals) > 0 {
 		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
 		if resp.Diagnostics.HasError() {

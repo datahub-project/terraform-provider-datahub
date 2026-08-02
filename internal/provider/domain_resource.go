@@ -175,6 +175,15 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 	plan.CustomPropertiesAll = all
 
+	// Verify default structured properties before creating anything: see
+	// resolveAndVerifySPDefaults.
+	spAll, spVals, sd := resolveAndVerifySPDefaults(ctx, r.pd, r.defaults, kindDomain, plan.StructuredPropertiesDefaults)
+	resp.Diagnostics.Append(sd...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	plan.StructuredPropertiesDefaults = spAll
+
 	urn, repairedHusk, err := r.client.CreateDomain(ctx, datahub.CreateDomainInput{
 		ID:           plan.DomainID.ValueString(),
 		Name:         plan.Name.ValueString(),
@@ -204,12 +213,6 @@ func (r *domainResource) Create(ctx context.Context, req resource.CreateRequest,
 		}
 	}
 
-	spAll, spVals, sd := resolvePlannedSPDefaults(r.defaults, r.pd.spDefs, kindDomain, plan.StructuredPropertiesDefaults)
-	resp.Diagnostics.Append(sd...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-	plan.StructuredPropertiesDefaults = spAll
 	if len(spVals) > 0 {
 		resp.Diagnostics.Append(applySPDefaults(ctx, r.pd, urn, spVals, types.MapNull(spDefaultsElementType))...)
 		if resp.Diagnostics.HasError() {

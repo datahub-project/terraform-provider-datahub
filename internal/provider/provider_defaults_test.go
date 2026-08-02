@@ -306,6 +306,32 @@ func TestAcc_SPDefaults_AssignmentOverlap(t *testing.T) {
 	})
 }
 
+// TestAcc_SPDefaults_InvalidValue asserts a clear apply-time error when a
+// defaults.structured_properties value is illegal for the referenced
+// property's value type, and that the failed apply leaves nothing behind on
+// the server.
+//
+// The absence check is the point of the second assertion, exactly as in
+// TestAcc_DefaultTags_NonexistentTag. The provider used to check the default
+// against the property definition only after writing the entity, so a config
+// like this one orphaned a domain on every run: Create returned an error
+// without setting state, leaving Terraform with no state entry and destroy
+// with nothing to remove, and the next apply with a corrected value failed
+// with "already exists".
+func TestAcc_SPDefaults_InvalidValue(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	domainID := tg.Name("tfprovider-spd-badval-dom")
+	propertyID := tg.Name("tfprovider-spd-badval-prop")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DomainCheckDestroy,
+		Steps:                    datahubtesting.SPDefaultsInvalidValueSteps(domainID, propertyID),
+	})
+
+	tg.AssertEntityAbsent(t, "domain", "urn:li:domain:"+domainID)
+}
+
 // TestAcc_DefaultTags_NonexistentTag asserts a clear apply-time error when
 // defaults.tags references a tag that does not exist, and that the failed apply
 // leaves nothing behind on the server.

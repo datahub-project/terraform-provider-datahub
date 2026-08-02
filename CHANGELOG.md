@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Provider-level `defaults.structured_properties`: a default the referenced property definition cannot accept no longer leaves an orphaned entity behind. The check ran *after* the resource had already been written to DataHub, so `Create` wrote the entity, failed on the property, and returned an error without setting state - leaving Terraform with no state entry, `destroy` with nothing to remove, and the entity stranded on the server where neither plan nor state could see it. The next apply with a corrected default then failed with "already exists". The case a configuration hits in practice is a value the property's value type rejects - `"gold"` for a `number` property, say, which the provider itself refuses before the request is even sent - and a definition deleted between plan and apply fails the same way. Affected every resource that supports `defaults.structured_properties`: `datahub_domain`, `datahub_glossary_node`, `datahub_glossary_term`, `datahub_corp_user`, `datahub_corp_group`, `datahub_service_account`, `datahub_data_product` and `datahub_data_contract`. The definition lookup and the value check now both run before any write, so a bad default fails with no side effects. `Update` is unchanged and did not need this: the entity is already in state there, so a failed update is an ordinary retryable error rather than an orphan. One residue remains by nature: a value only DataHub can reject - an `allowed_values` violation, or several values on a `SINGLE`-cardinality property - is still refused after the entity exists, because the provider does not replicate the server's validator.
+
 ## [0.19.1] - 2026-08-01
 
 ### Security
