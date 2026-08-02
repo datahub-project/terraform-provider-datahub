@@ -19,14 +19,14 @@ provider "datahub" {
 # ---------------------------------------------------------------------------
 
 resource "datahub_glossary_node" "finance" {
-  node_id     = "tf-example-finance"
-  name        = "TF Example - Finance"
+  node_id     = "tf-example-glossary-finance"
+  name        = "TF Example Glossary - Finance"
   description = "Financial metrics, accounting concepts, and revenue definitions"
 }
 
 resource "datahub_glossary_node" "customer" {
-  node_id     = "tf-example-customer"
-  name        = "TF Example - Customer"
+  node_id     = "tf-example-glossary-customer"
+  name        = "TF Example Glossary - Customer"
   description = "Customer lifecycle, segmentation, and retention concepts"
 }
 
@@ -40,15 +40,15 @@ resource "datahub_glossary_node" "customer" {
 # ---------------------------------------------------------------------------
 
 resource "datahub_glossary_node" "accounting" {
-  node_id     = "tf-example-accounting"
-  name        = "TF Example - Accounting"
+  node_id     = "tf-example-glossary-accounting"
+  name        = "TF Example Glossary - Accounting"
   description = "Accounting standards and recognition principles"
   parent_node = datahub_glossary_node.finance.urn
 }
 
 resource "datahub_glossary_node" "segmentation" {
-  node_id     = "tf-example-segmentation"
-  name        = "TF Example - Segmentation"
+  node_id     = "tf-example-glossary-segmentation"
+  name        = "TF Example Glossary - Segmentation"
   description = "Customer segmentation and cohort analysis concepts"
   parent_node = datahub_glossary_node.customer.urn
 }
@@ -63,32 +63,32 @@ resource "datahub_glossary_node" "segmentation" {
 
 # Direct child of the Finance root node.
 resource "datahub_glossary_term" "revenue" {
-  term_id     = "tf-example-revenue"
-  name        = "TF Example Revenue"
+  term_id     = "tf-example-glossary-revenue"
+  name        = "TF Example Glossary - Revenue"
   description = "Total revenue recognised in the reporting period before any deductions"
   parent_node = datahub_glossary_node.finance.urn
 }
 
 # Child of the Accounting sub-node (depth 2).
 resource "datahub_glossary_term" "accrual" {
-  term_id     = "tf-example-accrual"
-  name        = "TF Example Accrual"
+  term_id     = "tf-example-glossary-accrual"
+  name        = "TF Example Glossary - Accrual"
   description = "Revenue or expense recorded when earned or incurred, regardless of cash movement"
   parent_node = datahub_glossary_node.accounting.urn
 }
 
 # Direct child of the Customer root node.
 resource "datahub_glossary_term" "churn" {
-  term_id     = "tf-example-churn"
-  name        = "TF Example Churn"
+  term_id     = "tf-example-glossary-churn"
+  name        = "TF Example Glossary - Churn"
   description = "Rate at which customers discontinue their subscription or stop purchasing"
   parent_node = datahub_glossary_node.customer.urn
 }
 
 # Child of the Segmentation sub-node (depth 2).
 resource "datahub_glossary_term" "cohort" {
-  term_id     = "tf-example-cohort"
-  name        = "TF Example Cohort"
+  term_id     = "tf-example-glossary-cohort"
+  name        = "TF Example Glossary - Cohort"
   description = "A group of customers sharing a common characteristic or acquisition period"
   parent_node = datahub_glossary_node.segmentation.urn
 }

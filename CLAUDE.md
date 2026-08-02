@@ -184,7 +184,24 @@ Every runnable example must set `required_version = ">= 1.11"` in its `terraform
 
 ### Identifying Terraform-managed resources
 
-Use a `tf-example-` prefix on machine-readable IDs (e.g. `group_id`, `policy_id`, `source_id`, `connection_id`) and a `TF Example - ` prefix or similar marker on human-readable display name strings (e.g. `name`). This convention -- already established by `TF_EXAMPLE_SECRET`, `"TF Example Source"` etc. in other examples -- lets operators immediately distinguish resources created by the runnable example from those created via the DataHub UI, CLI, or SDK. It also makes cleanup straightforward: any resource with a `tf-example-` id or `TF Example` name in its display was created by an example.
+Use a `tf-example-` prefix on machine-readable IDs (e.g. `group_id`, `policy_id`, `source_id`, `connection_id`) and a `TF Example ` prefix or similar marker on human-readable display name strings (e.g. `name`). This convention -- already established by `TF_EXAMPLE_SECRET_BASIC`, `"TF Example Tag - PII"` etc. in other examples -- lets operators immediately distinguish resources created by the runnable example from those created via the DataHub UI, CLI, or SDK. It also makes cleanup straightforward: any resource with a `tf-example-` id or `TF Example` name in its display was created by an example.
+
+### Every identifier is unique to one runnable example
+
+**No two directories under `examples/runnable/` may create the same DataHub entity, use the same id string, or show the same display name.** The reason is orphan attribution: examples get applied against shared and disposable instances, cleanup sometimes fails (the CAT-2583 husk survives `terraform destroy`), and an operator sweeping the debris has to be able to look at a leftover URN or UI label and know which example produced it. When two examples can produce the same one, that inference is impossible.
+
+The scheme that delivers it: **`tf-example-<example-slug>-<name>`**, where `<example-slug>` is a short fixed token naming the origin directory, and the matching display name is `TF Example <Slug> - <Name>`. So `examples/runnable/domain-simple` owns `tf-example-domain-finance` / "TF Example Domain - Finance", and `examples/runnable/glossary-node-term-simple` owns `tf-example-glossary-finance` / "TF Example Glossary - Finance". Adding the slug is what makes the identifier self-describing; without it, "unique" would be satisfied by a random suffix that tells a sweeper nothing.
+
+Current slugs, one per directory: `dataplex`, `sqlite`, `snowflake` / `snowflake-ingest` (the two connection examples), `dp`, `domain`, `pool`, `fibo`, `glossary`, `csv`, `iam`, `ownership`, `azure`, `secret`, `governance`, `property`, `tag`. A directory whose name already reads as the slug (`assertion-volume-sqlite` -> `tf-example-sqlite-assertion`) needs nothing more. DataHub secret names keep their SCREAMING_SNAKE convention and take the same shape uppercased: `TF_EXAMPLE_SECRET_BASIC`, `TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME`.
+
+Two further points, both learned the hard way:
+
+- **Compare resolved URNs, not id strings.** A URN is namespaced by entity type, so a domain and a glossary node sharing an id do not collide. Conversely, do not assume every identifier carries the `tf-example-` prefix: the `urn:li:dataHubConnection:prod-snowflake` collision between the two Snowflake examples went unnoticed for exactly that reason.
+- **Give every `datahub_ingestion_source` an explicit `source_id`.** It is optional, and when omitted DataHub derives `<sanitized-source_name>-<hash>`, which is neither predictable nor greppable. Setting it keeps the URN deterministic and traceable.
+
+This is enforced, not merely written down. `internal/provider/example_identifier_test.go` parses every `.tf` under `examples/runnable`, resolves each managed resource to its URN (following variable defaults and locals), and fails on any URN, id string or display name claimed by two directories. It runs under a plain `go test ./...` -- it needs neither terraform nor a provider binary. A resource type used by an example and classified by neither `urnKeyedResources` nor `urnlessResources` is also a failure, so a new resource type cannot silently escape the check.
+
+The snippets under `examples/resources/` and `examples/data-sources/` are exempt from uniqueness among themselves -- nothing applies them, and several deliberately share a `data-platform` group or a `finance` domain so the registry pages read as one estate. They may not, however, claim a URN a runnable example creates; `TestRegistrySnippetsDoNotClaimRunnableURNs` enforces that, and the fix is always to rename the runnable example, since the published snippet is what users read.
 
 ### Ingestion source types in examples
 

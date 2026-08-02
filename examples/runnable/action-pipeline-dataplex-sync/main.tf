@@ -23,8 +23,8 @@ provider "datahub" {}
 # `${SECRET_NAME}` placeholders (escaped as `$${...}` in HCL so Terraform does
 # not interpolate them) which DataHub resolves from its Secrets at run time.
 resource "datahub_action_pipeline" "dataplex_glossary_sync" {
-  action_id   = "tf-example-dataplex-glossary-sync"
-  name        = "TF Example - Dataplex Glossary Sync"
+  action_id   = "tf-example-dataplex-term-sync"
+  name        = "TF Example Dataplex - Term Sync"
   type        = "dataplex_metadata_sync"
   category    = "Data Discovery"
   description = "Propagates DataHub glossary terms to the Dataplex catalog."

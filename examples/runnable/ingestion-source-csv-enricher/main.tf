@@ -17,7 +17,11 @@ provider "datahub" {
 # connector pointed at a stable test CSV in the DataHub OSS repo. Triggering
 # the source ingests real metadata artifacts that appear in DataHub search.
 resource "datahub_ingestion_source" "csv_enricher" {
-  source_name = "TF CSV Enricher"
+  # source_id is optional -- when omitted DataHub derives it from source_name
+  # with a hash suffix. Setting it explicitly makes the URN deterministic, so
+  # anything this example leaves behind names the example that created it.
+  source_id   = "tf-example-csv-enricher"
+  source_name = "TF Example CSV - Enricher"
   # "default" routes ingestion to the built-in executor on both OSS DataHub
   # and DataHub Cloud. For DataHub Cloud customers running ingestion in their
   # own VPC, create a datahub_remote_executor_pool resource instead and set
@@ -33,7 +37,7 @@ resource "datahub_ingestion_source" "csv_enricher" {
         write_semantics = "PATCH"
       }
     }
-    pipeline_name = "tf-csv-enricher"
+    pipeline_name = "tf-example-csv-enricher"
   })
 }
 

@@ -3,13 +3,13 @@
 Creates a two-level domain hierarchy in DataHub: two root domains, each with two child domains.
 
 ```
-TF Example - Finance              (root domain)
-  +- TF Example - Accounting      (child domain)
-  +- TF Example - Treasury        (child domain)
+TF Example Domain - Finance             (root domain)
+  +- TF Example Domain - Accounting     (child domain)
+  +- TF Example Domain - Treasury       (child domain)
 
-TF Example - Engineering          (root domain)
-  +- TF Example - Data Platform   (child domain)
-  +- TF Example - Analytics       (child domain)
+TF Example Domain - Engineering         (root domain)
+  +- TF Example Domain - Data Platform  (child domain)
+  +- TF Example Domain - Analytics      (child domain)
 ```
 
 This example illustrates:

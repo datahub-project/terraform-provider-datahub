@@ -17,12 +17,12 @@ provider "datahub" {}
 # A number-valued structured property that records the data retention period
 # for datasets. Single-valued: each dataset has exactly one retention period.
 resource "datahub_structured_property" "retention_days" {
-  property_id  = "tf-example-retention-days"
+  property_id  = "tf-example-property-retention-days"
   value_type   = "number"
   cardinality  = "SINGLE"
   entity_types = ["dataset"]
 
-  display_name = "TF Example - Retention Days"
+  display_name = "TF Example Property - Retention Days"
   description  = "Data retention period in days. Managed by Terraform."
   immutable    = false
 
@@ -35,12 +35,12 @@ resource "datahub_structured_property" "retention_days" {
 # A string-valued structured property for data classification, restricted to
 # three allowed values, applicable to datasets and dashboards.
 resource "datahub_structured_property" "classification" {
-  property_id  = "tf-example-classification"
+  property_id  = "tf-example-property-classification"
   value_type   = "string"
   cardinality  = "SINGLE"
   entity_types = ["dataset", "dashboard"]
 
-  display_name = "TF Example - Data Classification"
+  display_name = "TF Example Property - Data Classification"
   description  = "Data sensitivity classification. Managed by Terraform."
 
   allowed_values = [

@@ -14,7 +14,7 @@ output "pool_state" {
 }
 
 output "ingestion_source_urn" {
-  description = "URN of the ingestion source pinned to the azure-aks pool."
+  description = "URN of the ingestion source pinned to the tf-example-azure-aks pool."
   value       = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.abs.source_id}"
 }
 
@@ -67,7 +67,7 @@ output "next_steps" {
     4. Confirm the worker attached to the pool:
          ${local.datahub_web_url}/ingestion/remote-executors?hideSystem=true&page=1
     5. Trigger the ingestion source and watch customers.csv become a dataset.
-       UI (Run on "TF Example Azure Blob CSV (azure-aks pool)"):
+       UI (Run on "TF Example Azure - Blob CSV"):
          ${local.datahub_web_url}/ingestion/sources?hideSystem=true&page=1
        or API:
          eval "$(terraform output -raw run_ingestion_command)"

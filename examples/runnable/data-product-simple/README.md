@@ -6,8 +6,8 @@ Creates two DataHub data products in a new domain, then reads each one back via 
 
 - Creates a `datahub_domain` (`tf-example-dp-sales`) to act as the owning domain.
 - Creates two `datahub_data_product` resources:
-  - `tf-example-orders` - with description, external URL, and custom properties
-  - `tf-example-customer-360` - minimal (name + domain only)
+  - `tf-example-dp-orders` - with description, external URL, and custom properties
+  - `tf-example-dp-customer-360` - minimal (name + domain only)
 - Creates a marker `datahub_tag` and `datahub_structured_property`, and (once `enable_defaults = true`) applies them to both data products via the provider's `defaults.tags` and `defaults.structured_properties` -- see "Provider-level defaults" below.
 - Reads each product back individually via `datahub_data_product` (strongly consistent, by known ID).
 - Enumerates all data products via `datahub_data_products` (bulk URN list, eventually consistent).
@@ -40,7 +40,7 @@ Terraform creates the domain and both data products. After apply, `orders_urn`, 
 
 ### 3. Verify in the DataHub UI
 
-Navigate to **Govern -> Data Products** in the DataHub UI. You should see `TF Example - Orders` and `TF Example - Customer 360` listed under the `TF Example - Sales` domain.
+Navigate to **Govern -> Data Products** in the DataHub UI. You should see `TF Example DP - Orders` and `TF Example DP - Customer 360` listed under the `TF Example DP - Sales` domain.
 
 Or check the `ui_url` output for a direct link:
 
@@ -88,7 +88,7 @@ Provider configuration is evaluated once, before any resource in the apply runs,
 terraform apply -var enable_defaults=true
 ```
 
-Both `tf-example-orders` and `tf-example-customer-360` pick up the marker tag and the marker structured property, with no changes to the resource blocks themselves -- that is the point of provider-level defaults. Check the result:
+Both `tf-example-dp-orders` and `tf-example-dp-customer-360` pick up the marker tag and the marker structured property, with no changes to the resource blocks themselves -- that is the point of provider-level defaults. Check the result:
 
 ```bash
 terraform output orders_tags_all
@@ -107,7 +107,7 @@ terraform apply -var enable_defaults=false
 This example creates the data product definition only. To add datasets, charts, or other assets to a data product, use the DataHub UI (**Govern -> Data Products -> Add Assets**) or the Python SDK:
 
 ```bash
-datahub dataproduct upsert --urn urn:li:dataProduct:tf-example-orders \
+datahub dataproduct upsert --urn urn:li:dataProduct:tf-example-dp-orders \
   --asset urn:li:dataset:(urn:li:dataPlatform:postgres,public.orders,PROD)
 ```
 

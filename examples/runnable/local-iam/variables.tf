@@ -12,7 +12,7 @@ variable "new_member_email" {
     on terraform destroy.
   EOT
   type        = string
-  default     = "tf-example-member@example.com"
+  default     = "tf-example-iam-member@example.com"
 }
 
 variable "member_username" {

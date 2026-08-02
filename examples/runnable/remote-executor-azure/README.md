@@ -6,13 +6,13 @@
 
 This example stands up a complete, working Remote Executor deployment from nothing, in a single `terraform apply`:
 
-1. A DataHub **Remote Executor pool** named `azure-aks` (deliberately *not* the default pool).
+1. A DataHub **Remote Executor pool** named `tf-example-azure-aks` (deliberately *not* the default pool).
 2. An **AKS cluster** (2 nodes) with the secrets-store CSI driver + Azure Key Vault provider addon.
 3. An **Azure Key Vault** holding the storage account key, file-mounted into the worker pods.
 4. A **storage account** with a seeded `customers.csv` blob for the ingestion source to ingest.
-5. The **Remote Executor worker** deployed onto AKS via the `datahub-executor-worker` Helm chart, attached to the `azure-aks` pool.
+5. The **Remote Executor worker** deployed onto AKS via the `datahub-executor-worker` Helm chart, attached to the `tf-example-azure-aks` pool.
 6. An **ingestion source** (Azure Blob Storage / `abs` type) pinned to the pool, whose recipe exercises **both** secret-resolution paths:
-   - `${TF_EXAMPLE_ABS_ACCOUNT_NAME}` - a DataHub-managed secret, resolved via GMS
+   - `${TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME}` - a DataHub-managed secret, resolved via GMS
    - `${ABS_ACCOUNT_KEY}` - an Azure Key Vault secret, file-mounted at `/mnt/secrets/ABS_ACCOUNT_KEY` by the CSI driver
 
 Both secrets are load-bearing: if either fails to resolve, the ingestion run visibly fails.
@@ -68,8 +68,8 @@ In short:
 
 1. `eval "$(terraform output -raw aks_get_credentials_command)"` then `kubectl -n datahub-executor get pods` - the worker pod should be `Running`.
 2. `kubectl -n datahub-executor exec <pod> -- ls /mnt/secrets` - shows `ABS_ACCOUNT_KEY`.
-3. Open `terraform output -raw remote_executors_url` in a browser - the `azure-aks` pool shows one attached worker. (`terraform output -raw aks_portal_url` gives the Azure Portal view of the cluster: workloads, pods, live logs.)
-4. Trigger a test ingest of *TF Example Azure Blob CSV (azure-aks pool)*: click **Run** on the page at `terraform output -raw ingestion_sources_url`, or trigger it from the terminal with `eval "$(terraform output -raw run_ingestion_command)"`. In testing the run completed within a minute or two; the first run can take longer if the worker needs to install the `abs` plugin into a fresh venv. On success, `customers.csv` appears as a dataset on the `abs` platform.
+3. Open `terraform output -raw remote_executors_url` in a browser - the `tf-example-azure-aks` pool shows one attached worker. (`terraform output -raw aks_portal_url` gives the Azure Portal view of the cluster: workloads, pods, live logs.)
+4. Trigger a test ingest of *TF Example Azure - Blob CSV*: click **Run** on the page at `terraform output -raw ingestion_sources_url`, or trigger it from the terminal with `eval "$(terraform output -raw run_ingestion_command)"`. In testing the run completed within a minute or two; the first run can take longer if the worker needs to install the `abs` plugin into a fresh venv. On success, `customers.csv` appears as a dataset on the `abs` platform.
 
 ## Cleanup
 
@@ -88,4 +88,4 @@ Dependency ordering tears the worker Helm release down before the pool, and the 
 | Pod `Pending` | CPU request does not fit the node. Keep `executor_cpu_request = "3"` on `Standard_D4s_v5` nodes (4 vCPU nodes have ~3.8 allocatable). |
 | Pod `CreateContainerError` / mount failure | The CSI addon identity cannot read the Key Vault. Check the `csi_addon` access policy applied and the SecretProviderClass values. |
 | Worker running but not listed under Remote Executors | Wrong `datahub_gms_url` (must end in `/gms`) or an invalid Remote Executor token. Check the pod logs. |
-| Ingestion run fails resolving `${...}` | For `TF_EXAMPLE_ABS_ACCOUNT_NAME`, confirm the DataHub secret exists; for `ABS_ACCOUNT_KEY`, confirm step 2 above shows the mounted file (names are case-sensitive). |
+| Ingestion run fails resolving `${...}` | For `TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME`, confirm the DataHub secret exists; for `ABS_ACCOUNT_KEY`, confirm step 2 above shows the mounted file (names are case-sensitive). |

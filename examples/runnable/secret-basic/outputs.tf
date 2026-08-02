@@ -1,5 +1,5 @@
 output "secret_urn" {
-  description = "Full DataHub URN of the secret. Use this as $${TF_EXAMPLE_SECRET} in other recipes."
+  description = "Full DataHub URN of the secret. Use this as $${TF_EXAMPLE_SECRET_BASIC} in other recipes."
   value       = datahub_secret.example_secret.urn
 }
 

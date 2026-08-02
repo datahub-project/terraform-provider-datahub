@@ -44,15 +44,15 @@ output "summary" {
 
   Glossary hierarchy created (4 term groups, 4 terms):
 
-    TF Example - Finance          ${datahub_glossary_node.finance.urn}
-      |- TF Example Revenue       ${datahub_glossary_term.revenue.urn}
-      +- TF Example - Accounting  ${datahub_glossary_node.accounting.urn}
-           +- TF Example Accrual  ${datahub_glossary_term.accrual.urn}
+    TF Example Glossary - Finance            ${datahub_glossary_node.finance.urn}
+      |- TF Example Glossary - Revenue       ${datahub_glossary_term.revenue.urn}
+      +- TF Example Glossary - Accounting    ${datahub_glossary_node.accounting.urn}
+           +- TF Example Glossary - Accrual  ${datahub_glossary_term.accrual.urn}
 
-    TF Example - Customer           ${datahub_glossary_node.customer.urn}
-      |- TF Example Churn           ${datahub_glossary_term.churn.urn}
-      +- TF Example - Segmentation  ${datahub_glossary_node.segmentation.urn}
-           +- TF Example Cohort     ${datahub_glossary_term.cohort.urn}
+    TF Example Glossary - Customer           ${datahub_glossary_node.customer.urn}
+      |- TF Example Glossary - Churn         ${datahub_glossary_term.churn.urn}
+      +- TF Example Glossary - Segmentation  ${datahub_glossary_node.segmentation.urn}
+           +- TF Example Glossary - Cohort   ${datahub_glossary_term.cohort.urn}
 
   View in DataHub UI:
     $DATAHUB_GMS_URL/glossary

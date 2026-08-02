@@ -34,13 +34,13 @@ output "summary" {
 
   Domain hierarchy created (2 root domains, 4 child domains):
 
-    TF Example - Finance              ${datahub_domain.finance.urn}
-      +- TF Example - Accounting      ${datahub_domain.accounting.urn}
-      +- TF Example - Treasury        ${datahub_domain.treasury.urn}
+    TF Example Domain - Finance             ${datahub_domain.finance.urn}
+      +- TF Example Domain - Accounting     ${datahub_domain.accounting.urn}
+      +- TF Example Domain - Treasury       ${datahub_domain.treasury.urn}
 
-    TF Example - Engineering          ${datahub_domain.engineering.urn}
-      +- TF Example - Data Platform   ${datahub_domain.data_platform.urn}
-      +- TF Example - Analytics       ${datahub_domain.analytics.urn}
+    TF Example Domain - Engineering         ${datahub_domain.engineering.urn}
+      +- TF Example Domain - Data Platform  ${datahub_domain.data_platform.urn}
+      +- TF Example Domain - Analytics      ${datahub_domain.analytics.urn}
 
   View in DataHub UI:
     $DATAHUB_GMS_URL/domains

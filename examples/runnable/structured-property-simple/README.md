@@ -2,8 +2,8 @@
 
 Demonstrates `datahub_structured_property` by creating two typed custom-property definitions:
 
-- **Retention Days** (`tf-example-retention-days`) - a single-valued `number` property applicable to `dataset` entities, shown in search filters and the asset summary panel.
-- **Data Classification** (`tf-example-classification`) - a single-valued `string` property with three allowed values (`Public`, `Internal`, `Confidential`), applicable to `dataset` and `dashboard` entities.
+- **Retention Days** (`tf-example-property-retention-days`) - a single-valued `number` property applicable to `dataset` entities, shown in search filters and the asset summary panel.
+- **Data Classification** (`tf-example-property-classification`) - a single-valued `string` property with three allowed values (`Public`, `Internal`, `Confidential`), applicable to `dataset` and `dashboard` entities.
 
 Both properties are managed here as *definitions*. Applying values to individual datasets or dashboards is per-asset enrichment and is not in scope for this provider.
 

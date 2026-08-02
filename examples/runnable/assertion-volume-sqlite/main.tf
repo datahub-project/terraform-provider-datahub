@@ -16,7 +16,7 @@ provider "datahub" {}
 # queried by DataHub Cloud.
 resource "datahub_ingestion_source" "sqlite_profile" {
   source_id     = "tf-example-sqlite-assertion"
-  source_name   = "TF Example - SQLite Assertion Dataset"
+  source_name   = "TF Example SQLite - Assertion Dataset"
   cron_interval = "0 * * * *"
   timezone      = "UTC"
   recipe = jsonencode({

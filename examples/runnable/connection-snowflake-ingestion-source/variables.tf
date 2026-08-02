@@ -1,13 +1,13 @@
 variable "connection_id" {
   description = "Unique identifier for the connection. Becomes the URN suffix (urn:li:dataHubConnection:<connection_id>). Must be URL-safe."
   type        = string
-  default     = "prod-snowflake"
+  default     = "tf-example-snowflake-ingest-conn"
 }
 
 variable "connection_name" {
   description = "Human-readable display name shown in the DataHub Integrations UI."
   type        = string
-  default     = "Production Snowflake"
+  default     = "TF Example Snowflake Ingest - Connection"
 }
 
 variable "snowflake_account_id" {
@@ -41,7 +41,7 @@ variable "snowflake_password" {
 variable "ingestion_source_name" {
   description = "Display name for the ingestion source in DataHub."
   type        = string
-  default     = "Snowflake Prod"
+  default     = "TF Example Snowflake Ingest - Source"
 }
 
 variable "database_allow_list" {

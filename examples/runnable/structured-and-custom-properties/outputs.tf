@@ -43,10 +43,10 @@ output "summary" {
 
   Glossary tree + properties created:
 
-    TF Example - Governance   ${datahub_glossary_node.governance.urn}
+    TF Example Governance - Concepts      ${datahub_glossary_node.governance.urn}
       custom:     team = data-platform, managed-by = terraform          (from provider defaults)
       structured: Regions = [GLOBAL, EMEA]
-      +- TF Example Revenue   ${datahub_glossary_term.revenue.urn}
+      +- TF Example Governance - Revenue  ${datahub_glossary_term.revenue.urn}
            custom:     steward = data-office, source_system = SITS      (its own)
                        team = data-platform, managed-by = terraform     (from provider defaults)
            structured: Regions = [GLOBAL, APAC], Tier = Gold            (folded under tf-example.governance)
@@ -55,7 +55,7 @@ output "summary" {
   but deliberately left unassigned. GLOBAL is shared by both entities.
 
   View in DataHub UI:
-    $DATAHUB_GMS_URL/glossary   -> open "TF Example Revenue" -> Properties tab
+    $DATAHUB_GMS_URL/glossary   -> open "TF Example Governance - Revenue" -> Properties tab
 
     On the term, the two structured properties fold under a single
     "tf-example.governance" group (grouping is derived from the dotted

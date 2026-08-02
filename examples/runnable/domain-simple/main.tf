@@ -19,14 +19,14 @@ provider "datahub" {
 # ---------------------------------------------------------------------------
 
 resource "datahub_domain" "finance" {
-  domain_id   = "tf-example-finance"
-  name        = "TF Example - Finance"
+  domain_id   = "tf-example-domain-finance"
+  name        = "TF Example Domain - Finance"
   description = "Financial metrics, accounting, and treasury data assets"
 }
 
 resource "datahub_domain" "engineering" {
-  domain_id   = "tf-example-engineering"
-  name        = "TF Example - Engineering"
+  domain_id   = "tf-example-domain-engineering"
+  name        = "TF Example Domain - Engineering"
   description = "Engineering platform, analytics, and infrastructure data assets"
 }
 
@@ -40,29 +40,29 @@ resource "datahub_domain" "engineering" {
 # ---------------------------------------------------------------------------
 
 resource "datahub_domain" "accounting" {
-  domain_id     = "tf-example-accounting"
-  name          = "TF Example - Accounting"
+  domain_id     = "tf-example-domain-accounting"
+  name          = "TF Example Domain - Accounting"
   description   = "Accounting standards, recognition principles, and ledger data"
   parent_domain = datahub_domain.finance.urn
 }
 
 resource "datahub_domain" "treasury" {
-  domain_id     = "tf-example-treasury"
-  name          = "TF Example - Treasury"
+  domain_id     = "tf-example-domain-treasury"
+  name          = "TF Example Domain - Treasury"
   description   = "Cash management, liquidity, and foreign exchange data"
   parent_domain = datahub_domain.finance.urn
 }
 
 resource "datahub_domain" "data_platform" {
-  domain_id     = "tf-example-data-platform"
-  name          = "TF Example - Data Platform"
+  domain_id     = "tf-example-domain-data-platform"
+  name          = "TF Example Domain - Data Platform"
   description   = "Data infrastructure, pipelines, and platform tooling"
   parent_domain = datahub_domain.engineering.urn
 }
 
 resource "datahub_domain" "analytics" {
-  domain_id     = "tf-example-analytics"
-  name          = "TF Example - Analytics"
+  domain_id     = "tf-example-domain-analytics"
+  name          = "TF Example Domain - Analytics"
   description   = "Product analytics, experimentation, and reporting"
   parent_domain = datahub_domain.engineering.urn
 }

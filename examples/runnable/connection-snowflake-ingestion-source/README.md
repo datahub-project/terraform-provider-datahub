@@ -43,7 +43,7 @@ When the DataHub executor runs the ingestion source, it reads the recipe and see
 source:
   type: snowflake
   config:
-    connection: urn:li:dataHubConnection:prod-snowflake
+    connection: urn:li:dataHubConnection:tf-example-snowflake-ingest-conn
 ```
 
 It calls `get_connection_json(urn)` to fetch the encrypted blob from DataHub, decrypts it, and merges the resulting fields (account_id, username, password, etc.) into the source config. The Snowflake source then connects using those resolved credentials.

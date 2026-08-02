@@ -45,6 +45,10 @@ resource "datahub_connection" "snowflake" {
 # Note: connection: URN resolution is currently supported for Snowflake only.
 # For other platforms, supply credentials directly in the recipe config.
 resource "datahub_ingestion_source" "snowflake" {
+  # source_id is optional -- when omitted DataHub derives it from source_name
+  # with a hash suffix. Setting it explicitly keeps the URN deterministic even
+  # when var.ingestion_source_name is overridden.
+  source_id   = "tf-example-snowflake-ingest-source"
   source_name = var.ingestion_source_name
 
   recipe = jsonencode({
