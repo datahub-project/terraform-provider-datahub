@@ -1,8 +1,8 @@
 # Copy this file to terraform.tfvars and fill in your values.
 # terraform.tfvars is gitignored -- never commit real credentials.
 
-connection_id   = "prod-snowflake"
-connection_name = "Production Snowflake"
+connection_id   = "tf-example-snowflake-conn"
+connection_name = "TF Example Snowflake - Connection"
 
 snowflake_account_id = "xy12345.us-east-1"
 snowflake_username   = "DATAHUB_USER"

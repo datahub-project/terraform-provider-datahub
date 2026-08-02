@@ -49,13 +49,13 @@ provider "datahub" {
 
 resource "datahub_glossary_node" "governance" {
   node_id     = "tf-example-governance"
-  name        = "TF Example - Governance"
+  name        = "TF Example Governance - Concepts"
   description = "Governance concepts used to demonstrate structured and custom properties"
 }
 
 resource "datahub_glossary_term" "revenue" {
-  term_id     = "tf-example-revenue"
-  name        = "TF Example Revenue"
+  term_id     = "tf-example-governance-revenue"
+  name        = "TF Example Governance - Revenue"
   description = "Total revenue recognised in the reporting period"
   parent_node = datahub_glossary_node.governance.urn
 
@@ -82,7 +82,7 @@ resource "datahub_glossary_term" "revenue" {
 # that entity type is rejected as "not applicable".
 resource "datahub_structured_property" "regions" {
   property_id  = "tf-example.governance.regions"
-  display_name = "TF Example - Regions"
+  display_name = "TF Example Governance - Regions"
   description  = "Regions this asset applies to. Multi-valued; drawn from a fixed set."
   value_type   = "string"
   cardinality  = "MULTIPLE"
@@ -104,7 +104,7 @@ resource "datahub_structured_property" "regions" {
 # group a second member on the term (and to show a SINGLE controlled property).
 resource "datahub_structured_property" "tier" {
   property_id  = "tf-example.governance.tier"
-  display_name = "TF Example - Tier"
+  display_name = "TF Example Governance - Tier"
   description  = "Curation tier of the term. Single-valued."
   value_type   = "string"
   cardinality  = "SINGLE"

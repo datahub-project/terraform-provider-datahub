@@ -20,15 +20,15 @@ provider "datahub" {}
 
 # A role for the team responsible for data quality monitoring and remediation.
 resource "datahub_ownership_type" "data_quality_lead" {
-  type_id     = "tf-example-data-quality-lead"
-  name        = "TF Example - Data Quality Lead"
+  type_id     = "tf-example-ownership-data-quality-lead"
+  name        = "TF Example Ownership - Data Quality Lead"
   description = "Responsible for data quality monitoring, validation rules, and remediation."
 }
 
 # A role for the upstream team that produces the data.
 resource "datahub_ownership_type" "data_producer" {
-  type_id     = "tf-example-data-producer"
-  name        = "TF Example - Data Producer"
+  type_id     = "tf-example-ownership-data-producer"
+  name        = "TF Example Ownership - Data Producer"
   description = "Upstream team or system that generates and publishes this data asset."
 }
 

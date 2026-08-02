@@ -6,11 +6,11 @@ Creates a DataHub Remote Executor Pool and routes an ingestion source to it.
 
 ## What this example does
 
-1. Creates a `datahub_remote_executor_pool` named `analytics-team`.
+1. Creates a `datahub_remote_executor_pool` named `tf-example-pool-analytics`.
 2. Creates a `datahub_ingestion_source` (CSV enricher) that runs on that pool.
 
 After applying, deploy one or more `datahub-executor-worker` containers (or pods)
-with `DATAHUB_EXECUTOR_POOL_ID=analytics-team`. Workers connect outbound to
+with `DATAHUB_EXECUTOR_POOL_ID=tf-example-pool-analytics`. Workers connect outbound to
 DataHub Cloud and self-attach to the pool; no inbound firewall rules needed.
 
 ## Prerequisites

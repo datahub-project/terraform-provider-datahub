@@ -17,13 +17,17 @@ provider "datahub" {
 # Create a Remote Executor Pool. Workers deployed in your environment reference
 # this pool by setting DATAHUB_EXECUTOR_POOL_ID=<pool_id> in their config.
 resource "datahub_remote_executor_pool" "analytics" {
-  pool_id     = "analytics-team"
-  description = "Pool for analytics-team Remote Executor workers running in private VPC"
+  pool_id     = "tf-example-pool-analytics"
+  description = "Pool for tf-example-pool-analytics Remote Executor workers running in private VPC"
 }
 
 # Route an ingestion source to run on this pool.
 resource "datahub_ingestion_source" "csv_enricher" {
-  source_name        = "TF CSV Enricher (analytics pool)"
+  # source_id is optional -- when omitted DataHub derives it from source_name
+  # with a hash suffix. Setting it explicitly makes the URN deterministic, so
+  # anything this example leaves behind names the example that created it.
+  source_id          = "tf-example-pool-csv-enricher"
+  source_name        = "TF Example Pool - CSV Enricher"
   remote_executor_id = datahub_remote_executor_pool.analytics.pool_id
   recipe = jsonencode({
     source = {
@@ -35,6 +39,6 @@ resource "datahub_ingestion_source" "csv_enricher" {
         write_semantics = "PATCH"
       }
     }
-    pipeline_name = "tf-csv-enricher-analytics"
+    pipeline_name = "tf-example-pool-csv-enricher"
   })
 }

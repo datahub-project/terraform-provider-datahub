@@ -45,7 +45,7 @@ Or in a `datahub_ingestion_source` resource:
 
 ```hcl
 resource "datahub_ingestion_source" "snowflake" {
-  source_name = "Snowflake Prod"
+  source_name = "TF Example Snowflake - Ingestion"
   recipe = jsonencode({
     source = {
       type = "snowflake"
@@ -72,7 +72,7 @@ The URN is unchanged after rotation, so any ingestion sources referencing it con
 If the connection was created in the DataHub UI, import it by URN:
 
 ```bash
-terraform import datahub_connection.snowflake urn:li:dataHubConnection:prod-snowflake
+terraform import datahub_connection.snowflake urn:li:dataHubConnection:tf-example-snowflake-conn
 ```
 
 After import, only `name` and `platform` are populated from DataHub (the config blob is encrypted and unavailable). Add the `snowflake` block with current credentials in your configuration and set `config_wo_version` before the next apply.

@@ -1,13 +1,13 @@
 variable "connection_id" {
   description = "Unique identifier for the connection. Becomes the URN suffix (urn:li:dataHubConnection:<connection_id>). Must be URL-safe."
   type        = string
-  default     = "prod-snowflake"
+  default     = "tf-example-snowflake-conn"
 }
 
 variable "connection_name" {
   description = "Human-readable display name shown in the DataHub Integrations UI."
   type        = string
-  default     = "Production Snowflake"
+  default     = "TF Example Snowflake - Connection"
 }
 
 variable "snowflake_account_id" {

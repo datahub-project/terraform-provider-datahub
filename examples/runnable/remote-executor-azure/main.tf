@@ -3,10 +3,10 @@ locals {
 
   # Fixed pool id; the executor pool this example demonstrates is deliberately
   # NOT the default pool, so the ingestion source must reference it explicitly.
-  pool_id = "azure-aks"
+  pool_id = "tf-example-azure-aks"
 
   executor_namespace = "datahub-executor"
-  container_name     = "tf-example-data"
+  container_name     = "tf-example-azure-data"
 
   # Web UI base URL: the GMS URL without its /gms suffix.
   datahub_web_url = trimsuffix(var.datahub_gms_url, "/gms")

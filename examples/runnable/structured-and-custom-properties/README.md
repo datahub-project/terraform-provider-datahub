@@ -3,9 +3,9 @@
 Demonstrates the two kinds of properties DataHub supports, side by side, on glossary entities (which render both in the UI): free-form **custom properties** and defined-and-validated **structured properties**, including assigning one structured property across two entity types and the way the UI folds structured properties into a group by their dotted qualified name.
 
 ```
-TF Example - Governance          (glossary node)
+TF Example Governance - Concepts      (glossary node)
   structured: Regions = [GLOBAL, EMEA]
-  +- TF Example Revenue          (glossary term)
+  +- TF Example Governance - Revenue  (glossary term)
        custom:     steward, source_system        (flat)
        structured: Regions = [GLOBAL, APAC], Tier = Gold   (grouped)
 ```
@@ -45,7 +45,7 @@ terraform output
 echo "$DATAHUB_GMS_URL/glossary"
 ```
 
-Open **TF Example Revenue** and select the **Properties** tab. The two structured properties (Regions, Tier) appear nested under a `tf-example.governance` group, while the custom properties (steward, source_system) appear flat. Open **TF Example - Governance** to see the same `Regions` property carrying a different value set on a different entity type.
+Open **TF Example Governance - Revenue** and select the **Properties** tab. The two structured properties (Regions, Tier) appear nested under a `tf-example.governance` group, while the custom properties (steward, source_system) appear flat. Open **TF Example Governance - Concepts** to see the same `Regions` property carrying a different value set on a different entity type.
 
 ## Structured vs custom properties
 

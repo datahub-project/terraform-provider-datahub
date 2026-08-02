@@ -22,8 +22,8 @@ provider "datahub" {
 # A native DataHub group representing a team. group_id is the stable URN
 # suffix (urn:li:corpGroup:<group_id>); name is the display name in the UI.
 resource "datahub_corp_group" "data_platform" {
-  group_id    = "tf-example-data-platform"
-  name        = "TF Example - Data Platform Team"
+  group_id    = "tf-example-iam-data-platform"
+  name        = "TF Example IAM - Data Platform Team"
   description = "Owns ingestion pipelines and platform configuration"
   email       = "data-platform@example.com"
   slack       = "#data-platform"
@@ -48,7 +48,7 @@ data "datahub_corp_group" "data_platform" {
 # derived from the email field).
 resource "datahub_local_user_login" "team_member" {
   username  = var.new_member_email
-  full_name = "TF Example - New Team Member"
+  full_name = "TF Example IAM - New Team Member"
   email     = var.new_member_email
 }
 
@@ -59,9 +59,9 @@ resource "datahub_local_user_login" "team_member" {
 # DataHub Users UI as inactive -- expected, since it has no login credentials.
 # datahub_corp_user writes the profile aspects only; no credentials are set.
 resource "datahub_corp_user" "pipeline_bot" {
-  username     = "tf-example-pipeline-bot"
-  display_name = "TF Example - Pipeline Bot"
-  email        = "tf-example-pipeline-bot@example.com"
+  username     = "tf-example-iam-pipeline-bot"
+  display_name = "TF Example IAM - Pipeline Bot"
+  email        = "tf-example-iam-pipeline-bot@example.com"
   title        = "Automation"
 }
 
@@ -114,8 +114,8 @@ resource "datahub_role_assignment" "data_platform_editor" {
 # Grant the team specific platform privileges via an access policy. Roles give
 # broad presets; policies grant a precise privilege set to chosen actors.
 resource "datahub_policy" "data_platform_admins" {
-  policy_id   = "tf-example-data-platform-admins"
-  name        = "TF Example - Data Platform Admins"
+  policy_id   = "tf-example-iam-data-platform-admins"
+  name        = "TF Example IAM - Data Platform Admins"
   type        = "PLATFORM"
   description = "Lets the data platform team manage ingestion and secrets"
   privileges  = ["MANAGE_INGESTION", "MANAGE_SECRETS"]

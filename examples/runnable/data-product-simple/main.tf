@@ -45,13 +45,13 @@ provider "datahub" {
 
 resource "datahub_tag" "managed" {
   tag_id      = local.marker_tag_id
-  name        = "TF Example - DP Managed"
+  name        = "TF Example DP - Managed"
   description = "Applied automatically to every data product this example's provider defaults manage."
 }
 
 resource "datahub_structured_property" "managed_by" {
   property_id  = local.marker_property_id
-  display_name = "TF Example - DP Managed By Terraform"
+  display_name = "TF Example DP - Managed By Terraform"
   description  = "Search-filterable marker: value \"true\" means Terraform manages this data product."
   value_type   = "string"
   entity_types = ["dataProduct"]
@@ -70,7 +70,7 @@ resource "datahub_structured_property" "managed_by" {
 
 resource "datahub_domain" "sales" {
   domain_id   = "tf-example-dp-sales"
-  name        = "TF Example - Sales"
+  name        = "TF Example DP - Sales"
   description = "Sales and revenue data assets."
 }
 
@@ -80,8 +80,8 @@ resource "datahub_domain" "sales" {
 
 # The canonical orders data product for the Sales domain.
 resource "datahub_data_product" "orders" {
-  data_product_id = "tf-example-orders"
-  name            = "TF Example - Orders"
+  data_product_id = "tf-example-dp-orders"
+  name            = "TF Example DP - Orders"
   description     = "Curated set of order and fulfilment data assets for the Sales domain."
   domain          = datahub_domain.sales.urn
   external_url    = "https://example.com/data-catalog/orders"
@@ -93,8 +93,8 @@ resource "datahub_data_product" "orders" {
 
 # A second product -- customer 360 profile data.
 resource "datahub_data_product" "customer_360" {
-  data_product_id = "tf-example-customer-360"
-  name            = "TF Example - Customer 360"
+  data_product_id = "tf-example-dp-customer-360"
+  name            = "TF Example DP - Customer 360"
   description     = "Unified customer profile combining CRM, web, and purchase history."
   domain          = datahub_domain.sales.urn
 }

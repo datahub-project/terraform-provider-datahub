@@ -3,15 +3,15 @@
 Creates a two-level Business Glossary hierarchy in DataHub: two root term groups, each with one child term group and two glossary terms at different depths.
 
 ```
-TF Example - Finance          (root term group)
-  |- TF Example Revenue       (term, direct child)
-  +- TF Example - Accounting  (child term group)
-       +- TF Example Accrual  (term)
+TF Example Glossary - Finance            (root term group)
+  |- TF Example Glossary - Revenue       (term, direct child)
+  +- TF Example Glossary - Accounting    (child term group)
+       +- TF Example Glossary - Accrual  (term)
 
-TF Example - Customer           (root term group)
-  |- TF Example Churn           (term, direct child)
-  +- TF Example - Segmentation  (child term group)
-       +- TF Example Cohort     (term)
+TF Example Glossary - Customer           (root term group)
+  |- TF Example Glossary - Churn         (term, direct child)
+  +- TF Example Glossary - Segmentation  (child term group)
+       +- TF Example Glossary - Cohort   (term)
 ```
 
 This example illustrates:
@@ -46,7 +46,7 @@ terraform output
 echo "$DATAHUB_GMS_URL/glossary"
 ```
 
-The Business Glossary page will show the Finance and Customer term groups. Expand each to see the nested structure.
+The Business Glossary page will show the **TF Example Glossary - Finance** and **TF Example Glossary - Customer** term groups. Expand each to see the nested structure.
 
 ## Destroy ordering
 

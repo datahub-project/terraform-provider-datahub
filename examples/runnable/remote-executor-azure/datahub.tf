@@ -11,22 +11,26 @@ resource "datahub_remote_executor_pool" "azure_aks" {
 # recipe can exercise ${NAME} resolution via DataHub alongside the
 # file-mounted Key Vault secret.
 resource "datahub_secret" "abs_account_name" {
-  name             = "TF_EXAMPLE_ABS_ACCOUNT_NAME"
+  name             = "TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME"
   description      = "Azure storage account name for the TF Example ABS ingestion source"
   value            = azurerm_storage_account.data.name
   value_wo_version = 1
 }
 
-# Ingestion source pinned to the azure-aks pool. The recipe references two
-# secrets resolved through different mechanisms:
-#   - ${TF_EXAMPLE_ABS_ACCOUNT_NAME}: DataHub secret, resolved via GMS
+# Ingestion source pinned to the tf-example-azure-aks pool. The recipe
+# references two secrets resolved through different mechanisms:
+#   - ${TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME}: DataHub secret, resolved via GMS
 #   - ${ABS_ACCOUNT_KEY}: Key Vault secret, file-mounted at
 #     /mnt/secrets/ABS_ACCOUNT_KEY by the secrets-store CSI driver
 # In HCL, secret references are written $${NAME} (double $) so Terraform
 # passes the literal ${NAME} through instead of interpolating.
 # No cron schedule: trigger runs manually from the DataHub Ingestion UI.
 resource "datahub_ingestion_source" "abs" {
-  source_name        = "TF Example Azure Blob CSV (azure-aks pool)"
+  # source_id is optional -- when omitted DataHub derives it from source_name
+  # with a hash suffix. Setting it explicitly makes the URN deterministic, so
+  # anything this example leaves behind names the example that created it.
+  source_id          = "tf-example-azure-abs"
+  source_name        = "TF Example Azure - Blob CSV"
   remote_executor_id = datahub_remote_executor_pool.azure_aks.pool_id
 
   recipe = jsonencode({
@@ -35,18 +39,18 @@ resource "datahub_ingestion_source" "abs" {
       config = {
         path_specs = [
           {
-            include = "https://$${TF_EXAMPLE_ABS_ACCOUNT_NAME}.blob.core.windows.net/${local.container_name}/*.csv"
+            include = "https://$${TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME}.blob.core.windows.net/${local.container_name}/*.csv"
           }
         ]
         azure_config = {
-          account_name   = "$${TF_EXAMPLE_ABS_ACCOUNT_NAME}"
+          account_name   = "$${TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME}"
           account_key    = "$${ABS_ACCOUNT_KEY}"
           container_name = local.container_name
         }
         env = "PROD"
       }
     }
-    pipeline_name = "tf-example-abs-azure-aks"
+    pipeline_name = "tf-example-azure-abs"
   })
 
   depends_on = [datahub_secret.abs_account_name]

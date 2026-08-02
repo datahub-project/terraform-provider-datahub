@@ -20,24 +20,24 @@ provider "datahub" {}
 
 # A tag for data assets that contain personally identifiable information.
 resource "datahub_tag" "pii" {
-  tag_id      = "tf-example-pii"
-  name        = "TF Example - PII"
+  tag_id      = "tf-example-tag-pii"
+  name        = "TF Example Tag - PII"
   description = "Data asset contains personally identifiable information and requires special handling."
   color_hex   = "#E74C3C"
 }
 
 # A tag for data assets that have been verified and are safe for broad use.
 resource "datahub_tag" "verified" {
-  tag_id      = "tf-example-verified"
-  name        = "TF Example - Verified"
+  tag_id      = "tf-example-tag-verified"
+  name        = "TF Example Tag - Verified"
   description = "Data asset has been reviewed and certified as production-ready."
   color_hex   = "#27AE60"
 }
 
 # A tag for data assets that are deprecated and should not be used for new work.
 resource "datahub_tag" "deprecated" {
-  tag_id      = "tf-example-deprecated"
-  name        = "TF Example - Deprecated"
+  tag_id      = "tf-example-tag-deprecated"
+  name        = "TF Example Tag - Deprecated"
   description = "Data asset is deprecated. Migrate to a current alternative before the removal date."
   color_hex   = "#95A5A6"
 }

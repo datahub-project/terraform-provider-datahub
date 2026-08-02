@@ -22,7 +22,7 @@ terraform apply
 
 ## Verify
 
-After apply, navigate to **Govern → Tags** in the DataHub UI. You should see three tags: **TF Example - PII** (red), **TF Example - Verified** (green), and **TF Example - Deprecated** (grey).
+After apply, navigate to **Govern → Tags** in the DataHub UI. You should see three tags: **TF Example Tag - PII** (red), **TF Example Tag - Verified** (green), and **TF Example Tag - Deprecated** (grey).
 
 ## Bulk import pattern
 

@@ -41,7 +41,7 @@ datahub ingest -c <(terraform output -raw ingestion_source_urn | \
   python3 -c "import sys,json,yaml; print(yaml.dump(json.loads(sys.stdin.read())))")
 ```
 
-Simpler alternative: trigger ingestion from the DataHub Cloud UI (Ingestion -> Run now on the `TF Example - SQLite Assertion Dataset` source).
+Simpler alternative: trigger ingestion from the DataHub Cloud UI (Ingestion -> Run now on the `TF Example SQLite - Assertion Dataset` source).
 
 ### 4. Run the assertion (should PASS)
 
