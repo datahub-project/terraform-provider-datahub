@@ -79,6 +79,61 @@ func TestAcc_Policy_FilterConflicts(t *testing.T) {
 	})
 }
 
+// TestAcc_Policy_RoleGuardCreate verifies the provider refuses to overwrite a
+// policy whose actors are bound through DataHub roles, and that the refusal
+// leaves those roles intact (OSS-1216). Mock-only: a role-bearing policy cannot
+// be created through the provider, and the ones that exist on a live instance
+// are DataHub's own.
+func TestAcc_Policy_RoleGuardCreate(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.Kind != datahubtesting.TargetMock {
+		t.Skip("seeding a role-bearing policy requires the mock target")
+	}
+	policyID := tg.Name("tfprovider-policy-roles")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyRoleGuardCreateSteps(policyID),
+	})
+}
+
+// TestAcc_Policy_RoleGuardImport covers the documented bulk-import path: a
+// role-bearing policy imports (with a warning), and the first apply after it is
+// refused rather than silently destroying the role bindings.
+func TestAcc_Policy_RoleGuardImport(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.Kind != datahubtesting.TargetMock {
+		t.Skip("seeding a role-bearing policy requires the mock target")
+	}
+	policyID := tg.Name("tfprovider-policy-roles-import")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyRoleGuardImportSteps(policyID),
+	})
+}
+
+// TestAcc_Policy_RoleGuardAllowsRoleFree proves the guard is discriminating:
+// an existing role-free policy is still adopted and updated, and a non-editable
+// one warns without blocking.
+func TestAcc_Policy_RoleGuardAllowsRoleFree(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.Kind != datahubtesting.TargetMock {
+		t.Skip("seeding a pre-existing policy requires the mock target")
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps: datahubtesting.PolicyRoleGuardAllowsRoleFreeSteps(
+			tg.Name("tfprovider-policy-adopt"),
+			tg.Name("tfprovider-policy-noedit"),
+		),
+	})
+}
+
 // TestAcc_Policy_Drift verifies out-of-band deletion is detected and re-created.
 func TestAcc_Policy_Drift(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)

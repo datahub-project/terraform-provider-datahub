@@ -279,6 +279,35 @@ Cloud-only. The `datahub-tf-extract` CLI skips remote executor pools when run ag
 
 See [datahub_remote_executor_pool resource docs](../resources/remote_executor_pool.md).
 
+### datahub_policy
+
+Policies import cleanly, with one important exclusion: **do not import the policies DataHub ships**. Both discovery paths return them alongside yours -- `datahub_policies` lists every policy the caller can see, and `datahub-tf-extract enumerate` walks the same list -- so a wholesale import picks them up by default.
+
+Nine of DataHub's sixteen default policies grant their privileges entirely through DataHub **roles** (`Admin`, `Editor`, `Reader`), naming no users and no groups at all. DataHub's write API cannot express a role binding: the `updatePolicy` mutation has no field for it, and the server rebuilds the whole policy from that mutation's input. Any write therefore erases the binding, and a policy bound only through roles is then granting nothing to anybody. The DataHub UI writes through the same mutation, so it cannot repair the result either; only a direct aspect write can. This is a server-side limitation, tracked upstream as OSS-1216.
+
+The provider will not make that write. It reads the policy immediately before every create and update and refuses if roles would be lost, naming them; importing one is allowed but warns, so you find out at import rather than at the apply. What you are left with in that case is a resource in state that can never be applied, which is a nuisance to unpick -- easier not to import it.
+
+Filter to the policies you mean to own. An allowlist survives a DataHub upgrade adding a new default policy; a denylist of URNs to skip does not:
+
+```terraform
+locals {
+  managed_policy_urns = [
+    for urn in data.datahub_policies.all.urns :
+    urn if startswith(urn, "urn:li:dataHubPolicy:acme-")
+  ]
+}
+
+import {
+  for_each = toset(local.managed_policy_urns)
+  to       = datahub_policy.imported[each.key]
+  id       = each.key
+}
+```
+
+Separately, DataHub marks its own policies `editable = false` to grey them out in its UI. That flag is not carried by `updatePolicy` either, so an apply resets it to `true`; the provider warns rather than refusing, because nothing is destroyed. DataHub re-ingests its non-editable defaults on every deployment, though, so a managed one shows drift after every DataHub upgrade -- another reason to leave them alone.
+
+See [datahub_policy resource docs](../resources/policy.md).
+
 ### Assertions (datahub_custom_assertion, datahub_freshness/volume/sql_assertion)
 
 The CLI enumerates `datahub_custom_assertion` (CUSTOM-type assertions) and the Cloud-only monitor assertions `datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`, `datahub_field_assertion`, and `datahub_schema_assertion`. The monitor enumerators are scoped to `source == NATIVE` (author-as-code monitors) and to the sub-shape each resource models -- `FIXED_INTERVAL`/`CRON`/`SINCE_THE_LAST_CHECK` freshness, `ROW_COUNT_TOTAL`/`ROW_COUNT_CHANGE` volume, `METRIC`/`METRIC_CHANGE` sql; field (FIELD_VALUES/FIELD_METRIC) and schema (DATA_SCHEMA) enumerate all NATIVE assertions of their type. Ingested `EXTERNAL` assertions (dbt, Great Expectations) and `INFERRED` smart/AI assertions are never enumerated, and a direct `terraform import` of a non-NATIVE assertion into one of these resources is refused with a clear diagnostic -- those assertions are owned by the system that produces them, like ingested lineage and profiles.

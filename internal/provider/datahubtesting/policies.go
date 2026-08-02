@@ -10,6 +10,10 @@ import (
 )
 
 // mockPolicy mirrors the dataHubPolicyInfo shape the provider sends and reads.
+//
+// Roles and NonEditable have no counterpart in the mutation input on purpose:
+// they model the two aspect fields GraphQL cannot carry, so that
+// handleUpsertPolicy can reproduce the upstream strip (OSS-1216) faithfully.
 type mockPolicy struct {
 	ID                  string
 	Name                string
@@ -23,6 +27,8 @@ type mockPolicy struct {
 	AllUsers            bool
 	AllGroups           bool
 	ResourceOwners      bool
+	Roles               []string
+	NonEditable         bool
 	HasResources        bool
 	ResType             string
 	ResResources        []string
@@ -40,6 +46,14 @@ type mockPolicyCriterion struct {
 
 // handleUpsertPolicy handles the updatePolicy mutation (used for both create and
 // update at a deterministic URN).
+//
+// The stored policy is rebuilt from the mutation input alone, exactly as
+// PolicyUpdateInputInfoMapper builds a fresh DataHubPolicyInfo server-side.
+// That is what makes any pre-existing Roles and NonEditable vanish here: the
+// mock reproduces the upstream strip (OSS-1216) rather than papering over it,
+// so a test that reaches the mutation with a role-bearing policy in the store
+// really does lose the roles -- which is what makes the guard's absence
+// visible when it is deliberately removed.
 func (s *mockServer) handleUpsertPolicy(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 	input, _ := variables["input"].(map[string]any)
@@ -142,6 +156,60 @@ func (s *mockServer) handleSeedPolicy(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleSeedRolePolicy injects a policy whose actors are bound through DataHub
+// roles, and/or which DataHub marks non-editable. Neither field can be written
+// through the updatePolicy mutation, so a test cannot arrive at this state via
+// the provider -- it has to be seeded, the same way DataHub's own bootstrap
+// writes the aspect directly.
+//
+//	POST /test-control/seed-role-policy
+//	{"id":"...","name":"...","roles":["urn:li:dataHubRole:Admin"],"editable":false}
+func (s *mockServer) handleSeedRolePolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	body := struct {
+		ID         string   `json:"id"`
+		Name       string   `json:"name"`
+		Type       string   `json:"type"`
+		Privileges []string `json:"privileges"`
+		Roles      []string `json:"roles"`
+		Users      []string `json:"users"`
+		AllUsers   bool     `json:"allUsers"`
+		// Editable defaults to true, matching the PDL default, so a seed body
+		// that omits it produces an ordinary policy.
+		Editable *bool `json:"editable"`
+	}{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if body.Type == "" {
+		body.Type = "PLATFORM"
+	}
+	if len(body.Privileges) == 0 {
+		body.Privileges = []string{"MANAGE_POLICIES"}
+	}
+
+	p := mockPolicy{
+		ID:          body.ID,
+		Name:        body.Name,
+		Type:        body.Type,
+		State:       "ACTIVE",
+		Privileges:  body.Privileges,
+		Users:       body.Users,
+		AllUsers:    body.AllUsers,
+		Roles:       body.Roles,
+		NonEditable: body.Editable != nil && !*body.Editable,
+	}
+
+	s.mu.Lock()
+	s.policies[body.ID] = p
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *mockServer) handleDeletePolicy(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 	id := strings.TrimPrefix(urn, "urn:li:dataHubPolicy:")
@@ -195,20 +263,31 @@ func (s *mockServer) handleDataHubPolicyItem(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	actors := map[string]any{
+		"users":               orEmpty(p.Users),
+		"groups":              orEmpty(p.Groups),
+		"allUsers":            p.AllUsers,
+		"allGroups":           p.AllGroups,
+		"resourceOwners":      p.ResourceOwners,
+		"resourceOwnersTypes": orEmpty(p.ResourceOwnersTypes),
+	}
+	// roles is optional in the PDL: omit it when unset rather than sending an
+	// empty array, so the read path is exercised against both shapes.
+	if len(p.Roles) > 0 {
+		actors["roles"] = p.Roles
+	}
 	value := map[string]any{
 		"displayName": p.Name,
 		"description": p.Description,
 		"type":        p.Type,
 		"state":       p.State,
 		"privileges":  orEmpty(p.Privileges),
-		"actors": map[string]any{
-			"users":               orEmpty(p.Users),
-			"groups":              orEmpty(p.Groups),
-			"allUsers":            p.AllUsers,
-			"allGroups":           p.AllGroups,
-			"resourceOwners":      p.ResourceOwners,
-			"resourceOwnersTypes": orEmpty(p.ResourceOwnersTypes),
-		},
+		"actors":      actors,
+	}
+	// editable has a PDL default of true, so an aspect written without it
+	// reads back as true. Only the explicit false is emitted.
+	if p.NonEditable {
+		value["editable"] = false
 	}
 	if p.HasResources {
 		resources := map[string]any{

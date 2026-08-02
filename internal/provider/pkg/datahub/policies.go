@@ -13,8 +13,15 @@ import (
 	"strings"
 )
 
-// PolicyActors mirrors the DataHubActorFilter. There is no roles field in the
-// OSS ActorFilterInput, so roles are not modeled here.
+// PolicyActors mirrors the writable half of DataHubActorFilter -- the fields
+// GraphQL's ActorFilterInput accepts, and therefore the only actor fields
+// UpsertPolicy can send.
+//
+// The aspect also carries actors.roles, which is deliberately absent here: it
+// has no ActorFilterInput counterpart, so a Roles field on this struct could
+// only ever be silently discarded. Roles read back on Policy.ActorRoles
+// instead, keeping "what the server holds" and "what the provider can write"
+// two different types. See OSS-1216 and the note on Policy.ActorRoles.
 type PolicyActors struct {
 	Users               []string
 	Groups              []string
@@ -71,7 +78,22 @@ type Policy struct {
 	Description string
 	Privileges  []string
 	Actors      PolicyActors
-	Resources   *PolicyResources
+
+	// ActorRoles is actors.roles from the dataHubPolicyInfo aspect: DataHub
+	// role URNs (urn:li:dataHubRole:Admin and friends) the policy grants to.
+	// Read-only by construction -- GraphQL's ActorFilterInput has no roles
+	// field, and updatePolicy rebuilds the whole aspect from that input, so
+	// any write erases whatever is here. It lives on the read shape rather
+	// than inside PolicyActors so that no write path can reach it.
+	ActorRoles []string
+
+	// Editable is the aspect's editable flag, which DataHub sets to false on
+	// the default policies it ships. Read-only for the same reason:
+	// PolicyUpdateInput has no editable field, so every updatePolicy resets it
+	// to the PDL default of true. Defaults to true when the aspect omits it.
+	Editable bool
+
+	Resources *PolicyResources
 }
 
 type upsertPolicyResponse struct {
@@ -204,7 +226,11 @@ type dataHubPolicyEntity struct {
 				AllGroups           bool     `json:"allGroups"`
 				ResourceOwners      bool     `json:"resourceOwners"`
 				ResourceOwnersTypes []string `json:"resourceOwnersTypes"`
+				Roles               []string `json:"roles"`
 			} `json:"actors"`
+			// Pointer so an absent field is distinguishable from an explicit
+			// false: DataHubPolicyInfo.editable defaults to true in the PDL.
+			Editable  *bool `json:"editable"`
 			Resources *struct {
 				Type         string   `json:"type"`
 				Resources    []string `json:"resources"`
@@ -288,6 +314,8 @@ func (c *Client) GetPolicyByURN(ctx context.Context, urn string) (*Policy, error
 			ResourceOwners:      v.Actors.ResourceOwners,
 			ResourceOwnersTypes: v.Actors.ResourceOwnersTypes,
 		},
+		ActorRoles: v.Actors.Roles,
+		Editable:   v.Editable == nil || *v.Editable,
 	}
 	if v.Resources != nil {
 		p.Resources = &PolicyResources{

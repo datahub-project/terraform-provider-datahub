@@ -178,6 +178,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
+	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
