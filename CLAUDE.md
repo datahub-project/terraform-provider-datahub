@@ -83,7 +83,7 @@ Discretion example - `datahub_service_account`: a service account has no distinc
 ## Build and development
 
 - Go module: `github.com/datahub-project/terraform-provider-datahub`
-- Go version: 1.26.4 (pinned in `mise.toml`; declared in `go.mod`)
+- Go version: 1.26.5 (pinned in `mise.toml`; declared in `go.mod`)
 - Tools submodule: `tools/` (holds `tfplugindocs`; its `go` directive is kept in sync with the main module)
 - Build: `make install` (writes to `./bin/terraform-provider-datahub`)
 - Verify: `go build ./...` and `go vet ./...`
