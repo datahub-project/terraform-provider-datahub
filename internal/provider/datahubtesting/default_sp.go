@@ -61,6 +61,39 @@ resource "datahub_structured_property" "marker" {
 `, propertyID, valueType, entityTypes)
 }
 
+// spDefinitionTeardownStep deletes the structured-property definition while the
+// entities that carried it are still alive, leaving CheckDestroy only those
+// entities to remove. entitiesConfig must be the scenario's resources with the
+// datahub_structured_property blocks omitted.
+//
+// Every SP-defaults scenario otherwise ends with the definition and the
+// entities in one configuration, and nothing orders their deletion: the value
+// arrives through provider defaults, which cannot form a dependency edge on a
+// resource, so Terraform is free to delete both at once. Deleting a structured
+// property makes DataHub scroll the search index for entities carrying it and
+// PATCH each hit. That read is eventually consistent, so it can still list an
+// entity whose value was removed earlier in the test, and a patch landing on a
+// simultaneously hard-deleted entity resurrects it as a husk (CAT-2583) -- key
+// aspect present, content gone, invisible in the DataHub UI, and still
+// blocking the next create of that URN with "already exists".
+//
+// Deleting the definition FIRST is what closes the race rather than narrowing
+// it. The side effect then patches entities that still exist, which is a
+// harmless no-op, and by the time they are deleted no scroll is pending that
+// could bring them back. Deleting the entities first only widens the window,
+// because the index lag has no upper bound -- which is also why the provider's
+// own zero-count settle barrier cannot close this by construction
+// (structured_properties.go).
+//
+// Same shape, and same remedy, as tagBootstrapStep in default_tags.go: a
+// restructure rather than a depends_on, so the scenario stops modelling an
+// ordering the provider never promised.
+func spDefinitionTeardownStep(entitiesConfig string) resource.TestStep {
+	return resource.TestStep{
+		Config: spDefaultsProviderBlock("") + entitiesConfig,
+	}
+}
+
 // DomainSPDefaultsLifecycleSteps covers the full per-property latch lifecycle
 // on datahub_domain: unlatched create (defaults off), latch-on via provider
 // defaults, plan idempotency, value-change ripple, import while latched, and
@@ -120,6 +153,7 @@ resource "datahub_domain" "test" {
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()),
 			},
 		},
+		spDefinitionTeardownStep(domain),
 	}
 }
 
@@ -130,7 +164,7 @@ func SPDefaultsEntityTypeFilteringSteps(domainID, groupID, propertyID string) []
 	const domainAddr = "datahub_domain.test"
 	const groupAddr = "datahub_corp_group.test"
 	propURN := "urn:li:structuredProperty:" + propertyID
-	resources := spDefinitionConfig(propertyID, `"domain"`) + fmt.Sprintf(`
+	entities := fmt.Sprintf(`
 resource "datahub_domain" "test" {
   domain_id = %q
   name      = "SP Filtering Domain"
@@ -141,6 +175,7 @@ resource "datahub_corp_group" "test" {
   name     = "SP Filtering Group"
 }
 `, domainID, groupID)
+	resources := spDefinitionConfig(propertyID, `"domain"`) + entities
 	without := spDefaultsProviderBlock("") + resources
 	with := spDefaultsProviderBlock(propURN, "prod") + resources
 
@@ -169,6 +204,7 @@ resource "datahub_corp_group" "test" {
 				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()),
 			},
 		},
+		spDefinitionTeardownStep(entities),
 	}
 }
 
@@ -184,7 +220,7 @@ func SPDefaultsAllResourcesSteps(ids map[string]string, contractDatasetURN strin
 	propURN := "urn:li:structuredProperty:" + ids["prop"]
 	definition := spDefinitionConfig(ids["prop"],
 		`"glossaryTerm", "glossaryNode", "corpuser", "corpGroup", "dataProduct", "dataContract"`)
-	resources := definition + fmt.Sprintf(`
+	entities := fmt.Sprintf(`
 resource "datahub_glossary_node" "test" {
   node_id = %q
   name    = "SP All Node"
@@ -236,6 +272,7 @@ resource "datahub_data_contract" "test" {
   data_quality_assertion_urns = [datahub_custom_assertion.dq.urn]
 }
 `, ids["node"], ids["term"], ids["user"], ids["sa"], ids["group"], ids["domain"], ids["dp"], contractDatasetURN, contractDatasetURN)
+	resources := definition + entities
 	without := spDefaultsProviderBlock("") + resources
 	with := spDefaultsProviderBlock(propURN, "finale") + resources
 
@@ -287,7 +324,7 @@ resource "datahub_data_contract" "test" {
 		// Unlatch before destroy (destroy-ordering rule above).
 		Config:            without,
 		ConfigStateChecks: cleared,
-	})
+	}, spDefinitionTeardownStep(entities))
 }
 
 // SPDefaultsAssignmentOverlapSteps exercises the deliberate-overlap path: an
@@ -298,24 +335,20 @@ resource "datahub_data_contract" "test" {
 func SPDefaultsAssignmentOverlapSteps(domainID, propertyID string) []resource.TestStep {
 	const domainAddr = "datahub_domain.test"
 	propURN := "urn:li:structuredProperty:" + propertyID
-	resources := spDefinitionConfig(propertyID, `"domain"`) + fmt.Sprintf(`
+	domainOnly := fmt.Sprintf(`
 resource "datahub_domain" "test" {
   domain_id = %q
   name      = "SP Overlap Domain"
 }
-
+`, domainID)
+	resources := spDefinitionConfig(propertyID, `"domain"`) + domainOnly + `
 resource "datahub_structured_property_assignment" "overlap" {
   entity_urn              = datahub_domain.test.urn
   structured_property_urn = datahub_structured_property.marker.urn
   values                  = ["shared-value"]
 }
-`, domainID)
-	base := spDefinitionConfig(propertyID, `"domain"`) + fmt.Sprintf(`
-resource "datahub_domain" "test" {
-  domain_id = %q
-  name      = "SP Overlap Domain"
-}
-`, domainID)
+`
+	base := spDefinitionConfig(propertyID, `"domain"`) + domainOnly
 	with := spDefaultsProviderBlock(propURN, "shared-value") + resources
 
 	return []resource.TestStep{
@@ -348,6 +381,7 @@ resource "datahub_domain" "test" {
 				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()),
 			},
 		},
+		spDefinitionTeardownStep(domainOnly),
 	}
 }
 
@@ -393,7 +427,7 @@ func SPDefaultsAssignmentCoexistenceSteps(domainID, defaultPropID, assignedPropI
 	const domainAddr = "datahub_domain.test"
 	const assignAddr = "datahub_structured_property_assignment.explicit"
 	defaultPropURN := "urn:li:structuredProperty:" + defaultPropID
-	resources := fmt.Sprintf(`
+	definitions := fmt.Sprintf(`
 resource "datahub_structured_property" "marker" {
   property_id  = %q
   value_type   = "string"
@@ -405,18 +439,24 @@ resource "datahub_structured_property" "assigned" {
   value_type   = "string"
   entity_types = ["domain"]
 }
-
+`, defaultPropID, assignedPropID)
+	domainOnly := fmt.Sprintf(`
 resource "datahub_domain" "test" {
   domain_id = %q
   name      = "SP Coexistence Domain"
 }
-
+`, domainID)
+	// The explicit assignment references the "assigned" definition, so it has
+	// to leave in the same step the definitions do -- which is what the
+	// teardown step below does, while the domain is still alive.
+	assignment := `
 resource "datahub_structured_property_assignment" "explicit" {
   entity_urn              = datahub_domain.test.urn
   structured_property_urn = datahub_structured_property.assigned.urn
   values                  = ["assigned-value"]
 }
-`, defaultPropID, assignedPropID, domainID)
+`
+	resources := definitions + domainOnly + assignment
 	without := spDefaultsProviderBlock("") + resources
 	with := spDefaultsProviderBlock(defaultPropURN, "default-value") + resources
 
@@ -447,5 +487,6 @@ resource "datahub_structured_property_assignment" "explicit" {
 				statecheck.ExpectKnownValue(domainAddr, tfjsonpath.New("structured_properties_defaults"), knownvalue.Null()),
 			},
 		},
+		spDefinitionTeardownStep(domainOnly),
 	}
 }
