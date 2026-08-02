@@ -441,6 +441,43 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 
 ---
 
+## Remaining surface, grouped into work packages
+
+**Collated 2026-08-02, after the re-survey.** Everything the catalog rates HIGH or MEDIUM that is not shipped, not deny-listed, and not runtime/operational, grouped so each package is one coherent piece of work rather than one API call.
+
+**Deliberately unprioritised.** These are not a queue and carry no commitment to build. What is recorded instead is **readiness** -- how much is unknown before work could sensibly start -- which is a property of the work rather than a decision about it. Assigning order is a separate call.
+
+### Ready to plan (design understood, no open questions)
+
+| Package | Covers | Note |
+|---|---|---|
+| **Forms** | `createForm` / `updateForm` / `deleteForm` / `form(urn)`, with `dynamicFormAssignment` as a nested attribute | OSS and Cloud; no overlap with anything shipped. Only real design question is the prompts-list shape. |
+| **Metadata tests** | `createTest` / `updateTest` / `deleteTest` / `test(urn)`, plus `validateTest` wired in as plan-time validation | Mutations exist in OSS; only the management UI is Cloud-only, which argues *for* Terraform as the authoring surface rather than against. |
+| **Glossary term relationships** | `addRelatedTerms` / `removeRelatedTerms` -> `datahub_glossary_term_relationship` (typed: isA, hasA, contains, values, relatedTerm) | Small. Aspect-list ownership applies, and the provider already has that pattern. |
+| **Policy completeness** | `resources.privilegeConstraints` | Not a new resource -- a gap in a shipped one. The provider owns the whole `resources` map, so a constraint set outside Terraform is dropped on the next apply. Natural pair with the `actors.roles` wind-back when OSS-1216 lands. |
+| **Auth and identity completion** | `datahub_oauth_authorization_server`; `updateServiceAccountDefaultView` as an attribute on the shipped `datahub_service_account`; a `datahub_services` data source | Finishes Category 4. |
+
+### In scope, needs design (pattern exists, scope does not)
+
+| Package | Covers | Note |
+|---|---|---|
+| **Org settings singletons** | AI settings (with `datahub_ai_plugin` as a child), asset settings, doc-propagation / context-generation, global views; `helpLink` and brand colour folding into the shipped `datahub_organization_display_preferences` | Largest cluster. Reference implementation exists, so this is scoping work, not pattern work. Roughly four resources under the domain-grouping rule, not ten. MCP servers stay blocked on merge-by-slug versus full-list ownership. |
+| **Home-page layout** | `datahub_page_template` + `datahub_page_module`, `GLOBAL` scope only | Confirmed in scope 2026-08-02. `PERSONAL` remains out by the per-user rule. Needs the template/module nesting designed; the `form` ordered-list shape is the closest precedent. |
+
+### Investigate before planning
+
+| Package | Question to answer |
+|---|---|
+| **Business attributes / applications** | Live session on Cloud establishing what each does that `structured_property` and `data_product` cannot. **Is there a capability gap, or only a vocabulary difference?** If vocabulary, two resources whose docs must explain when *not* to use them is a net negative. |
+| **Access tokens** | Investigate without prejudice, plan, do not commit. The question is not whether it can be modelled but whether the WriteOnly pattern (`datahub_secret`'s) keeps a *rotating* credential out of state across its whole lifecycle or only at create. Driving gap: a TF-created service account currently has no programmatic path to a token. |
+| **Observe remainder** | Plan, no commitment. `assertionInferenceAdjustmentRule` is the interesting member -- deterministic id, no UI at all, and GraphQL read-only so writes would go via OpenAPI, the inverse of this provider's usual split; confirm that bypasses no service-layer logic. Monitors and action workflows carry the runtime-lifecycle tension. |
+
+### Parked
+
+**Graph / ontology** (`relationshipType` + `StructuredPropertySettings.isRelationship`) -- Cloud has shipped the field without the entity. Covered by the re-probe trigger in Category 3.
+
+---
+
 ## Out of scope for this catalog
 
 - Recipe document builder — not driven by an API endpoint; separate design discussion.
