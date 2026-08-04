@@ -33,7 +33,32 @@ jobs:
         run: make dev-deps
 
       - name: Run Quickstart-backed acceptance tests
-        run: make testacc-quickstart
+        # TF_ACC_LOG captures the provider's own tflog stream, which the
+        # container logs below do not contain. Without it a settle-barrier
+        # timeout (structured_properties.go, CAT-2583) is invisible in CI and a
+        # husk failure cannot be told apart from a barrier that gave up.
+        #
+        # Pinned at WARN deliberately -- do NOT raise this to DEBUG or TRACE.
+        # tflog writes exactly the map it is handed and is not governed by the
+        # schema's Sensitive/WriteOnly markers, which cover state and plan
+        # rendering only. That channel logged a user's password, an invite
+        # token and an Authorization bearer from v0.4.0 until v0.19.1. These
+        # logs upload as an artifact readable by anyone with repo read access,
+        # so the level is a security boundary, not a verbosity preference.
+        env:
+          TF_ACC_LOG: WARN
+          TF_ACC_LOG_PATH: ${{ github.workspace }}/provider-logs/acceptance.log
+        run: |
+          mkdir -p provider-logs
+          make testacc-quickstart
+
+      - name: Upload provider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: provider-logs
+          path: provider-logs/
+          if-no-files-found: ignore
 
       - name: Capture Quickstart logs on failure
         if: failure()
