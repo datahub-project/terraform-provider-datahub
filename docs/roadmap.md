@@ -395,6 +395,35 @@ Lowercase URN types for each candidate: `datahubconnection`, `datahubpolicy`, `c
 
 Needs verification before committing: `connection`, `structuredProperty`, `form`, `test`, `policy`, `corpGroup`. Schema files exist in OSS for most; API surface on a live OSS instance has not been verified.
 
+### Version and capability compatibility (added 2026-08-05)
+
+The checklist above resolves one axis, OSS versus Cloud. This is the second axis, and it bites whenever a re-survey adds surface to an *already-shipped* resource: DataHub Cloud's deployed fleet spans a wide version range and OSS spans wider, so a mutation, input field or aspect that exists on the newest instance cannot be assumed present on a user's. The v2.1.0 additions of `deprecation` to `domain` and `dataProduct`, and `displayProperties` to `glossaryTerm`, are the first cases where this decides the design rather than being a footnote.
+
+**Do not gate on a version number.** DataHub has three numbering schemes in flight at once and there is no total order across them. Service accounts are recorded in this document as requiring "Core >= v1.4.0 **and** Cloud >= v0.3.17" -- two schemes for one feature -- and as of 2026-08-05 Cloud reports v2.1.0 while OSS master reports v1.6.x. A comparison like `version >= 1.4.0` is therefore meaningless against a Cloud version string, and any gate needs a per-flavour table that rots the moment either line renumbers. Prefer a **capability** check over a version check: one GraphQL introspection query settles whether a mutation or input field exists, which is exactly the mechanism the `actors.roles` re-probe trigger uses.
+
+**What the provider does today.** There is deliberately **no runtime version detection anywhere in the provider** -- no `/config` read, no `serverEnv` branch, no version floor. Three cheaper patterns carry the load, and `serverEnv` detection lives only in `datahubtesting` (`Target`, `RequireCloud`), which is test infrastructure and not available to resource code:
+
+| Pattern | Where | When it applies |
+|---|---|---|
+| **Translate the error** | `volume_assertion_resource.go:284` maps `ErrAssertionCloudOnly` to a "DataHub Cloud Required" diagnostic | The old server rejects the call *cleanly*. The default choice: no probe, no round-trip, no version arithmetic. |
+| **Tolerate on read** | `connection_resource.go:834` -- "OSS DataHub may omit the platform field" -- leaves the value unset instead of erroring | A field or aspect may simply be absent in a response. |
+| **Guard before writing** | `policy_write_guard.go` refuses a write that would drop `actors.roles` | The old server accepts the write and **silently discards** part of it. The only case where a proactive probe or guard earns its cost, because there is no error to translate. |
+
+**So choose by failure mode, not by version span.** Clean rejection means translate; silent data loss means guard; mere absence means tolerate. Reaching for a probe when the server would have errored cleanly buys a round-trip on every operation and nothing else.
+
+**Default shape for a new optional attribute on a shipped resource.** The protection is not a probe -- it is emitting only what the user configured:
+
+1. Model it `Optional` and **not** `Computed` with a default, so absent stays absent. A schema default makes the provider send the field for every user, including those whose server cannot accept it, which converts an opt-in feature into a breaking change.
+2. On read, treat a missing aspect as null. Never an error.
+3. On write, send the aspect only when it is configured.
+4. Translate the failure for the user who does configure it against an instance that lacks it.
+
+A user on an older instance who never sets the attribute generates no request that touches it, so nothing can break for them. This is the same rule this document already states for `isRelationship` -- "it needs OSS/Cloud-conditional emission; sending it unconditionally would break OSS users" -- generalised.
+
+**One trap to resolve empirically before trusting an aspect path as a probe.** A 404 from `GET /openapi/v3/entity/domain/{urn}/deprecation` is ambiguous: it can mean "this build has no such aspect" or "this domain has no value set". Those need opposite handling -- the first is a capability answer, the second is normal empty state -- so confirm which the server returns before writing code that distinguishes them.
+
+**Known gap, recorded rather than implied fixed.** The `datahub_service_account` version floor is **documentation only**: `service_account_resource.go:129` states the Core >= 1.4.0 requirement in a schema description, and nothing enforces it. On an instance below the floor a user gets whatever raw error the server emits. This document elsewhere describes that resource as needing "a graceful *not available* diagnostic (a version-floor discriminator, like `datahub_connection`'s OSS/Cloud handling)"; that was never built, and by the rule above the right form is a translated error rather than a version comparison.
+
 ---
 
 ## Candidate shortlist by tier
