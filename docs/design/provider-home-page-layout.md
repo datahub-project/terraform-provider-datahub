@@ -49,6 +49,8 @@ The provider's standing rule is GraphQL for Create/Update/Delete, because OpenAP
 
 Take the OpenAPI write, and record the reasoning: the field is a bare URN pointer on a settings aspect with no service-layer behaviour behind it -- no encryption, no derived aspects, no side effects of the kind that motivated the rule. This is the same shape as the `assertionInferenceAdjustmentRule` question parked in the roadmap, resolved in the affirmative here because the field is trivially simple.
 
+**`updateGlobalSettings` will not undo this write.** Checked on fork HEAD `442d28a7fb2` before relying on it: that mutation fetches the existing aspect and applies only the sections named in its input, so `homePage` survives every SSO, notification, MCP or AI-settings write. Had it rebuilt the aspect from its input instead -- the way `updatePolicy` does, which is why OSS-1216 needed a guard -- this resource would have been silently undone by any other settings resource in the family. The wider contract for sharing this aspect, including the concurrency hazard that follows from every write being a read-modify-write, is in `provider-org-settings.md`.
+
 **The hazard, and it is severe: use `PATCH`, never `POST`.** `globalSettingsInfo` is a single aspect holding SSO, notifications, integrations, MCP servers, views, documentation-AI and the four AI groups. `POST` replaces the whole aspect, so a resource that owned only `homePage` and wrote via `POST` would silently wipe every unrelated setting on the instance. `PATCH` is what makes a single-field write safe. This is the identical trap `docs/design/provider-org-settings.md` identified for the `visual` sub-object, and it must be resolved the same way -- by writing only the field, and by verifying against a live instance that neighbouring settings survive the write.
 
 ## Resources
@@ -101,8 +103,10 @@ Support `HOME_PAGE` first. `ASSET_SUMMARY` and `CONTEXT_DOCUMENTS` are different
 
 Ordered so that each phase is independently useful and the riskiest unknown is settled first.
 
-1. **Probe phase.** Answer open questions 1, 2 and 4 against demo.acryl.io. Question 1 gates the third resource entirely.
+1. **Probe phase.** Answer open questions 1, 2 and 4. Question 1 gates the third resource entirely. **Probe on a local OSS Quickstart, not on demo.acryl.io:** the questions concern `globalSettingsInfo`, whose other sections hold that instance's SSO, notification and integration configuration, and a mis-shaped `POST` there would break a shared demo environment rather than a disposable container. The aspect and both PDLs are OSS, so a Quickstart answers the merge question faithfully. Only the Cloud-only sections would need a Cloud probe, and those are out of scope for this resource.
 2. **`datahub_page_module`** plus data source. Self-contained, no nesting, deterministic URN, exercises the string-typed `type` decision.
 3. **`datahub_page_template`** plus data source. The nested-attribute work, including the non-literal test.
 4. **`datahub_home_page_settings`.** Only if question 1 resolves safely; otherwise stop and record why, and the feature ships with a documented manual step to set the default.
 5. **A runnable example** assembling a small home page over entities it creates -- which is also the demo-estate pattern, and the thing that proves the three resources compose.
+
+**One item enters this plan from the wider family.** `datahub_home_page_settings` is the second resource to write `globalSettingsInfo` (after `datahub_organization_display_preferences`), so it is the point at which the concurrency hazard in `provider-org-settings.md` becomes real: every write to that aspect is a read-modify-write, and two settings resources applied concurrently can silently lose one section. Serialise `globalSettingsInfo` writes behind a client-side mutex as part of phase 4, rather than leaving it for the SSO and notification resources to discover. It is a few lines, invisible to users, and these are singleton writes so it costs no meaningful parallelism.

@@ -127,6 +127,31 @@ Expected end state is roughly four settings resources, not ten: display preferen
 
 Every DataHub settings page seen so far mixes org-wide and per-user settings, and the AI settings page is no exception - `updateCorpUserAiAssistantSettings`, `updateUserAiPluginSettings` and `updateUserContextDocumentsSettings` sit alongside the global ones. **Check the scope of every control before modelling a settings page.** Per-user settings stay out per the provider's scope rule; only the system-level half is ever in scope.
 
+## How the family shares one aspect (added 2026-08-06)
+
+Everything in this family writes into a single aspect, `globalSettingsInfo`, which holds `integrations`, `notifications`, `sso`, `mcpSettings`, `documentationAi`, `aiAssistant`, `aiPlugins`, `aiContext`, `views`, `docPropagation`, `visual`, `homePage`, `applications` and `maintenanceWindow`. Once more than one resource owns a slice of it, the write mechanics stop being per-resource detail and become a shared contract. Established by reading the Cloud resolver on fork HEAD `442d28a7fb2` (2026-08-05).
+
+**`updateGlobalSettings` merges per top-level section, and does not rebuild.** The resolver fetches the existing `globalSettingsInfo` first, then applies each input section only when that input field is non-null, mutating the fetched object. So a caller sending only `ssoSettings` leaves notifications, MCP, the AI groups, `visual` and `homePage` exactly as they were -- including the two sections the mutation cannot express at all.
+
+That matters because the opposite design exists in this same server and has already cost us a guard: `updatePolicy` rebuilds `dataHubPolicyInfo` from its input and silently drops `actors.roles` and `editable` (OSS-1216, `internal/provider/policy_write_guard.go`). Had `updateGlobalSettings` been written that way, a user managing SSO in Terraform would have silently wiped their org branding and home-page default. **It was worth checking rather than assuming, and the same check is owed by any future mutation that writes part of a shared aspect.**
+
+### Write path per section -- prefer the mutation, fall back to the aspect
+
+| Section | Write path | Note |
+|---|---|---|
+| `integrations`, `notifications`, `sso`, `mcpSettings`, `documentationAi`, `aiAssistant`, `aiPlugins`, `aiContext` | `updateGlobalSettings` | GraphQL, merges per section. The normal rule applies; no exception needed. |
+| `visual` | `updateOrganizationDisplayPreferences` | Dedicated mutation, already shipped as `datahub_organization_display_preferences`. |
+| `homePage` | **OpenAPI v3 `PATCH`** on `/openapi/v3/entity/globalsettings/{urn}/globalsettingsinfo` | No GraphQL write exists at all -- see `provider-home-page-layout.md`. `POST` would replace the whole aspect; only `PATCH` is safe. |
+| `applications`, `maintenanceWindow` | none identified | Present on the aspect but absent from `UpdateGlobalSettingsInput`. Same situation as `homePage`; probe before designing. |
+
+The rule to follow: **use the dedicated mutation when one exists, and reach for an aspect write only where nothing else can reach the field.** That keeps the service-layer-logic argument behind the provider's write convention intact everywhere it can be, and confines the exception to fields that would otherwise be unmanageable.
+
+### Two hazards this creates
+
+**1. Merging means omission cannot clear.** Because the mutation merges into the existing sub-object, a resource that drops a field from its configuration does not clear it server-side -- the old value persists. That is in direct tension with this provider's rule that a resource owns the complete state of what it declares. Each resource in this family must therefore send its section's full desired state, with explicit empties where the user removed something, and it must be verified that an explicit empty actually clears rather than being treated as "absent, leave alone". This is the same shape as the `mcpSettings.servers` merge-by-slug problem, which needed a separate `deleteMcpServer` mutation to become manageable at all.
+
+**2. Concurrent applies within the family can clobber each other.** Every write here is a read-modify-write of the whole aspect, whether performed server-side by the mutation or client-side against the aspect endpoint. Two settings resources applied concurrently -- Terraform's default parallelism is 10 -- can both read the same starting state and the second write can lose the first resource's section. Nothing in the API prevents it, and the loss is silent. Before a second resource in this family ships, decide the mitigation: serialise these writes in the provider client behind a mutex, which is invisible to users and cheap because these are singleton writes, or document `-parallelism=1`, which pushes the problem onto users and will be forgotten. The mutex is the better answer, and it is the reason this section exists before the resources do rather than after someone hits it.
+
 ## Stability posture
 
 The `globalSettings` entity is `category: internal` in `entity-registry.yml`, and the whole read/write surface used here lives only in the closed Cloud fork. Per the project's established convention this reality stays in maintainer-facing docs (here, `CLAUDE.md`, the roadmap); user-facing docs get the `cloudOnlyBadge` plus an ownership-style note, not an "experimental / no stability guarantee" disclaimer. Note also that OSS contributors cannot see the backing source, which matters when triaging an issue against this resource.
