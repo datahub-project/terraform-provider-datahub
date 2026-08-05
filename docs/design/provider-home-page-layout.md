@@ -51,7 +51,31 @@ Take the OpenAPI write, and record the reasoning: the field is a bare URN pointe
 
 **`updateGlobalSettings` will not undo this write.** Checked on fork HEAD `442d28a7fb2` before relying on it: that mutation fetches the existing aspect and applies only the sections named in its input, so `homePage` survives every SSO, notification, MCP or AI-settings write. Had it rebuilt the aspect from its input instead -- the way `updatePolicy` does, which is why OSS-1216 needed a guard -- this resource would have been silently undone by any other settings resource in the family. The wider contract for sharing this aspect, including the concurrency hazard that follows from every write being a read-modify-write, is in `provider-org-settings.md`.
 
-**The hazard, and it is severe: use `PATCH`, never `POST`.** `globalSettingsInfo` is a single aspect holding SSO, notifications, integrations, MCP servers, views, documentation-AI and the four AI groups. `POST` replaces the whole aspect, so a resource that owned only `homePage` and wrote via `POST` would silently wipe every unrelated setting on the instance. `PATCH` is what makes a single-field write safe. This is the identical trap `docs/design/provider-org-settings.md` identified for the `visual` sub-object, and it must be resolved the same way -- by writing only the field, and by verifying against a live instance that neighbouring settings survive the write.
+### Probed 2026-08-06, and the answer inverts the plan: `PATCH` is impossible, `POST` is destructive
+
+Both halves of the recommendation below were wrong, and only a live probe found it. Verified against a local OSS Quickstart running **v1.7.0** (`make quickstart-up` reused an existing container set rather than the pinned `v1.5.0.6`, so treat the version as v1.7.0, not the Makefile default).
+
+**`PATCH` returns HTTP 500 for this aspect, and always will.** The endpoint is advertised in the served OpenAPI spec for every aspect of every entity, but the implementation dispatches through `AspectTemplateEngine`, which holds a registry of per-aspect patch templates and dereferences the match without a null check:
+
+```
+java.lang.NullPointerException: Cannot invoke "Template.applyPatch(...)" because "template" is null
+  at AspectTemplateEngine.applyPatch(AspectTemplateEngine.java:57)
+  at GenericEntitiesController.patchAspect(GenericEntitiesController.java:781)
+```
+
+Only about two dozen aspects have templates -- `ownership`, `globalTags`, `glossaryTerms`, `domains`, `structuredProperties`, `status`, `upstreamLineage`, and a scattering of `*Info` / `*Properties` records. **Every one of them is asset enrichment; not one is a settings aspect.** So `globalSettingsInfo` cannot be patched, and the generalisation matters well beyond this resource: **an aspect appearing with `PATCH` in the served spec is not evidence that patching it works.** The spec is generated from the entity registry and advertises the verb uniformly; the runtime supports it selectively, and the failure is a 500 rather than a 405 or a clear message.
+
+**`POST` replaces the entire aspect.** Confirmed by writing only `homePage` and re-reading: `docPropagation` and `views` were both gone. Note also that `POST` requires `?createIfNotExists=false` to touch an aspect that already exists -- the default refuses with a 400, which is easy to misread as a malformed body.
+
+**So the only implementable shape is a client-side read-modify-write**, and it carries three consequences the plan has to absorb:
+
+1. **Read the aspect as opaque JSON, never as a typed struct.** The provider must GET `globalSettingsInfo`, splice in `homePage.defaultTemplate`, and POST the whole document back. If it decoded into a Go struct first, every field the struct did not model would be silently destroyed on write -- which is precisely the `updatePolicy` / `actors.roles` failure this codebase already carries a guard for, except self-inflicted and affecting SSO and notification configuration. Keep the untouched sections as raw `json.RawMessage` or `map[string]any` and re-emit them byte-for-byte.
+2. **Serialising these writes stops being advisable and becomes required.** Two concurrent read-modify-writes against one aspect lose one of the two updates outright.
+3. **There is an unavoidable clobber window against other clients.** A change made in the DataHub UI between the provider's read and its write is lost. Nothing in the API offers a compare-and-set, so this must be documented rather than solved.
+
+Restoring the probe's damage via the same read-modify-write worked, which is the one piece of good news: the mechanism is sound, it is only unsafe when it is careless.
+
+**The original recommendation, retained for the reasoning it still carries: use `PATCH`, never `POST`.** `globalSettingsInfo` is a single aspect holding SSO, notifications, integrations, MCP servers, views, documentation-AI and the four AI groups. `POST` replaces the whole aspect, so a resource that owned only `homePage` and wrote via `POST` would silently wipe every unrelated setting on the instance. `PATCH` is what makes a single-field write safe. This is the identical trap `docs/design/provider-org-settings.md` identified for the `visual` sub-object, and it must be resolved the same way -- by writing only the field, and by verifying against a live instance that neighbouring settings survive the write.
 
 ## Resources
 
