@@ -438,6 +438,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewOrganizationDisplayPreferencesResource,
 		NewOwnershipTypeResource,
 		NewPageModuleResource,
+		NewPageTemplateResource,
 		NewIngestionSourceResource,
 		NewPolicyResource,
 		NewSecretResource,

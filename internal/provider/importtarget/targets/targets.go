@@ -212,6 +212,13 @@ func init() {
 	})
 
 	importtarget.Register(importtarget.Target{
+		ResourceTypeName: "datahub_page_template",
+		Enumerate:        nil,
+		IDFromURN:        func(urn string) string { return strings.TrimPrefix(urn, datahub.PageTemplateURNPrefix) },
+		OSSCompatible:    true,
+	})
+
+	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_policy",
 		DataSourceTypeName: "datahub_policies",
 		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
