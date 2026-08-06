@@ -9,11 +9,11 @@ output "template_id" {
 }
 
 output "module_urns" {
-  description = "URNs of the modules laid out by the template, in row order."
+  description = "URNs of the modules laid out by the template, in row order. Two are created here; two are DataHub's bootstrapped defaults, referenced rather than created."
   value = [
     datahub_page_module.welcome.urn,
-    datahub_page_module.domains.urn,
-    datahub_page_module.data_products.urn,
+    local.domains_module,
+    local.data_products_module,
     datahub_page_module.runbook.urn,
   ]
 }

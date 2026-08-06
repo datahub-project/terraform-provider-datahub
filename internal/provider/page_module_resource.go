@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -107,14 +108,32 @@ func (r *pageModuleResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"created without an explicit URN, which is what the DataHub UI does -- so a module " +
 			"created in the UI has a UUID URN, while one created here is stable and predictable " +
 			"across a destroy and re-apply. That stability is what lets a page survive a rebuild.\n\n" +
-			"## Module types\n\n" +
-			"`type` is passed to DataHub unvalidated by the provider, deliberately: DataHub's " +
-			"module catalogue grows between releases (22 types in Cloud v2.0.3, 30 in v2.1.0), " +
-			"and a list compiled into the provider would make each new type unusable until the " +
-			"provider shipped a release. An unrecognised type is rejected by the server.\n\n" +
-			"Types taking no parameters include `DOMAINS`, `DATA_PRODUCTS`, `OWNED_ASSETS`, " +
-			"`ASSETS` and `PLATFORMS`. The five that take parameters each have a matching block " +
-			"under `params`.",
+			"## Only four module types can be created\n\n" +
+			"DataHub's `upsertPageModule` resolver accepts exactly four types, and each one " +
+			"requires its matching `params` block:\n\n" +
+			"| `type` | Required `params` block |\n" +
+			"|---|---|\n" +
+			"| `RICH_TEXT` | `rich_text` |\n" +
+			"| `LINK` | `link` |\n" +
+			"| `ASSET_COLLECTION` | `asset_collection` |\n" +
+			"| `HIERARCHY` | `hierarchy_view` |\n\n" +
+			"Anything else is refused with \"Attempted to create an unsupported module type\".\n\n" +
+			"## The other module types are DataHub's, and you reference them\n\n" +
+			"Types such as `DOMAINS`, `DATA_PRODUCTS`, `OWNED_ASSETS`, `ASSETS`, `PLATFORMS`, " +
+			"`OUTPUT_PORTS`, `CHILD_HIERARCHY` and `RELATED_TERMS` exist as **modules DataHub " +
+			"creates at bootstrap**, one per instance. Do not try to create them -- put their " +
+			"URNs straight into a `datahub_page_template` row instead:\n\n" +
+			"```terraform\n" +
+			"rows = [\n" +
+			"  { modules = [\"urn:li:dataHubPageModule:top_domains\"] },\n" +
+			"]\n" +
+			"```\n\n" +
+			"Bootstrapped URNs are stable and readable: `your_assets`, `top_domains`, `assets`, " +
+			"`output_ports`, `child_hierarchy`, `data_products`, `related_terms`, `platforms`.\n\n" +
+			"`type` itself is still sent to DataHub without the provider checking it against a " +
+			"fixed list, because the catalogue grows between releases (22 types in Cloud v2.0.3, " +
+			"30 in v2.1.0) and a compiled-in list would make each new type unusable until the " +
+			"provider shipped a release.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -265,6 +284,61 @@ func pageModuleParamsAttrTypes() map[string]attr.Type {
 		"asset_collection": types.ObjectType{AttrTypes: assetCollectionAttrTypes()},
 		"hierarchy_view":   types.ObjectType{AttrTypes: hierarchyViewAttrTypes()},
 		"agent_card":       types.ObjectType{AttrTypes: agentCardAttrTypes()},
+	}
+}
+
+// creatableModuleParams maps each type DataHub's upsertPageModule resolver will
+// create to the params block it requires. Anything absent from this map is
+// refused server-side with "Attempted to create an unsupported module type",
+// because it is one of the modules DataHub bootstraps rather than one users
+// author.
+//
+// The map is used only to raise a plan-time error for a *known* type whose
+// params are missing. It deliberately does not reject unknown types: the module
+// catalogue grows between releases, and if DataHub makes more types creatable a
+// compiled-in allowlist would block them. For those, the server's own message
+// is surfaced verbatim.
+var creatableModuleParams = map[string]string{
+	"RICH_TEXT":        "rich_text",
+	"LINK":             "link",
+	"ASSET_COLLECTION": "asset_collection",
+	"HIERARCHY":        "hierarchy_view",
+}
+
+// ValidateConfig catches the two mistakes this resource invites, before an apply
+// reaches DataHub and fails halfway through creating a page.
+func (r *pageModuleResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg pageModuleResourceModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Unknown is not absent: a type fed from a variable is unresolvable at
+	// validate time and must be skipped rather than treated as empty.
+	if cfg.Type.IsNull() || cfg.Type.IsUnknown() {
+		return
+	}
+	want, creatable := creatableModuleParams[strings.ToUpper(cfg.Type.ValueString())]
+	if !creatable {
+		return
+	}
+
+	if cfg.Params.IsNull() {
+		resp.Diagnostics.AddAttributeError(path.Root("params"),
+			fmt.Sprintf("params.%s is required for type %q", want, cfg.Type.ValueString()),
+			fmt.Sprintf("DataHub requires the %s parameters when creating a %s module, and "+
+				"rejects the write otherwise.", want, cfg.Type.ValueString()))
+		return
+	}
+	if cfg.Params.IsUnknown() {
+		return
+	}
+	if _, ok := nestedObject(cfg.Params, want); !ok {
+		resp.Diagnostics.AddAttributeError(path.Root("params").AtName(want),
+			fmt.Sprintf("params.%s is required for type %q", want, cfg.Type.ValueString()),
+			fmt.Sprintf("A %s module needs a params.%s block. DataHub rejects the write "+
+				"without it.", cfg.Type.ValueString(), want))
 	}
 }
 

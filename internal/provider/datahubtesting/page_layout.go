@@ -17,14 +17,26 @@ import (
 // provider will not manage a per-user page, not merely that the apply failed.
 var regexpPersonalScope = regexp.MustCompile(`PERSONAL scope is not supported`)
 
-// PageModuleLifecycleSteps creates a parameterless module, then a rich-text
-// module, checking the params round-trip.
+// PageModuleLifecycleSteps creates a link module, then updates it, checking the
+// params round-trip.
+//
+// LINK rather than a parameterless type such as DOMAINS, because DataHub's
+// upsertPageModule resolver will only create RICH_TEXT, LINK, ASSET_COLLECTION
+// and HIERARCHY -- everything else is a module DataHub bootstraps and is
+// rejected with "Attempted to create an unsupported module type". The mock
+// accepted DOMAINS happily; only a live run caught it.
 func PageModuleLifecycleSteps(moduleID string) []resource.TestStep {
 	bare := providerBlock + fmt.Sprintf(`
 resource "datahub_page_module" "test" {
   page_module_id = %q
   name           = "TF Test Module"
-  type           = "DOMAINS"
+  type           = "LINK"
+
+  params = {
+    link = {
+      link_url = "https://example.invalid/one"
+    }
+  }
 }
 `, moduleID)
 
@@ -32,11 +44,12 @@ resource "datahub_page_module" "test" {
 resource "datahub_page_module" "test" {
   page_module_id = %q
   name           = "TF Test Module Renamed"
-  type           = "DOMAINS"
+  type           = "LINK"
 
   params = {
-    rich_text = {
-      content = "hello"
+    link = {
+      link_url    = "https://example.invalid/two"
+      description = "updated"
     }
   }
 }
@@ -47,20 +60,22 @@ resource "datahub_page_module" "test" {
 			Config: bare,
 			Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr("datahub_page_module.test", "page_module_id", moduleID),
-				resource.TestCheckResourceAttr("datahub_page_module.test", "type", "DOMAINS"),
+				resource.TestCheckResourceAttr("datahub_page_module.test", "type", "LINK"),
 				resource.TestCheckResourceAttr("datahub_page_module.test", "scope", "GLOBAL"),
 				resource.TestCheckResourceAttr("datahub_page_module.test", "urn",
 					"urn:li:dataHubPageModule:"+moduleID),
-				// A module type that takes no parameters must read back with
-				// params null, not as an empty object, or every plan shows a diff.
-				resource.TestCheckNoResourceAttr("datahub_page_module.test", "params.rich_text.content"),
+				resource.TestCheckResourceAttr("datahub_page_module.test", "params.link.link_url",
+					"https://example.invalid/one"),
+				// An unset sibling within the same params block must read back
+				// null rather than empty, or every plan shows a diff.
+				resource.TestCheckNoResourceAttr("datahub_page_module.test", "params.link.description"),
 			),
 		},
 		{
 			Config: withParams,
 			Check: resource.ComposeAggregateTestCheckFunc(
 				resource.TestCheckResourceAttr("datahub_page_module.test", "name", "TF Test Module Renamed"),
-				resource.TestCheckResourceAttr("datahub_page_module.test", "params.rich_text.content", "hello"),
+				resource.TestCheckResourceAttr("datahub_page_module.test", "params.link.description", "updated"),
 			),
 		},
 	}
@@ -74,8 +89,14 @@ func PageModuleRejectsPersonalScopeSteps(moduleID string) []resource.TestStep {
 resource "datahub_page_module" "test" {
   page_module_id = %q
   name           = "TF Test Personal"
-  type           = "DOMAINS"
+  type           = "RICH_TEXT"
   scope          = "PERSONAL"
+
+  params = {
+    rich_text = {
+      content = "x"
+    }
+  }
 }
 `, moduleID)
 
@@ -96,19 +117,37 @@ func PageTemplateLifecycleSteps(prefix string) []resource.TestStep {
 resource "datahub_page_module" "a" {
   page_module_id = "%[1]s-a"
   name           = "A"
-  type           = "DOMAINS"
+  type           = "RICH_TEXT"
+
+  params = {
+    rich_text = {
+      content = "A"
+    }
+  }
 }
 
 resource "datahub_page_module" "b" {
   page_module_id = "%[1]s-b"
   name           = "B"
-  type           = "DATA_PRODUCTS"
+  type           = "LINK"
+
+  params = {
+    link = {
+      link_url = "https://example.invalid/b"
+    }
+  }
 }
 
 resource "datahub_page_module" "c" {
   page_module_id = "%[1]s-c"
   name           = "C"
-  type           = "OWNED_ASSETS"
+  type           = "RICH_TEXT"
+
+  params = {
+    rich_text = {
+      content = "C"
+    }
+  }
 }
 `, prefix)
 
@@ -195,17 +234,21 @@ resource "datahub_page_template" "test" {
 	return []resource.TestStep{
 		{
 			Config: cfg,
+			// Bootstrapped module URNs, not invented ones. DataHub validates that
+			// every module a template row references actually exists and rejects
+			// the upsert otherwise -- fabricated URNs passed against the mock and
+			// failed live. These eight ship with every instance.
 			ConfigVariables: config.Variables{
 				"rows": config.ListVariable(
 					config.ObjectVariable(map[string]config.Variable{
 						"modules": config.ListVariable(
-							config.StringVariable("urn:li:dataHubPageModule:" + prefix + "-x"),
+							config.StringVariable("urn:li:dataHubPageModule:your_assets"),
 						),
 					}),
 					config.ObjectVariable(map[string]config.Variable{
 						"modules": config.ListVariable(
-							config.StringVariable("urn:li:dataHubPageModule:"+prefix+"-y"),
-							config.StringVariable("urn:li:dataHubPageModule:"+prefix+"-z"),
+							config.StringVariable("urn:li:dataHubPageModule:top_domains"),
+							config.StringVariable("urn:li:dataHubPageModule:platforms"),
 						),
 					}),
 				),

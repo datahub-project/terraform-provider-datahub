@@ -43,6 +43,47 @@ func (s *mockServer) handleUpsertPageModule(w http.ResponseWriter, vars map[stri
 		return
 	}
 
+	// Enforce the schema's non-null fields rather than tolerating their absence.
+	//
+	// This mock originally accepted an omitted params and the provider omitted it
+	// for module types that take no parameters, so every parameterless module
+	// passed here and failed against a real DataHub with "Field 'params' has
+	// coerced Null value for NonNull type 'PageModuleParamsInput!'". The mock had
+	// been written from the client's behaviour instead of from module.graphql,
+	// so it validated the very assumption that was wrong. Mirroring the
+	// non-nullability is what makes this suite able to catch the bug it missed.
+	for _, field := range []string{"name", "type", "scope", "params"} {
+		if _, ok := input[field]; !ok {
+			writePageGraphQLError(w, "Variable 'input' has an invalid value: Field '"+field+
+				"' has coerced Null value for NonNull type")
+			return
+		}
+	}
+
+	// Mirror the resolver's creatable-type rule. UpsertPageModuleResolver accepts
+	// only these four and demands the matching params sub-object; anything else is
+	// a module DataHub bootstraps, refused with "Attempted to create an
+	// unsupported module type". Without this the mock happily created DOMAINS
+	// modules, so the suite, the registry snippets and the runnable example all
+	// passed while every one of them failed against a real DataHub.
+	creatable := map[string]string{
+		"RICH_TEXT":        "richTextParams",
+		"LINK":             "linkParams",
+		"ASSET_COLLECTION": "assetCollectionParams",
+		"HIERARCHY":        "hierarchyViewParams",
+	}
+	moduleType, _ := input["type"].(string)
+	wantParam, ok := creatable[strings.ToUpper(moduleType)]
+	if !ok {
+		writePageGraphQLError(w, "Attempted to create an unsupported module type.")
+		return
+	}
+	params, _ := input["params"].(map[string]any)
+	if _, present := params[wantParam]; !present {
+		writePageGraphQLError(w, "Did not provide "+wantParam+" for "+moduleType+" module")
+		return
+	}
+
 	m := mockPageModule{
 		URN:   urn,
 		ID:    strings.TrimPrefix(urn, "urn:li:dataHubPageModule:"),

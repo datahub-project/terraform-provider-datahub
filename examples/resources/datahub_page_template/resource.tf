@@ -33,9 +33,11 @@ resource "datahub_page_template" "home" {
       modules = [datahub_page_module.welcome.urn]
     },
     {
+      # DataHub's bootstrapped modules, referenced rather than created -- only
+      # RICH_TEXT, LINK, ASSET_COLLECTION and HIERARCHY can be authored.
       modules = [
-        datahub_page_module.domains.urn,
-        datahub_page_module.data_products.urn,
+        "urn:li:dataHubPageModule:top_domains",
+        "urn:li:dataHubPageModule:data_products",
       ]
     },
   ]
@@ -51,16 +53,4 @@ resource "datahub_page_module" "welcome" {
       content = "Welcome to the data catalog."
     }
   }
-}
-
-resource "datahub_page_module" "domains" {
-  page_module_id = "org-home-domains"
-  name           = "Domains"
-  type           = "DOMAINS"
-}
-
-resource "datahub_page_module" "data_products" {
-  page_module_id = "org-home-data-products"
-  name           = "Data products"
-  type           = "DATA_PRODUCTS"
 }

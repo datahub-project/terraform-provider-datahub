@@ -39,17 +39,14 @@ resource "datahub_page_module" "welcome" {
   }
 }
 
-# Most module types need no parameters: they render a standard DataHub view.
-resource "datahub_page_module" "domains" {
-  page_module_id = "tf-example-homepage-domains"
-  name           = "TF Example Homepage - Domains"
-  type           = "DOMAINS"
-}
-
-resource "datahub_page_module" "data_products" {
-  page_module_id = "tf-example-homepage-data-products"
-  name           = "TF Example Homepage - Data Products"
-  type           = "DATA_PRODUCTS"
+# The standard DataHub views -- domains, data products, your assets, platforms
+# and so on -- are NOT created here. DataHub bootstraps one of each per instance
+# and its upsertPageModule resolver refuses to create them: only RICH_TEXT,
+# LINK, ASSET_COLLECTION and HIERARCHY can be authored. Reference the
+# bootstrapped URNs in the template rows below instead.
+locals {
+  domains_module       = "urn:li:dataHubPageModule:top_domains"
+  data_products_module = "urn:li:dataHubPageModule:data_products"
 }
 
 # A link module pointing wherever your team's runbook lives.
@@ -92,8 +89,8 @@ resource "datahub_page_template" "home" {
     },
     {
       modules = [
-        datahub_page_module.domains.urn,
-        datahub_page_module.data_products.urn,
+        local.domains_module,
+        local.data_products_module,
       ]
     },
     {

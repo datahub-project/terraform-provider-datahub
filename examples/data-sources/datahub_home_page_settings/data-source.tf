@@ -10,15 +10,10 @@ resource "datahub_page_template" "home" {
 
   rows = [
     {
-      modules = [datahub_page_module.domains.urn]
+      # A module DataHub bootstraps; referenced, not created.
+      modules = ["urn:li:dataHubPageModule:top_domains"]
     },
   ]
-}
-
-resource "datahub_page_module" "domains" {
-  page_module_id = "home-settings-domains"
-  name           = "Domains"
-  type           = "DOMAINS"
 }
 
 output "current_home_page_template" {

@@ -154,14 +154,18 @@ mutation upsertPageModule($input: UpsertPageModuleInput!) {
   }
 }`
 
+	// params is PageModuleParamsInput! -- non-null in the schema, even though the
+	// majority of module types (DOMAINS, DATA_PRODUCTS, OWNED_ASSETS, ASSETS,
+	// PLATFORMS ...) take no parameters at all. Omitting it fails validation with
+	// "Field 'params' has coerced Null value for NonNull type
+	// 'PageModuleParamsInput!'", so an empty object is sent instead. Every field
+	// inside it is optional, so {} is valid.
 	input := map[string]any{
-		"urn":   PageModuleURN(id),
-		"name":  in.Name,
-		"type":  in.Type,
-		"scope": in.Scope,
-	}
-	if params := in.Params.toGraphQL(); params != nil {
-		input["params"] = params
+		"urn":    PageModuleURN(id),
+		"name":   in.Name,
+		"type":   in.Type,
+		"scope":  in.Scope,
+		"params": in.Params.toGraphQL(),
 	}
 
 	body := map[string]any{
@@ -182,8 +186,11 @@ mutation upsertPageModule($input: UpsertPageModuleInput!) {
 	return resp.Data.UpsertPageModule.URN, nil
 }
 
-// toGraphQL renders the params into the PageModuleParamsInput shape, returning
-// nil when the module type takes no parameters.
+// toGraphQL renders the params into the PageModuleParamsInput shape.
+//
+// Returns an empty map, never nil: the field is non-null in the schema and the
+// server rejects an omitted or null value even for module types that have no
+// parameters.
 func (p PageModuleParams) toGraphQL() map[string]any {
 	out := map[string]any{}
 	if p.Link != nil {
@@ -200,9 +207,6 @@ func (p PageModuleParams) toGraphQL() map[string]any {
 	}
 	if p.AgentCard != nil {
 		out["agentCardParams"] = p.AgentCard
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }

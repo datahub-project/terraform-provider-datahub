@@ -8,9 +8,24 @@ description: |-
   Modules are separate resources rather than blocks inside a template because DataHub addresses them independently and one module can appear on several templates. Reference a module's urn from a template's rows and Terraform orders the two correctly with no depends_on.
   Naming
   page_module_id becomes the URN suffix (urn:li:dataHubPageModule:<page_module_id>) and the provider always sends it. DataHub mints a random UUID when a module is created without an explicit URN, which is what the DataHub UI does -- so a module created in the UI has a UUID URN, while one created here is stable and predictable across a destroy and re-apply. That stability is what lets a page survive a rebuild.
-  Module types
-  type is passed to DataHub unvalidated by the provider, deliberately: DataHub's module catalogue grows between releases (22 types in Cloud v2.0.3, 30 in v2.1.0), and a list compiled into the provider would make each new type unusable until the provider shipped a release. An unrecognised type is rejected by the server.
-  Types taking no parameters include DOMAINS, DATA_PRODUCTS, OWNED_ASSETS, ASSETS and PLATFORMS. The five that take parameters each have a matching block under params.
+  Only four module types can be created
+  DataHub's upsertPageModule resolver accepts exactly four types, and each one requires its matching params block:
+  | `type` | Required `params` block |
+  |---|---|
+  | `RICH_TEXT` | `rich_text` |
+  | `LINK` | `link` |
+  | `ASSET_COLLECTION` | `asset_collection` |
+  | `HIERARCHY` | `hierarchy_view` |
+  Anything else is refused with "Attempted to create an unsupported module type".
+  The other module types are DataHub's, and you reference them
+  Types such as DOMAINS, DATA_PRODUCTS, OWNED_ASSETS, ASSETS, PLATFORMS, OUTPUT_PORTS, CHILD_HIERARCHY and RELATED_TERMS exist as modules DataHub creates at bootstrap, one per instance. Do not try to create them -- put their URNs straight into a datahub_page_template row instead:
+  
+  rows = [
+    { modules = ["urn:li:dataHubPageModule:top_domains"] },
+  ]
+  
+  Bootstrapped URNs are stable and readable: your_assets, top_domains, assets, output_ports, child_hierarchy, data_products, related_terms, platforms.
+  type itself is still sent to DataHub without the provider checking it against a fixed list, because the catalogue grows between releases (22 types in Cloud v2.0.3, 30 in v2.1.0) and a compiled-in list would make each new type unusable until the provider shipped a release.
 ---
 
 # datahub_page_module (Resource)
@@ -25,11 +40,32 @@ Modules are separate resources rather than blocks inside a template because Data
 
 `page_module_id` becomes the URN suffix (`urn:li:dataHubPageModule:<page_module_id>`) and the provider always sends it. DataHub mints a random UUID when a module is created without an explicit URN, which is what the DataHub UI does -- so a module created in the UI has a UUID URN, while one created here is stable and predictable across a destroy and re-apply. That stability is what lets a page survive a rebuild.
 
-## Module types
+## Only four module types can be created
 
-`type` is passed to DataHub unvalidated by the provider, deliberately: DataHub's module catalogue grows between releases (22 types in Cloud v2.0.3, 30 in v2.1.0), and a list compiled into the provider would make each new type unusable until the provider shipped a release. An unrecognised type is rejected by the server.
+DataHub's `upsertPageModule` resolver accepts exactly four types, and each one requires its matching `params` block:
 
-Types taking no parameters include `DOMAINS`, `DATA_PRODUCTS`, `OWNED_ASSETS`, `ASSETS` and `PLATFORMS`. The five that take parameters each have a matching block under `params`.
+| `type` | Required `params` block |
+|---|---|
+| `RICH_TEXT` | `rich_text` |
+| `LINK` | `link` |
+| `ASSET_COLLECTION` | `asset_collection` |
+| `HIERARCHY` | `hierarchy_view` |
+
+Anything else is refused with "Attempted to create an unsupported module type".
+
+## The other module types are DataHub's, and you reference them
+
+Types such as `DOMAINS`, `DATA_PRODUCTS`, `OWNED_ASSETS`, `ASSETS`, `PLATFORMS`, `OUTPUT_PORTS`, `CHILD_HIERARCHY` and `RELATED_TERMS` exist as **modules DataHub creates at bootstrap**, one per instance. Do not try to create them -- put their URNs straight into a `datahub_page_template` row instead:
+
+```terraform
+rows = [
+  { modules = ["urn:li:dataHubPageModule:top_domains"] },
+]
+```
+
+Bootstrapped URNs are stable and readable: `your_assets`, `top_domains`, `assets`, `output_ports`, `child_hierarchy`, `data_products`, `related_terms`, `platforms`.
+
+`type` itself is still sent to DataHub without the provider checking it against a fixed list, because the catalogue grows between releases (22 types in Cloud v2.0.3, 30 in v2.1.0) and a compiled-in list would make each new type unusable until the provider shipped a release.
 
 ## Example Usage
 
@@ -61,12 +97,14 @@ resource "datahub_page_module" "runbook" {
   }
 }
 
-# Many module types need no parameters at all -- they render a standard view.
-resource "datahub_page_module" "domains" {
-  page_module_id = "browse-domains"
-  name           = "Domains"
-  type           = "DOMAINS"
-}
+# DataHub's standard views (DOMAINS, DATA_PRODUCTS, OWNED_ASSETS, PLATFORMS ...)
+# cannot be created: DataHub bootstraps one of each per instance and refuses to
+# create more. Reference their URNs in a template row instead:
+#
+#   rows = [{ modules = ["urn:li:dataHubPageModule:top_domains"] }]
+#
+# Only RICH_TEXT, LINK, ASSET_COLLECTION and HIERARCHY can be authored here, and
+# each requires its matching params block.
 
 # A hierarchy module rooted on specific domains. Referencing the domain
 # resource's urn rather than hardcoding a string gives Terraform the dependency

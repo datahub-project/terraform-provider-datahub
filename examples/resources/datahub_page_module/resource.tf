@@ -25,12 +25,14 @@ resource "datahub_page_module" "runbook" {
   }
 }
 
-# Many module types need no parameters at all -- they render a standard view.
-resource "datahub_page_module" "domains" {
-  page_module_id = "browse-domains"
-  name           = "Domains"
-  type           = "DOMAINS"
-}
+# DataHub's standard views (DOMAINS, DATA_PRODUCTS, OWNED_ASSETS, PLATFORMS ...)
+# cannot be created: DataHub bootstraps one of each per instance and refuses to
+# create more. Reference their URNs in a template row instead:
+#
+#   rows = [{ modules = ["urn:li:dataHubPageModule:top_domains"] }]
+#
+# Only RICH_TEXT, LINK, ASSET_COLLECTION and HIERARCHY can be authored here, and
+# each requires its matching params block.
 
 # A hierarchy module rooted on specific domains. Referencing the domain
 # resource's urn rather than hardcoding a string gives Terraform the dependency
