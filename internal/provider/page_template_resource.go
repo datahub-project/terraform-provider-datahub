@@ -290,13 +290,56 @@ func (r *pageTemplateResource) Read(ctx context.Context, req resource.ReadReques
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
+// Delete removes the template, unless it is the one the instance renders as
+// everyone's home page.
+//
+// The guard exists because this is the only operation in the feature that can
+// break the instance for every user rather than just the operator. DataHub
+// bootstraps a default template and provides no API to point at a different one
+// (see docs/design/provider-home-page-layout.md), so deleting the template the
+// pointer names leaves the organisation with no home page and a dangling
+// reference. The documented way to manage the home page is to adopt that
+// template, which makes an ordinary `terraform destroy` the natural route into
+// this failure -- a docs warning alone is weak protection against the default
+// behaviour of a core Terraform verb.
+//
+// The check is deliberately best-effort. If the pointer cannot be read -- a
+// restricted token, an instance without the settings aspect -- the delete
+// proceeds with a warning rather than failing, because a guard that makes the
+// resource permanently undeletable when an unrelated read fails is worse than
+// the hazard it prevents.
 func (r *pageTemplateResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state pageTemplateResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.DeletePageTemplate(ctx, state.URN.ValueString()); err != nil {
+
+	urn := state.URN.ValueString()
+
+	defaultURN, err := r.client.GetDefaultHomePageTemplateURN(ctx)
+	switch {
+	case err != nil:
+		resp.Diagnostics.AddWarning("Could not confirm whether this is the default home page template",
+			fmt.Sprintf("Reading the organisation's default template pointer failed, so the "+
+				"safety check was skipped and the delete proceeded: %s\n\n"+
+				"If %s was the default home page template, the organisation now has no home "+
+				"page. Re-create the template to restore it.", err, urn))
+	case defaultURN != "" && defaultURN == urn:
+		resp.Diagnostics.AddError("Refusing to delete the organisation's default home page template",
+			fmt.Sprintf("%s is the template DataHub renders as the home page for every user in "+
+				"this organisation, and DataHub provides no way to point at a different one. "+
+				"Deleting it would leave the organisation with no home page.\n\n"+
+				"To stop managing this template without destroying it, remove it from state "+
+				"instead of destroying it:\n\n"+
+				"    terraform state rm datahub_page_template.<name>\n\n"+
+				"That leaves the layout exactly as it is and hands it back to the DataHub UI. "+
+				"If you genuinely intend to remove the home page, delete the template in the "+
+				"DataHub UI.", urn))
+		return
+	}
+
+	if err := r.client.DeletePageTemplate(ctx, urn); err != nil {
 		resp.Diagnostics.AddError("Unable to delete page template", err.Error())
 	}
 }

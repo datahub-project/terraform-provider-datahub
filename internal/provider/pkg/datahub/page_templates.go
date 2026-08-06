@@ -145,6 +145,61 @@ mutation upsertPageTemplate($input: UpsertPageTemplateInput!) {
 	return resp.Data.UpsertPageTemplate.URN, nil
 }
 
+// globalSettingsHomePageEntity decodes just the home-page pointer out of the
+// settings singleton. Everything else in globalSettingsInfo is ignored rather
+// than modelled: this is a read, so unmodelled sections are simply not looked
+// at, and nothing here ever writes the aspect back.
+type globalSettingsHomePageEntity struct {
+	GlobalSettingsInfo *struct {
+		Value struct {
+			HomePage *struct {
+				DefaultTemplate string `json:"defaultTemplate"`
+			} `json:"homePage"`
+		} `json:"value"`
+	} `json:"globalSettingsInfo"`
+}
+
+// GetDefaultHomePageTemplateURN returns the template URN the instance currently
+// renders as everyone's home page, or "" when the pointer is unset.
+//
+// Read-only, and used only to protect a destroy: DataHub offers no way to move
+// this pointer, so a delete that removes the template it names leaves the
+// instance with no home page at all. See docs/design/provider-home-page-layout.md.
+func (c *Client) GetDefaultHomePageTemplateURN(ctx context.Context) (string, error) {
+	if c == nil {
+		return "", errors.New("client is nil")
+	}
+
+	path := fmt.Sprintf("/openapi/v3/entity/%s/%s", globalSettingsEntityPath, GlobalSettingsURN)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return "", err
+	}
+
+	res, err := c.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound {
+		return "", nil
+	}
+	if res.StatusCode >= http.StatusBadRequest {
+		respBody, _ := io.ReadAll(res.Body)
+		return "", fmt.Errorf("unexpected HTTP %d reading global settings: %s", res.StatusCode, respBody)
+	}
+
+	var entity globalSettingsHomePageEntity
+	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
+		return "", fmt.Errorf("parsing global settings response: %w", err)
+	}
+	if entity.GlobalSettingsInfo == nil || entity.GlobalSettingsInfo.Value.HomePage == nil {
+		return "", nil
+	}
+	return entity.GlobalSettingsInfo.Value.HomePage.DefaultTemplate, nil
+}
+
 // GetPageTemplateByURN reads a page template through the OpenAPI v3 entity
 // endpoint. Returns (nil, nil) when the template does not exist.
 func (c *Client) GetPageTemplateByURN(ctx context.Context, urn string) (*PageTemplate, error) {
