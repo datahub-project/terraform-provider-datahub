@@ -134,9 +134,18 @@ func (r *pageTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 			"Terraform -- in the DataHub UI, for instance -- is therefore removed on the next " +
 			"apply. Manage the full layout here, or do not manage it here at all.\n\n" +
 			"## Making it the home page\n\n" +
-			"Creating a `GLOBAL` template does not by itself make it the page users see. That " +
-			"pointer lives on DataHub's global settings singleton. See " +
-			"`datahub_home_page_settings`.\n\n" +
+			"Creating a new `GLOBAL` template does not make it the page users see, and there is " +
+			"no API to repoint DataHub at a different one. Instead, **manage the template that " +
+			"is already the default.** Every DataHub instance ships one, seeded as " +
+			"`urn:li:dataHubPageTemplate:home_default_1`, and editing it in place is exactly what " +
+			"the DataHub UI does. Set `page_template_id = \"home_default_1\"` and this resource " +
+			"overwrites that layout.\n\n" +
+			"Confirm the id on your instance first, since it is a bootstrap value rather than a " +
+			"guarantee: read `homePage.defaultTemplate` from " +
+			"`/openapi/v3/entity/globalsettings/urn:li:globalSettings:0`.\n\n" +
+			"~> **Destroying the default template removes your home page.** It deletes the " +
+			"entity the instance points at, leaving that pointer dangling. Prefer " +
+			"`terraform state rm` over `destroy` if you want to stop managing it.\n\n" +
 			"## Ordering\n\n" +
 			"Reference each module's `urn` rather than writing the URN string by hand. Terraform " +
 			"then knows the module must exist before the template that lays it out, and no " +

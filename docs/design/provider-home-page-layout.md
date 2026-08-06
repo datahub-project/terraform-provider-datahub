@@ -1,4 +1,4 @@
-# Home-page layout: `datahub_page_module`, `datahub_page_template`, `datahub_home_page_settings`
+# Home-page layout: `datahub_page_module` and `datahub_page_template`
 
 Maintainer-facing design for managing DataHub's home-page layout declaratively. Category 13 of `docs/roadmap.md` established that the `GLOBAL` half of this feature is in scope and OSS-stable; this document is the design that follows, with every load-bearing claim probed against a live instance and the server source on 2026-08-06.
 
@@ -43,17 +43,47 @@ if (urn != null) {
 
 Consequence to document for users: a template created in the DataHub UI has a UUID URN. It can be imported, but its id cannot be changed, so importing one means living with the UUID as the Terraform id. Prefer creating from Terraform.
 
-## The pointer, and a documented exception to the write rule
+## The default template is edited in place, not pointed at
 
-The provider's standing rule is GraphQL for Create/Update/Delete, because OpenAPI writes bypass service-layer business logic. `datahub_home_page_settings` cannot follow it: **there is no GraphQL write for `defaultTemplate` at all.** The choice is an OpenAPI v3 aspect write or no resource.
+**There is no third resource, and nothing needs to write `homePage.defaultTemplate`.** The pointer is bootstrap-only by design, and DataHub's own UI never moves it.
 
-Take the OpenAPI write, and record the reasoning: the field is a bare URN pointer on a settings aspect with no service-layer behaviour behind it -- no encryption, no derived aspects, no side effects of the kind that motivated the rule. This is the same shape as the `assertionInferenceAdjustmentRule` question parked in the roadmap, resolved in the affirmative here because the field is trivially simple.
+Every instance ships a well-known default template and a pointer already aimed at it:
+
+- `metadata-service/war/src/main/resources/boot/global_settings.json` seeds `homePage.defaultTemplate` as `urn:li:dataHubPageTemplate:home_default_1`.
+- `metadata-service/configuration/src/main/resources/bootstrap_mcps/page-templates.yaml` seeds `home_default_1` itself, `scope: GLOBAL`, `surfaceType: HOME_PAGE`, with rows over the bootstrapped modules `your_assets`, `top_domains` and `platforms`.
+- The Cloud UI's "edit default template" flow (`useTemplateOperations.ts`) calls `upsertPageTemplate` with `scope: GLOBAL` on **that same template**. It edits the default; it does not create a template and repoint anything.
+
+So the model is a fixed default template you *edit*, not a pointer you *move*. Terraform does the same thing the UI does:
+
+```hcl
+resource "datahub_page_template" "home" {
+  page_template_id = "home_default_1"
+  rows             = [...]
+}
+```
+
+The always-send-URN upsert overwrites the bootstrapped default in place. No aspect write, no read-modify-write, no clobber window, and the demo use case works with the two resources already built.
+
+Two caveats replace the ones this section used to carry, and both are milder:
+
+- **`home_default_1` is a bootstrap constant, not a documented API guarantee.** It is stable in the OSS bootstrap file and identical on Cloud, so depending on it is reasonable -- but it is an implementation detail. Read it from `globalSettingsInfo.homePage.defaultTemplate` as a preflight rather than hardcoding it in a resource, and document that a user managing the default template is adopting a bootstrapped entity.
+- **Delete is now the sharp edge.** `terraform destroy` on a template whose id is `home_default_1` removes the instance's default home page and leaves the bootstrapped pointer dangling. That is a worse outcome than the usual "resource goes away". Decide it explicitly: most likely Delete should restore the bootstrap layout rather than delete the entity, or refuse with a diagnostic when the template is the current default. Do not let it fall out of the generic delete path by accident.
 
 **`updateGlobalSettings` will not undo this write.** Checked on fork HEAD `442d28a7fb2` before relying on it: that mutation fetches the existing aspect and applies only the sections named in its input, so `homePage` survives every SSO, notification, MCP or AI-settings write. Had it rebuilt the aspect from its input instead -- the way `updatePolicy` does, which is why OSS-1216 needed a guard -- this resource would have been silently undone by any other settings resource in the family. The wider contract for sharing this aspect, including the concurrency hazard that follows from every write being a read-modify-write, is in `provider-org-settings.md`.
 
-### Probed 2026-08-06, and the answer inverts the plan: `PATCH` is impossible, `POST` is destructive
+## How this was originally designed, and why that was wrong
 
-Both halves of the recommendation below were wrong, and only a live probe found it. Verified against a local OSS Quickstart running **v1.7.0** (`make quickstart-up` reused an existing container set rather than the pinned `v1.5.0.6`, so treat the version as v1.7.0, not the Makefile default).
+Retained deliberately. The first version of this document specified a third resource, `datahub_home_page_settings`, whose whole job was to write `homePage.defaultTemplate`. Two rounds of probing dismantled it, and the wrong turn is worth keeping because the reasoning that produced it looks sound and would be reproduced by the next person.
+
+**The original design:** create a `GLOBAL` template, then set the org-wide pointer at it, the way you would wire up any "which one is active" setting. That framing came from reading the GraphQL surface and finding no mutation for the pointer -- concluding a gap in the API, and designing around it.
+
+**Why it was wrong: the pointer is not meant to move.** DataHub bootstraps `home_default_1` and aims the pointer at it on every instance, and its own UI edits that template in place. There was never a gap to design around. The mistake was inferring intent from the *absence* of a mutation, when the absence was itself the design: no mutation exists because moving the pointer is not an operation DataHub performs. **Reading what the product's own client does would have settled it in one grep, and that is the cheaper check to run first** -- before probing an endpoint, before designing a resource around a supposed gap.
+
+The two probes below are kept because both findings are independently true and both are traps for anyone tempted to write a settings aspect directly. The first is also an upstream bug worth filing on its own merits.
+
+### Probe 1: `PATCH` on this aspect is impossible
+
+Verified against a local OSS Quickstart running **v1.7.0** (`make quickstart-up` reused an existing container set rather than the pinned `v1.5.0.6`, so treat the version as v1.7.0, not the Makefile default).
 
 **`PATCH` returns HTTP 500 for this aspect, and always will.** The endpoint is advertised in the served OpenAPI spec for every aspect of every entity, but the implementation dispatches through `AspectTemplateEngine`, which holds a registry of per-aspect patch templates and dereferences the match without a null check:
 
@@ -65,27 +95,25 @@ java.lang.NullPointerException: Cannot invoke "Template.applyPatch(...)" because
 
 Only about two dozen aspects have templates -- `ownership`, `globalTags`, `glossaryTerms`, `domains`, `structuredProperties`, `status`, `upstreamLineage`, and a scattering of `*Info` / `*Properties` records. **Every one of them is asset enrichment; not one is a settings aspect.** So `globalSettingsInfo` cannot be patched, and the generalisation matters well beyond this resource: **an aspect appearing with `PATCH` in the served spec is not evidence that patching it works.** The spec is generated from the entity registry and advertises the verb uniformly; the runtime supports it selectively, and the failure is a 500 rather than a 405 or a clear message.
 
-**`POST` replaces the entire aspect.** Confirmed by writing only `homePage` and re-reading: `docPropagation` and `views` were both gone. Note also that `POST` requires `?createIfNotExists=false` to touch an aspect that already exists -- the default refuses with a 400, which is easy to misread as a malformed body.
+### Probe 2: `POST` on this aspect replaces all of it
 
-**So the only implementable shape is a client-side read-modify-write**, and it carries three consequences the plan has to absorb:
+Confirmed by writing only `homePage` and re-reading: `docPropagation` and `views` were both gone. `POST` also requires `?createIfNotExists=false` to touch an aspect that already exists -- the default refuses with a 400, which is easy to misread as a malformed body.
 
-1. **Read the aspect as opaque JSON, never as a typed struct.** The provider must GET `globalSettingsInfo`, splice in `homePage.defaultTemplate`, and POST the whole document back. If it decoded into a Go struct first, every field the struct did not model would be silently destroyed on write -- which is precisely the `updatePolicy` / `actors.roles` failure this codebase already carries a guard for, except self-inflicted and affecting SSO and notification configuration. Keep the untouched sections as raw `json.RawMessage` or `map[string]any` and re-emit them byte-for-byte.
-2. **Serialising these writes stops being advisable and becomes required.** Two concurrent read-modify-writes against one aspect lose one of the two updates outright.
-3. **There is an unavoidable clobber window against other clients.** A change made in the DataHub UI between the provider's read and its write is lost. Nothing in the API offers a compare-and-set, so this must be documented rather than solved.
+`globalSettingsInfo` is one aspect holding SSO, notifications, integrations, MCP servers, views, documentation-AI, the four AI groups, `visual` and `homePage`. So **any** resource that owns one section and writes it with `POST` wipes every other section on the instance. Restoring the probe's damage by reading the whole aspect, splicing one field and posting it back worked, so a read-modify-write is mechanically sound -- but it is the shape of write that has to be got exactly right, and this resource no longer needs it.
 
-Restoring the probe's damage via the same read-modify-write worked, which is the one piece of good news: the mechanism is sound, it is only unsafe when it is careless.
+**What this means for anything that does still need an aspect write** (`applications` and `maintenanceWindow` are the current candidates, both lacking a mutation): read the aspect as **opaque JSON, never a typed struct.** Decoding into Go before writing back silently destroys every field the struct does not model -- the `updatePolicy` / `actors.roles` failure shape, self-inflicted, landing on SSO and notification configuration. Keep untouched sections as `json.RawMessage` or `map[string]any` and re-emit them unchanged. And serialise such writes: two concurrent read-modify-writes against one aspect lose one update outright, with no compare-and-set available to detect it.
 
-**The original recommendation, retained for the reasoning it still carries: use `PATCH`, never `POST`.** `globalSettingsInfo` is a single aspect holding SSO, notifications, integrations, MCP servers, views, documentation-AI and the four AI groups. `POST` replaces the whole aspect, so a resource that owned only `homePage` and wrote via `POST` would silently wipe every unrelated setting on the instance. `PATCH` is what makes a single-field write safe. This is the identical trap `docs/design/provider-org-settings.md` identified for the `visual` sub-object, and it must be resolved the same way -- by writing only the field, and by verifying against a live instance that neighbouring settings survive the write.
+**`updateGlobalSettings` does not undo an aspect write**, checked on fork HEAD `442d28a7fb2`: it fetches the existing aspect and applies only the sections named in its input, so unrelated sections survive. Worth having established, because the opposite design exists in the same server -- `updatePolicy` rebuilds from input and drops `actors.roles` -- and if this mutation behaved that way, every settings resource would silently undo the others. The wider contract is in `provider-org-settings.md`.
 
 ## Resources
 
-Three, following the granularity rule (group by administrative domain, not by UI page and not by mutation):
+**Two**, not the three this document originally specified:
 
 **`datahub_page_module`** -- `page_module_id` (required), `name`, `type`, `scope`, `params`. One resource per module. Modules are referenced by templates, so they are separate resources rather than nested blocks: a module is independently addressable in the API, can be shared between templates, and Terraform's graph then orders module-before-template from the reference alone.
 
 **`datahub_page_template`** -- `page_template_id` (required), `scope`, `surface_type`, and `rows`, an ordered list where each row holds an ordered list of module URNs.
 
-**`datahub_home_page_settings`** -- singleton on `urn:li:globalSettings:0`, one attribute `default_template_urn`. Update-only lifecycle, no create, no entity delete, exactly as `datahub_organization_display_preferences` established.
+~~**`datahub_home_page_settings`**~~ -- **dropped.** Nothing needs to write the pointer; managing `home_default_1` with `datahub_page_template` is what the DataHub UI itself does. See "The default template is edited in place".
 
 Plus data sources for template and module lookup, and the usual plural enumerator if it is cheap.
 
@@ -117,11 +145,14 @@ Support `HOME_PAGE` first. `ASSET_SUMMARY` and `CONTEXT_DOCUMENTS` are different
 
 ## Open questions to resolve during implementation
 
-1. **Does `PATCH` on `globalsettingsinfo` merge or replace?** The whole safety of `datahub_home_page_settings` rests on it. Probe by reading the aspect, patching only `homePage.defaultTemplate`, and re-reading to confirm SSO/notifications/MCP survived. Do this before writing the resource, not after.
-2. **Can `defaultTemplate` be cleared?** Decides whether Delete clears the pointer or is a documented no-op with a warning. Same question `datahub_organization_display_preferences` had to answer.
-3. **Does a template survive its modules being deleted?** If a module delete leaves a dangling reference in a template's rows, destroy ordering matters and the provider may need the same kind of teardown-ordering care that structured-property defaults needed.
-4. **What does the API do with an empty `rows` list?** A template with no rows may be rejected, or may render an empty page.
-5. **Live OSS verification** against a Quickstart, per the OSS checklist, before claiming `ossAndCloudBadge`.
+~~1. **Does `PATCH` on `globalsettingsinfo` merge or replace?**~~ **Answered: neither.** `PATCH` is unavailable for this aspect (probe 1) and `POST` replaces all of it (probe 2). Moot for this feature now that no pointer write is needed.
+
+~~2. **Can `defaultTemplate` be cleared?**~~ **Moot** -- nothing writes the pointer.
+
+3. **Does a template survive its modules being deleted?** If a module delete leaves a dangling URN in a template's rows, destroy ordering matters and the provider may need the teardown-ordering care that structured-property defaults needed. Untested; the mock cannot answer it because it stores exactly what it is given.
+4. **What does the API do with an empty `rows` list?** Covered by a mock test, not yet against a live server. A template with no rows may be rejected outright, or may render an empty page.
+5. **What should Delete do when the template is the instance default?** Replaces the two struck-out questions as the sharp edge. Destroying `home_default_1` removes the instance's home page and leaves the bootstrapped pointer dangling. Candidates: restore the bootstrap layout, refuse with a diagnostic, or delete and warn. Needs a decision plus a live check on whether the bootstrap step recreates the entity on restart (`changeType: CREATE` suggests it would, but only on restart, leaving a window with no home page).
+6. **Live OSS verification** against a Quickstart, per the OSS checklist, before claiming `ossAndCloudBadge`.
 
 ## Execution phases
 
@@ -130,7 +161,11 @@ Ordered so that each phase is independently useful and the riskiest unknown is s
 1. **Probe phase.** Answer open questions 1, 2 and 4. Question 1 gates the third resource entirely. **Probe on a local OSS Quickstart, not on demo.acryl.io:** the questions concern `globalSettingsInfo`, whose other sections hold that instance's SSO, notification and integration configuration, and a mis-shaped `POST` there would break a shared demo environment rather than a disposable container. The aspect and both PDLs are OSS, so a Quickstart answers the merge question faithfully. Only the Cloud-only sections would need a Cloud probe, and those are out of scope for this resource.
 2. **`datahub_page_module`** plus data source. Self-contained, no nesting, deterministic URN, exercises the string-typed `type` decision.
 3. **`datahub_page_template`** plus data source. The nested-attribute work, including the non-literal test.
-4. **`datahub_home_page_settings`.** Only if question 1 resolves safely; otherwise stop and record why, and the feature ships with a documented manual step to set the default.
-5. **A runnable example** assembling a small home page over entities it creates -- which is also the demo-estate pattern, and the thing that proves the three resources compose.
+4. ~~**`datahub_home_page_settings`**~~ **Rescoped 2026-08-06 -- no third resource. Phase 4 is now default-template adoption**, which is smaller and safer than what it replaced:
+   - **Delete semantics for the instance default** (open question 5). The only genuinely risky part of this feature, and the one thing that could leave a user without a home page.
+   - **Preflight-read the pointer** rather than hardcoding `home_default_1`, so a user learns which template is actually the default on their instance instead of the provider assuming.
+   - **Document the adoption pattern**: managing the default template means adopting a bootstrapped entity, with an `import` block as the tidy route and the delete caveat stated plainly.
+   - **Live-verify the in-place overwrite** on a Quickstart: upsert `home_default_1` with our own rows and confirm the rendered home page changes, which is the end-to-end claim the whole feature rests on and which no mock can establish.
+5. **A runnable example** assembling a small home page over entities it creates -- the demo-estate pattern, and the thing that proves the resources compose.
 
-**One item enters this plan from the wider family.** `datahub_home_page_settings` is the second resource to write `globalSettingsInfo` (after `datahub_organization_display_preferences`), so it is the point at which the concurrency hazard in `provider-org-settings.md` becomes real: every write to that aspect is a read-modify-write, and two settings resources applied concurrently can silently lose one section. Serialise `globalSettingsInfo` writes behind a client-side mutex as part of phase 4, rather than leaving it for the SSO and notification resources to discover. It is a few lines, invisible to users, and these are singleton writes so it costs no meaningful parallelism.
+**And one item leaves this plan.** The client-side mutex for `globalSettingsInfo` writes is no longer needed here, because this feature no longer writes that aspect at all. It remains a real requirement for the wider settings family and is recorded in `provider-org-settings.md`; the first resource that actually writes a section of that aspect owns it. Worth noting that dropping the third resource is what removed the concurrency hazard, the opaque-JSON requirement and the clobber window in one go -- a fair sign the rescope is the right shape rather than a convenient one.

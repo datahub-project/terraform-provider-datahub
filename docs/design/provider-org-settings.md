@@ -141,10 +141,14 @@ That matters because the opposite design exists in this same server and has alre
 |---|---|---|
 | `integrations`, `notifications`, `sso`, `mcpSettings`, `documentationAi`, `aiAssistant`, `aiPlugins`, `aiContext` | `updateGlobalSettings` | GraphQL, merges per section. The normal rule applies; no exception needed. |
 | `visual` | `updateOrganizationDisplayPreferences` | Dedicated mutation, already shipped as `datahub_organization_display_preferences`. |
-| `homePage` | **OpenAPI v3 `PATCH`** on `/openapi/v3/entity/globalsettings/{urn}/globalsettingsinfo` | No GraphQL write exists at all -- see `provider-home-page-layout.md`. `POST` would replace the whole aspect; only `PATCH` is safe. |
-| `applications`, `maintenanceWindow` | none identified | Present on the aspect but absent from `UpdateGlobalSettingsInput`. Same situation as `homePage`; probe before designing. |
+| `homePage` | **nothing writes it -- by design** | Not a gap. The pointer is bootstrap-seeded at `urn:li:dataHubPageTemplate:home_default_1` and DataHub's own UI edits that template in place rather than moving the pointer. Managed via `datahub_page_template`, not a settings resource. See `provider-home-page-layout.md`. |
+| `applications`, `maintenanceWindow` | none identified | Present on the aspect but absent from `UpdateGlobalSettingsInput`. **Do not assume this is a gap** -- that inference was made for `homePage` and was wrong. Check what the DataHub UI does with these first; the absence of a mutation may mean the setting is not meant to be changed that way. |
 
 The rule to follow: **use the dedicated mutation when one exists, and reach for an aspect write only where nothing else can reach the field.** That keeps the service-layer-logic argument behind the provider's write convention intact everywhere it can be, and confines the exception to fields that would otherwise be unmanageable.
+
+**Before concluding a section has no write path, check what the DataHub UI does with it.** This was learned expensively on `homePage`: no mutation exists for the pointer, which was read as an API gap and produced a designed-and-costed resource before anyone looked at the client. The UI never moves that pointer -- it edits the bootstrapped default template in place -- so the missing mutation was the design, not an omission. One grep through `datahub-web-react` would have settled it before any probing. Two sections here (`applications`, `maintenanceWindow`) are currently in the same "no mutation found" state and deserve that check first.
+
+**Also note an aspect write is not the fallback it appears to be.** `PATCH` on `globalsettingsinfo` fails outright -- the endpoint is advertised in the served OpenAPI spec for every aspect but only ~24 aspects have patch templates, and the rest null-dereference into a 500. `POST` works but replaces the entire aspect. So "write the aspect directly" means a full read-modify-write with the untouched sections carried as opaque JSON, which is why the rule above prefers a mutation so strongly.
 
 ### Two hazards this creates
 
