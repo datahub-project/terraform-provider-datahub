@@ -68,6 +68,19 @@ func TestAcc_PageTemplate_RowsFromVariable(t *testing.T) {
 	})
 }
 
+// TestAcc_HomePageSettings_DataSource reads the pointer that says which
+// template the instance renders as everyone's home page. That value is what a
+// configuration should feed to datahub_page_template rather than hardcoding the
+// bootstrap id.
+func TestAcc_HomePageSettings_DataSource(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.HomePageSettingsDataSourceSteps(),
+	})
+}
+
 // TestAcc_PageTemplate_EmptyRows covers a template with no rows. rows is
 // Required and non-null on the wire, so the provider sends an empty array
 // rather than omitting the field; this asserts the value round-trips as an

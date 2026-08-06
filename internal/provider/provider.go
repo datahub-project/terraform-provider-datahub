@@ -401,6 +401,7 @@ func (p *datahubProvider) DataSources(_ context.Context) []func() datasource.Dat
 		NewIngestionSourcesDataSource,
 		NewMeDataSource,
 		NewOrganizationDisplayPreferencesDataSource,
+		NewHomePageSettingsDataSource,
 		NewOwnershipTypeDataSource,
 		NewOwnershipTypesDataSource,
 		NewPoliciesDataSource,

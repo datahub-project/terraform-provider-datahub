@@ -218,6 +218,30 @@ resource "datahub_page_template" "test" {
 	}
 }
 
+// HomePageSettingsDataSourceSteps reads the instance's default home-page
+// template pointer.
+//
+// Asserting the id and the URN separately is the point: the id is what a
+// configuration feeds to a datahub_page_template, so a wrong prefix-trim there
+// would send users to build a template nobody sees.
+func HomePageSettingsDataSourceSteps() []resource.TestStep {
+	cfg := providerBlock + `
+data "datahub_home_page_settings" "current" {}
+`
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("data.datahub_home_page_settings.current",
+					"default_template_urn", "urn:li:dataHubPageTemplate:home_default_1"),
+				resource.TestCheckResourceAttr("data.datahub_home_page_settings.current",
+					"default_template_id", "home_default_1"),
+			),
+		},
+	}
+}
+
 // PageTemplateEmptyRowsSteps covers a template with no rows at all. rows is
 // Required and [PageTemplateRowInput!]! on the wire, so the provider sends an
 // empty array rather than omitting the field; this asserts the server accepts
