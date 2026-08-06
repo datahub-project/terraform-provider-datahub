@@ -81,11 +81,13 @@ Retained deliberately. The first version of this document specified a third reso
 
 The two probes below are kept because both findings are independently true and both are traps for anyone tempted to write a settings aspect directly. The first is also an upstream bug worth filing on its own merits.
 
-### Probe 1: `PATCH` on this aspect is impossible
+### Probe 1: `PATCH` works, but not in the shape you would reach for first
 
 Verified against a local OSS Quickstart running **v1.7.0** (`make quickstart-up` reused an existing container set rather than the pinned `v1.5.0.6`, so treat the version as v1.7.0, not the Makefile default).
 
-**`PATCH` returns HTTP 500 for this aspect, and always will.** The endpoint is advertised in the served OpenAPI spec for every aspect of every entity, but the implementation dispatches through `AspectTemplateEngine`, which holds a registry of per-aspect patch templates and dereferences the match without a null check:
+**Corrected 2026-08-06.** This section previously said `PATCH` returns 500 for this aspect "and always will". That was wrong, and wrong in a way worth recording because the same mistake is easy to repeat: it read the template registry and the failing code path, but not the branch above them that chooses between two implementations. **Read the dispatch, not just the handler.**
+
+A bare `{"patch": [...]}` does fail, with an opaque 500 from an unchecked null:
 
 ```
 java.lang.NullPointerException: Cannot invoke "Template.applyPatch(...)" because "template" is null
@@ -93,7 +95,11 @@ java.lang.NullPointerException: Cannot invoke "Template.applyPatch(...)" because
   at GenericEntitiesController.patchAspect(GenericEntitiesController.java:781)
 ```
 
-Only about two dozen aspects have templates -- `ownership`, `globalTags`, `glossaryTerms`, `domains`, `structuredProperties`, `status`, `upstreamLineage`, and a scattering of `*Info` / `*Properties` records. **Every one of them is asset enrichment; not one is a settings aspect.** So `globalSettingsInfo` cannot be patched, and the generalisation matters well beyond this resource: **an aspect appearing with `PATCH` in the served spec is not evidence that patching it works.** The spec is generated from the entity registry and advertises the verb uniformly; the runtime supports it selectively, and the failure is a 500 rather than a 405 or a clear message.
+But `PatchItemImpl.applyPatch` selects a **generic** implementation when `arrayPrimaryKeys` is non-empty or `forceGenericPatch` is true, and that one handles any aspect. Verified on `globalSettingsInfo`: HTTP 200, only the named field changed, `docPropagation` and `views` untouched.
+
+So the accurate statement is narrower than the original and more useful: **a bare patch reaches a template path that only ~23 of 338 advertised aspect names have, while `forceGenericPatch: true` works.** The 23 are all asset enrichment -- `ownership`, `globalTags`, `glossaryTerms`, `domains`, `structuredProperties`, `status`, `upstreamLineage` and a scattering of `*Info` records -- and none is a settings aspect, which is why the default path fails here.
+
+The surviving generalisation: **an aspect appearing with `PATCH` in the served spec tells you nothing about which request shape works**, because the spec is generated from the entity registry and cannot express the distinction. Filed upstream as [datahub-project/datahub#18935](https://github.com/datahub-project/datahub/issues/18935), which also covers the opaque 500 hiding three distinct causes.
 
 ### Probe 2: `POST` on this aspect replaces all of it
 
@@ -101,7 +107,9 @@ Confirmed by writing only `homePage` and re-reading: `docPropagation` and `views
 
 `globalSettingsInfo` is one aspect holding SSO, notifications, integrations, MCP servers, views, documentation-AI, the four AI groups, `visual` and `homePage`. So **any** resource that owns one section and writes it with `POST` wipes every other section on the instance. Restoring the probe's damage by reading the whole aspect, splicing one field and posting it back worked, so a read-modify-write is mechanically sound -- but it is the shape of write that has to be got exactly right, and this resource no longer needs it.
 
-**What this means for anything that does still need an aspect write** (`applications` and `maintenanceWindow` are the current candidates, both lacking a mutation): read the aspect as **opaque JSON, never a typed struct.** Decoding into Go before writing back silently destroys every field the struct does not model -- the `updatePolicy` / `actors.roles` failure shape, self-inflicted, landing on SSO and notification configuration. Keep untouched sections as `json.RawMessage` or `map[string]any` and re-emit them unchanged. And serialise such writes: two concurrent read-modify-writes against one aspect lose one update outright, with no compare-and-set available to detect it.
+**What this means for anything that does still need an aspect write** (`applications` and `maintenanceWindow` are the current candidates, both lacking a mutation): **use `PATCH` with `forceGenericPatch: true`, not a read-modify-write.** Probe 1 above establishes that it changes only the field named and leaves siblings intact, which avoids the whole class of problem -- no unmanaged sections to carry, no clobber window against a concurrent UI edit, nothing to serialise.
+
+Read-modify-write via `POST` remains the fallback of last resort if a specific aspect turns out to reject generic patching. If it is ever needed, the untouched sections must be carried as **opaque JSON, never a typed struct**: decoding into Go before writing back silently destroys every field the struct does not model -- the `updatePolicy` / `actors.roles` failure shape, self-inflicted, landing on SSO and notification configuration. And such writes must be serialised, since two concurrent read-modify-writes against one aspect lose one update outright with no compare-and-set to detect it.
 
 **`updateGlobalSettings` does not undo an aspect write**, checked on fork HEAD `442d28a7fb2`: it fetches the existing aspect and applies only the sections named in its input, so unrelated sections survive. Worth having established, because the opposite design exists in the same server -- `updatePolicy` rebuilds from input and drops `actors.roles` -- and if this mutation behaved that way, every settings resource would silently undo the others. The wider contract is in `provider-org-settings.md`.
 
