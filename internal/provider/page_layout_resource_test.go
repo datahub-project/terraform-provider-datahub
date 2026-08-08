@@ -76,6 +76,28 @@ func TestAcc_PageTemplate_Adoption(t *testing.T) {
 	})
 }
 
+// TestAcc_PageTemplate_Import imports a template that exists outside Terraform
+// and checks the adoption capture happened.
+//
+// Import is how the docs tell users to adopt home_default_1, so an import that
+// skipped the capture would make `import` then `destroy` delete the
+// organisation's home page.
+func TestAcc_PageTemplate_Import(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	prefix := tg.Name("tfprovider-page-import")
+
+	t.Cleanup(func() {
+		if err := datahubtesting.DeleteSeededPageTemplate(prefix + "-import"); err != nil {
+			t.Logf("could not clean up the seeded template: %v", err)
+		}
+	})
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.PageTemplateImportSteps(prefix),
+	})
+}
+
 // TestAcc_PageTemplate_RowsFromVariable is the mandatory non-literal case for a
 // resource with a nested attribute. A literal rows block resolves every schema
 // default during config parsing and so never yields an unknown value, which

@@ -63,9 +63,10 @@ func (d *homePageSettingsDataSource) Schema(_ context.Context, _ datasource.Sche
 			"  rows             = [/* ... */]\n" +
 			"}\n" +
 			"```\n\n" +
-			"~> Managing that template means adopting an entity DataHub created, and destroying " +
-			"it would leave the organisation with no home page. `datahub_page_template` refuses " +
-			"that destroy; use `terraform state rm` to stop managing the layout instead.\n\n" +
+			"Managing that template means adopting an entity DataHub created. " +
+			"`datahub_page_template` handles that: `terraform destroy` restores the layout the " +
+			"template had beforehand rather than deleting it, so the organisation is never left " +
+			"without a home page.\n\n" +
 			"Both attributes are `null` on an instance with no default template set.",
 		Attributes: map[string]schema.Attribute{
 			"default_template_urn": schema.StringAttribute{

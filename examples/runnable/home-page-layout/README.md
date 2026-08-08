@@ -52,22 +52,21 @@ In the UI, open `$DATAHUB_GMS_URL/`. In default mode the home page is unchanged 
 
 ## Cleanup
 
-In default mode:
-
 ```bash
 terraform destroy
 ```
 
-**With `adopt_default_template = true`, `terraform destroy` is refused, deliberately.** Deleting the template the instance points at would leave the organisation with no home page and a dangling pointer, and nothing can aim it elsewhere. The provider raises an error rather than doing it.
+That works in both modes, with a difference worth knowing.
 
-To hand the layout back without destroying it:
+In default mode it deletes the demonstration template it created, because Terraform created it.
+
+**With `adopt_default_template = true` it does not delete your home page.** The template already existed -- DataHub bootstraps it -- so destroying restores the layout it had before Terraform adopted it, rather than removing the page every user sees. That layout is captured on the first apply, shown as `original_rows` in `terraform show`, and copied into DataHub as `urn:li:dataHubPageTemplate:tfprovider-backup-home_default_1` so it survives losing your state file.
+
+If instead you want to stop managing the page and *keep* the layout this example applied, remove it from state rather than destroying it:
 
 ```bash
 terraform state rm datahub_page_template.home
-terraform destroy   # removes the modules only
 ```
-
-The page keeps whatever layout was last applied, and the DataHub UI can edit it again. To restore DataHub's original layout, edit the default template in the UI, or re-apply this example with rows matching the bootstrap default (`your_assets`, then `top_domains` and `platforms`).
 
 ## Notes
 

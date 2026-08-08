@@ -145,9 +145,11 @@ func (r *pageTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 			"Confirm the id on your instance first, since it is a bootstrap value rather than a " +
 			"guarantee: read `homePage.defaultTemplate` from " +
 			"`/openapi/v3/entity/globalsettings/urn:li:globalSettings:0`.\n\n" +
-			"~> **Destroying the default template removes your home page.** It deletes the " +
-			"entity the instance points at, leaving that pointer dangling. Prefer " +
-			"`terraform state rm` over `destroy` if you want to stop managing it.\n\n" +
+			"`terraform destroy` puts back the layout the template had before Terraform " +
+			"adopted it, rather than deleting it -- destroying the organisation's home page " +
+			"would leave every user without one. The captured layout is visible as " +
+			"`original_rows`, and a copy is kept in DataHub so it survives losing your state " +
+			"file. A template Terraform *created* is deleted on destroy in the ordinary way.\n\n" +
 			"## Does this override what my users see?\n\n" +
 			"Only for users who have not customised. DataHub renders a user's own template if " +
 			"they have one and falls back to the organisation default otherwise, so applying " +
@@ -522,6 +524,34 @@ func (r *pageTemplateResource) ImportState(ctx context.Context, req resource.Imp
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// Import is adoption by definition, so capture the layout exactly as Create
+	// does. Whatever the template holds right now is the pre-Terraform state:
+	// nothing has been applied yet.
+	//
+	// Skipping this would be the most dangerous gap in the resource. An imported
+	// template with no original_rows reads as one Terraform created, so destroy
+	// would DELETE it -- and importing home_default_1 is the documented way to
+	// adopt the organisation's home page, which would make `import` followed by
+	// `destroy` remove the page every user sees.
+	//
+	// A consequence worth accepting: a template Terraform originally created,
+	// then re-imported after losing state, is also treated as adopted, so its
+	// destroy restores rather than deletes. Leaving an entity behind is a far
+	// smaller surprise than deleting a home page.
+	if err := r.client.CaptureTemplateBackup(ctx, tpl.ID, tpl.Rows); err != nil {
+		resp.Diagnostics.AddError("Unable to back up the imported page template",
+			fmt.Sprintf("%s was read successfully, but its current layout could not be backed "+
+				"up, so a later destroy could not restore it: %s", urn, err))
+		return
+	}
+	originals, d := rowsToList(ctx, tpl.Rows)
+	resp.Diagnostics.Append(d...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	state.OriginalRows = originals
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 

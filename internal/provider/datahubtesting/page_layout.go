@@ -12,6 +12,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/config"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 // regexpPersonalScope matches the diagnostic the provider raises for
@@ -317,6 +318,56 @@ func seedPageTemplate(templateID string, rows [][]string) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		panic(fmt.Sprintf("seedPageTemplate: unexpected status %d", resp.StatusCode))
+	}
+}
+
+// PageTemplateImportSteps imports a template that exists outside Terraform.
+//
+// The assertion that matters is original_rows on the imported state. Import is
+// the documented way to adopt the organisation's home page, and an import that
+// failed to capture would leave the resource believing Terraform created the
+// template -- so a later destroy would delete the page every user sees instead
+// of restoring it.
+func PageTemplateImportSteps(prefix string) []resource.TestStep {
+	templateID := prefix + "-import"
+
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_page_template" "imported" {
+  page_template_id = %q
+
+  rows = [
+    { modules = ["urn:li:dataHubPageModule:your_assets"] },
+  ]
+}
+`, templateID)
+
+	return []resource.TestStep{
+		{
+			PreConfig: func() {
+				seedPageTemplate(templateID, [][]string{
+					{"urn:li:dataHubPageModule:top_domains", "urn:li:dataHubPageModule:platforms"},
+				})
+			},
+			Config:             cfg,
+			ResourceName:       "datahub_page_template.imported",
+			ImportState:        true,
+			ImportStateId:      templateID,
+			ImportStatePersist: true,
+			ImportStateCheck: func(states []*terraform.InstanceState) error {
+				if len(states) != 1 {
+					return fmt.Errorf("expected 1 imported state, got %d", len(states))
+				}
+				attrs := states[0].Attributes
+				if got := attrs["original_rows.#"]; got != "1" {
+					return fmt.Errorf("import did not capture original_rows (got %q); a destroy "+
+						"would delete this template instead of restoring it", got)
+				}
+				if got := attrs["original_rows.0.modules.0"]; got != "urn:li:dataHubPageModule:top_domains" {
+					return fmt.Errorf("original_rows captured the wrong layout: %q", got)
+				}
+				return nil
+			},
+		},
 	}
 }
 
