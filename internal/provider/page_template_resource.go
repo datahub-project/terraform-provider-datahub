@@ -146,6 +146,24 @@ func (r *pageTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 			"~> **Destroying the default template removes your home page.** It deletes the " +
 			"entity the instance points at, leaving that pointer dangling. Prefer " +
 			"`terraform state rm` over `destroy` if you want to stop managing it.\n\n" +
+			"## Does this override what my users see?\n\n" +
+			"Only for users who have not customised. DataHub renders a user's own template if " +
+			"they have one and falls back to the organisation default otherwise, so applying " +
+			"here changes the page for everyone **except** those who have personalised it. On " +
+			"DataHub Cloud a user can reset themselves back to the organisation default at any " +
+			"time.\n\n" +
+			"| Capability | DataHub UI | DataHub Cloud UI | API | This provider |\n" +
+			"|---|---|---|---|---|\n" +
+			"| Edit the organisation default page | ❌ | ✅ | ✅ | ✅ |\n" +
+			"| Edit your own personal page | ❌ | ✅ | ✅ | ❌ |\n" +
+			"| Reset yourself to the organisation default | ❌ | ✅ | ✅ | ❌ |\n" +
+			"| Point the organisation at a different template | ❌ | ❌ | ❌ | ❌ |\n\n" +
+			"Open-source DataHub ships no home-page editing UI at all, so this provider is the " +
+			"only practical way to customise the home page there. Personal pages are per-user " +
+			"preferences and out of scope for this provider; a `PERSONAL` template written here " +
+			"would belong to whichever account the provider's token authenticates as.\n\n" +
+			"Managing the organisation default requires the **Manage Home Page Templates** " +
+			"privilege.\n\n" +
 			"## Ordering\n\n" +
 			"Reference each module's `urn` rather than writing the URN string by hand. Terraform " +
 			"then knows the module must exist before the template that lays it out, and no " +

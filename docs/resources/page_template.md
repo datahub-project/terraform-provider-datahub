@@ -13,6 +13,16 @@ description: |-
   Creating a new GLOBAL template does not make it the page users see, and there is no API to repoint DataHub at a different one. Instead, manage the template that is already the default. Every DataHub instance ships one, seeded as urn:li:dataHubPageTemplate:home_default_1, and editing it in place is exactly what the DataHub UI does. Set page_template_id = "home_default_1" and this resource overwrites that layout.
   Confirm the id on your instance first, since it is a bootstrap value rather than a guarantee: read homePage.defaultTemplate from /openapi/v3/entity/globalsettings/urn:li:globalSettings:0.
   ~> Destroying the default template removes your home page. It deletes the entity the instance points at, leaving that pointer dangling. Prefer terraform state rm over destroy if you want to stop managing it.
+  Does this override what my users see?
+  Only for users who have not customised. DataHub renders a user's own template if they have one and falls back to the organisation default otherwise, so applying here changes the page for everyone except those who have personalised it. On DataHub Cloud a user can reset themselves back to the organisation default at any time.
+  | Capability | DataHub UI | DataHub Cloud UI | API | This provider |
+  |---|---|---|---|---|
+  | Edit the organisation default page | ❌ | ✅ | ✅ | ✅ |
+  | Edit your own personal page | ❌ | ✅ | ✅ | ❌ |
+  | Reset yourself to the organisation default | ❌ | ✅ | ✅ | ❌ |
+  | Point the organisation at a different template | ❌ | ❌ | ❌ | ❌ |
+  Open-source DataHub ships no home-page editing UI at all, so this provider is the only practical way to customise the home page there. Personal pages are per-user preferences and out of scope for this provider; a PERSONAL template written here would belong to whichever account the provider's token authenticates as.
+  Managing the organisation default requires the Manage Home Page Templates privilege.
   Ordering
   Reference each module's urn rather than writing the URN string by hand. Terraform then knows the module must exist before the template that lays it out, and no depends_on is needed.
 ---
@@ -38,6 +48,21 @@ Creating a new `GLOBAL` template does not make it the page users see, and there 
 Confirm the id on your instance first, since it is a bootstrap value rather than a guarantee: read `homePage.defaultTemplate` from `/openapi/v3/entity/globalsettings/urn:li:globalSettings:0`.
 
 ~> **Destroying the default template removes your home page.** It deletes the entity the instance points at, leaving that pointer dangling. Prefer `terraform state rm` over `destroy` if you want to stop managing it.
+
+## Does this override what my users see?
+
+Only for users who have not customised. DataHub renders a user's own template if they have one and falls back to the organisation default otherwise, so applying here changes the page for everyone **except** those who have personalised it. On DataHub Cloud a user can reset themselves back to the organisation default at any time.
+
+| Capability | DataHub UI | DataHub Cloud UI | API | This provider |
+|---|---|---|---|---|
+| Edit the organisation default page | ❌ | ✅ | ✅ | ✅ |
+| Edit your own personal page | ❌ | ✅ | ✅ | ❌ |
+| Reset yourself to the organisation default | ❌ | ✅ | ✅ | ❌ |
+| Point the organisation at a different template | ❌ | ❌ | ❌ | ❌ |
+
+Open-source DataHub ships no home-page editing UI at all, so this provider is the only practical way to customise the home page there. Personal pages are per-user preferences and out of scope for this provider; a `PERSONAL` template written here would belong to whichever account the provider's token authenticates as.
+
+Managing the organisation default requires the **Manage Home Page Templates** privilege.
 
 ## Ordering
 

@@ -71,6 +71,119 @@ Two caveats replace the ones this section used to carry, and both are milder:
 
 **`updateGlobalSettings` will not undo this write.** Checked on fork HEAD `442d28a7fb2` before relying on it: that mutation fetches the existing aspect and applies only the sections named in its input, so `homePage` survives every SSO, notification, MCP or AI-settings write. Had it rebuilt the aspect from its input instead -- the way `updatePolicy` does, which is why OSS-1216 needed a guard -- this resource would have been silently undone by any other settings resource in the family. The wider contract for sharing this aspect, including the concurrency hazard that follows from every write being a read-modify-write, is in `provider-org-settings.md`.
 
+## What the APIs actually allow, OSS versus Cloud
+
+Established from source 2026-08-08, after the question "which page are we editing?" turned out not to be answered anywhere. It is the first thing an administrator asks, because the honest answer decides whether applying this is safe.
+
+### OSS ships the whole feature and deliberately no UI
+
+`datahub-web-react/src/app/homeV3/settings/HomePageSettingsButtonWrapper.tsx` in OSS is a stub:
+
+```tsx
+export default function HomePageSettingsButtonWrapper() {
+    // There is no settings button in OSS because editing is disabled in OSS.
+    return null;
+}
+```
+
+The Cloud fork overrides that same file to return the real button, commented "SaaS only". So OSS has the entity model, the mutations, the resolvers, the privileges and the bootstrap, and no way to reach any of it from the product. **On OSS this provider is the only practical way to customise the home page at all**, which is a stronger argument for the feature than the one this document opened with.
+
+### Precedence: personal wins, org default is the fallback
+
+From `useTemplateState.ts`:
+
+```ts
+// The current template is personal unless editing global or personal is missing
+const template = isEditingGlobalTemplate ? globalTemplate : personalTemplate || globalTemplate;
+```
+
+So writing the org default sets what everyone sees **unless they have customised**; a user with a personal template is unaffected. It is not a unilateral override. On OSS that distinction is currently academic, since no UI exists for a user to create a personal template -- but the API does, so a determined user can, and the semantics are the same on both.
+
+### Capability matrix
+
+| Capability | OSS UI | Cloud UI | API (identical on both) | This provider |
+|---|---|---|---|---|
+| Edit the org default page | ❌ | ✅ | ✅ `upsertPageTemplate` scope `GLOBAL` | ✅ by adopting `home_default_1` |
+| Edit your own personal page | ❌ | ✅ | ✅ `upsertPageTemplate` scope `PERSONAL`, then `updateUserHomePageSettings` | ❌ refused in `ValidateConfig` |
+| Point yourself at a template | ❌ | ✅ | ✅ `updateUserHomePageSettings{pageTemplate}` | ❌ |
+| Reset yourself to the org default | ❌ | ✅ | ✅ `updateUserHomePageSettings{removePageTemplate:true}` | ❌ |
+| Aim the org default at a different template | ❌ | ❌ | ❌ **no mechanism exists** | ❌ |
+| Read which template is the default | ➖ | ✅ | ✅ `globalHomePageSettings` | ✅ `datahub_home_page_settings` |
+
+### Permissions
+
+| Operation | Gated? | Requires |
+|---|---|---|
+| Create or edit a `GLOBAL` template | ✅ | `MANAGE_HOME_PAGE_TEMPLATES` |
+| Create or edit a `PERSONAL` template | ❌ | nothing -- any authenticated user |
+| Set or clear your own pointer | ❌ | nothing, but hard-scoped to `context.getActorUrn()`, so no one can repoint another user |
+| Delete a `GLOBAL` template | ✅ | `MANAGE_HOME_PAGE_TEMPLATES` |
+| Delete a `PERSONAL` template | ✅ | must be the template's creator (`properties.created.actor`) |
+| Delete `home_default_1` | 🚫 | **nobody, ever** -- `checkDeleteTemplatePermissions` refuses that URN before any privilege check |
+
+Two consequences worth carrying:
+
+- **`removePageTemplate` clears the pointer, not the template.** It does `settings.data().remove("pageTemplate")`, so the personal template survives as an orphan and can be re-pointed at later. Sending `pageTemplate` and `removePageTemplate` together is rejected.
+- **The server's refusal to delete `home_default_1` only covers the GraphQL path.** Stated here originally as though it were absolute, then tested and found not to be -- see "The default template can be deleted" below. The provider's own guard is therefore not redundant, and it was verified firing in a real `terraform destroy` on 2026-08-08.
+
+### The default template can be deleted, and the UI hides it
+
+Tested against the v1.7.0 Quickstart on 2026-08-08, deliberately, on an instance we were willing to break. Three findings, each worse than the one before.
+
+**1. The "cannot be deleted" guarantee is GraphQL-only.** `deletePageTemplate` refuses, exactly as `checkDeleteTemplatePermissions` promises:
+
+```
+Attempted to delete the default page template
+```
+
+**`DELETE /openapi/v3/entity/datahubpagetemplate/{urn}` succeeds.** HTTP 200, entity gone, subsequent GET 404. The generic entity controller never reaches the service, so the guard is bypassed entirely. Same shape as the `forceGenericPatch` discovery: the generic v3 layer does not honour rules the typed layer enforces.
+
+**2. Nothing cleans up, and nothing restores.** The stored pointer still names the deleted URN while `globalHomePageSettings.defaultTemplate` resolves to `null`. The v3 delete does not run the async `deleteEntityReferences` that the service path uses -- which *does* tidy the equivalent per-user pointer when a personal template is deleted. So the organisation is left with a permanently dangling pointer. Recovery is trivial *if you know the id*: upsert a template at the same URN. Nothing in the product tells you what that id was.
+
+**3. The UI fabricates a template that does not exist, so the damage is invisible.** `useTemplateState.ts`:
+
+```ts
+setGlobalTemplate(
+    filterOutNonExistentModulesFromTemplate(settings.globalHomePageSettings?.defaultTemplate)
+        || DEFAULT_TEMPLATE,
+);
+```
+
+`DEFAULT_TEMPLATE` is a hardcoded constant in `homeV3/modules/constants.ts` carrying `urn: 'urn:li:dataHubPageTemplate:home_default_1'` -- the same URN as the real one -- and rows over `your_assets` and `top_domains`. With zero templates in the system, a user sees a plausible home page. The only visible symptom is that the fallback is *shorter* than the bootstrap layout: `platforms` is missing. Nobody notices unless they know what the real layout was.
+
+That combination is the part worth remembering. **The API says nothing exists; the UI shows a working page; the two never disagree out loud.** An operator diagnosing this can reasonably conclude the API is broken rather than the data. And a Terraform plan against such an instance shows a *create* rather than a no-op, which is the only honest signal available -- an accidental argument for managing this in Terraform at all.
+
+The sibling behaviour, `filterOutNonExistentModulesFromTemplate`, does the same thing one level down: a template referencing a deleted module renders short rather than broken, again with no signal.
+
+### Other verified behaviour worth not re-deriving
+
+- **Many templates can exist; only one is ever the org default.** Three GLOBAL `HOME_PAGE` templates coexisted happily while the pointer stayed put. Extra GLOBAL templates are inert *as defaults* -- but see the catalogue pattern below, which is a legitimate use of them rather than a mistake.
+- **A user's pointer accepts a `GLOBAL` template**, not just their own. Verified by pointing a user at a non-default GLOBAL template; there is no scope validation. This is what makes a published catalogue of alternate starter pages workable.
+- **Deleting a personal template clears that user's pointer automatically.** Verified by checking the stored aspect rather than the GraphQL projection, since a null there could merely mean "failed to hydrate a deleted entity" -- `corpUserSettings` was removed outright. So a user has two routes back to the org default: `removePageTemplate: true` (keeps the template, re-selectable later) or deleting it (does not).
+- **Audit stamps record `urn:li:corpuser:__datahub_system`**, not the calling principal, for writes through this service. Do not attribute page-template changes by actor.
+- **The template collection endpoint lags.** Immediately after creating two templates it reported `count: 1`, then `count: 3` moments later, while per-URN reads were correct throughout. Any future plural data source inherits this; it is the OpenSearch-versus-MySQL split `CLAUDE.md` mandates the entity endpoint for.
+
+### A catalogue of alternate home pages is a supported pattern
+
+Non-default GLOBAL templates were initially written off here as a trap. That was wrong, and the correction is worth keeping because the trap framing would have led to a warning diagnostic firing on correct configurations.
+
+Because selecting a template needs **no privilege** and is hard-scoped to the caller, and because a personal pointer may name a GLOBAL template, an organisation can publish several curated layouts and let users opt in through their own tooling:
+
+| Step | Who | Privilege |
+|---|---|---|
+| Provision the catalogue: GLOBAL templates and modules | Terraform, as an admin | `MANAGE_HOME_PAGE_TEMPLATES` |
+| Switch to catalogue entry Alt-B | the user, via API | none |
+| Clone Alt-B into a PERSONAL template to customise | the user, via API | none |
+| Revert to the org default | the user, via API | none |
+
+One caveat for the clone flow: a cloned template referencing GLOBAL modules **shares** them, so an admin editing a module changes it for everyone who cloned. Genuine per-user customisation requires cloning the modules into PERSONAL scope too and swapping the URNs.
+
+Note the pattern still cannot promote a new template to org default -- that requires editing `home_default_1`.
+
+### Why the provider stays GLOBAL-only
+
+`PERSONAL` needs no privilege, is scoped to the calling identity, and would therefore be created against whichever account the provider's token authenticates as -- a service account, usually, whose home page nobody looks at. It is a per-user preference by construction, which the provider-scope rule excludes. Nothing here changes that; the matrix simply makes the boundary explicit rather than implied.
+
 ## How this was originally designed, and why that was wrong
 
 Retained deliberately. The first version of this document specified a third resource, `datahub_home_page_settings`, whose whole job was to write `homePage.defaultTemplate`. Two rounds of probing dismantled it, and the wrong turn is worth keeping because the reasoning that produced it looks sound and would be reproduced by the next person.
