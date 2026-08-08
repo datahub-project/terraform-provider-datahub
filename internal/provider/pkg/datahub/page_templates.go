@@ -145,6 +145,94 @@ mutation upsertPageTemplate($input: UpsertPageTemplateInput!) {
 	return resp.Data.UpsertPageTemplate.URN, nil
 }
 
+// BackupPageTemplateURN names the entity holding the layout a template had
+// before Terraform adopted it.
+//
+// The backup lives in DataHub rather than only in Terraform state so that it
+// survives the state file being lost -- which is the case where it matters
+// most. Aspect version history is NOT a substitute: the global retention
+// default is maxVersions 20, and a Terraform-managed template writes a version
+// on every change, so the pre-adoption version is evicted by ordinary use of
+// this resource. See docs/design/provider-home-page-layout.md.
+//
+// Templates are not enumerable through DataHub's GraphQL API -- there is no
+// listPageTemplates query -- so a backup is invisible in the product and can
+// only be found by an operator deliberately reading the OpenAPI v3 collection.
+func BackupPageTemplateURN(id string) string {
+	return PageTemplateURNPrefix + "tfprovider-backup-" + id
+}
+
+// CaptureTemplateBackup stores rows as the pre-adoption backup for id, unless a
+// backup already exists.
+//
+// Never overwriting is the whole point. If a second adoption could overwrite an
+// existing backup, then adopting a template Terraform had already edited would
+// record *our* layout as the original and lose the real one irrecoverably.
+// First capture wins, permanently.
+func (c *Client) CaptureTemplateBackup(ctx context.Context, id string, rows [][]string) error {
+	backupURN := BackupPageTemplateURN(id)
+
+	existing, err := c.GetPageTemplateByURN(ctx, backupURN)
+	if err != nil {
+		return fmt.Errorf("checking for an existing backup: %w", err)
+	}
+	if existing != nil {
+		return nil
+	}
+
+	_, err = c.UpsertPageTemplate(ctx, UpsertPageTemplateInput{
+		ID:          strings.TrimPrefix(backupURN, PageTemplateURNPrefix),
+		Scope:       "GLOBAL",
+		SurfaceType: "HOME_PAGE",
+		Rows:        rows,
+	})
+	if err != nil {
+		return fmt.Errorf("writing the backup template: %w", err)
+	}
+	return nil
+}
+
+// OldestTemplateRows reads the oldest aspect version DataHub still holds for a
+// template, or nil when no history survives.
+//
+// Used only to enrich a diagnostic, never to drive a restore. The oldest
+// surviving version is whatever the 20-version retention window happens to
+// still contain, so there is no way to know it is the layout Terraform
+// displaced -- it may be any arbitrary point in someone else's history.
+// Restoring it would silently write a layout nobody chose. Reporting it lets an
+// operator decide.
+func (c *Client) OldestTemplateRows(ctx context.Context, urn string) [][]string {
+	path := fmt.Sprintf("/openapi/v3/entity/datahubpagetemplate/%s/datahubpagetemplateproperties?version=1", urn)
+	req, err := c.NewRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil
+	}
+	res, err := c.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var aspect struct {
+		Value struct {
+			Rows []struct {
+				Modules []string `json:"modules"`
+			} `json:"rows"`
+		} `json:"value"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&aspect); err != nil {
+		return nil
+	}
+	out := make([][]string, 0, len(aspect.Value.Rows))
+	for _, r := range aspect.Value.Rows {
+		out = append(out, r.Modules)
+	}
+	return out
+}
+
 // globalSettingsHomePageEntity decodes just the home-page pointer out of the
 // settings singleton. Everything else in globalSettingsInfo is ignored rather
 // than modelled: this is a read, so unmodelled sections are simply not looked

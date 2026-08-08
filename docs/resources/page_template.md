@@ -145,6 +145,11 @@ resource "datahub_page_module" "welcome" {
 ### Read-Only
 
 - `id` (String) Terraform identifier. Same value as `page_template_id`.
+- `original_rows` (Attributes List) The layout this template had when Terraform adopted it, restored on `terraform destroy`.
+
+Populated only when the template already existed at the first apply. It is `null` for a template Terraform created, and such a template is deleted on destroy in the ordinary way.
+
+A copy is also written into DataHub itself, which is the authoritative one because it survives the Terraform state being lost. This attribute is the fallback, and exists so the layout is visible in `terraform show` rather than only inside the provider. (see [below for nested schema](#nestedatt--original_rows))
 - `urn` (String) Full DataHub URN, `urn:li:dataHubPageTemplate:<page_template_id>`.
 
 <a id="nestedatt--rows"></a>
@@ -153,3 +158,11 @@ resource "datahub_page_module" "welcome" {
 Required:
 
 - `modules` (List of String) URNs of the modules in this row, left to right. Use `datahub_page_module.<name>.urn` so Terraform orders the module before this template.
+
+
+<a id="nestedatt--original_rows"></a>
+### Nested Schema for `original_rows`
+
+Read-Only:
+
+- `modules` (List of String) Module URNs in the original row.

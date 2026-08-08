@@ -52,6 +52,30 @@ func TestAcc_PageTemplate_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestAcc_PageTemplate_Adoption covers adopting a template that already exists
+// and capturing its prior layout, which is what a later destroy restores.
+//
+// This is the home_default_1 case in miniature: the organisation's home page is
+// always adopted rather than created, so the capture path is the one real users
+// exercise first.
+func TestAcc_PageTemplate_Adoption(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	prefix := tg.Name("tfprovider-page-adopt")
+
+	// The adopted template survives teardown by design -- destroy restores it
+	// rather than deleting it -- so the test removes its own subject.
+	t.Cleanup(func() {
+		if err := datahubtesting.DeleteSeededPageTemplate(prefix + "-adopt"); err != nil {
+			t.Logf("could not clean up the seeded template: %v", err)
+		}
+	})
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.PageTemplateAdoptionSteps(prefix),
+	})
+}
+
 // TestAcc_PageTemplate_RowsFromVariable is the mandatory non-literal case for a
 // resource with a nested attribute. A literal rows block resolves every schema
 // default during config parsing and so never yields an unknown value, which

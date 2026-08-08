@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -86,6 +87,7 @@ type pageTemplateResourceModel struct {
 	Scope          types.String `tfsdk:"scope"`
 	SurfaceType    types.String `tfsdk:"surface_type"`
 	Rows           types.List   `tfsdk:"rows"`
+	OriginalRows   types.List   `tfsdk:"original_rows"`
 }
 
 type pageTemplateRowModel struct {
@@ -202,6 +204,28 @@ func (r *pageTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 				Validators:    []validator.String{surfaceTypeValidator{}},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
+			"original_rows": schema.ListNestedAttribute{
+				Computed: true,
+				MarkdownDescription: "The layout this template had when Terraform adopted it, " +
+					"restored on `terraform destroy`.\n\n" +
+					"Populated only when the template already existed at the first apply. It is " +
+					"`null` for a template Terraform created, and such a template is deleted on " +
+					"destroy in the ordinary way.\n\n" +
+					"A copy is also written into DataHub itself, which is the authoritative one " +
+					"because it survives the Terraform state being lost. This attribute is the " +
+					"fallback, and exists so the layout is visible in `terraform show` rather " +
+					"than only inside the provider.",
+				PlanModifiers: []planmodifier.List{listplanmodifier.UseStateForUnknown()},
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"modules": schema.ListAttribute{
+							Computed:            true,
+							ElementType:         types.StringType,
+							MarkdownDescription: "Module URNs in the original row.",
+						},
+					},
+				},
+			},
 			"rows": schema.ListNestedAttribute{
 				Required: true,
 				MarkdownDescription: "Ordered rows of modules. Row order and the module order " +
@@ -222,17 +246,79 @@ func (r *pageTemplateResource) Schema(_ context.Context, _ resource.SchemaReques
 	}
 }
 
+// Create adopts an existing template or creates a new one, and the difference
+// decides what Delete does later.
+//
+// A page template frequently already exists when Terraform first writes it --
+// managing the organisation's home page means adopting `home_default_1`, which
+// DataHub bootstraps on every instance. Deleting such a template on destroy
+// would remove something Terraform did not create. So the pre-existing layout
+// is captured first, and destroy restores it instead.
+//
+// Reading before writing is what distinguishes the two cases. Keying this on
+// "is it the default template" instead would be wrong: adoption is the property
+// that matters, and a catalogue template created by Terraform should destroy in
+// the ordinary way whether or not it is the default.
 func (r *pageTemplateResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan pageTemplateResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	id := plan.PageTemplateID.ValueString()
+	existing, err := r.client.GetPageTemplateByURN(ctx, datahub.PageTemplateURN(id))
+	if err != nil {
+		resp.Diagnostics.AddError("Unable to check for an existing page template", err.Error())
+		return
+	}
+
+	if existing == nil {
+		plan.OriginalRows = types.ListNull(pageTemplateRowObjectType())
+	} else {
+		if err := r.client.CaptureTemplateBackup(ctx, id, existing.Rows); err != nil {
+			resp.Diagnostics.AddError("Unable to back up the existing page template",
+				fmt.Sprintf("%s is already present and Terraform is adopting it, but its current "+
+					"layout could not be backed up, so a later destroy could not restore it. "+
+					"Refusing to overwrite it: %s", datahub.PageTemplateURN(id), err))
+			return
+		}
+		rows, diags := rowsToList(ctx, existing.Rows)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		plan.OriginalRows = rows
+	}
+
 	r.write(ctx, &plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+// rowsToList converts client rows into the framework list used by both `rows`
+// and `original_rows`.
+func rowsToList(ctx context.Context, rows [][]string) (types.List, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	values := make([]attr.Value, 0, len(rows))
+	for _, modules := range rows {
+		modList, d := types.ListValueFrom(ctx, types.StringType, modules)
+		diags.Append(d...)
+		if diags.HasError() {
+			return types.ListNull(pageTemplateRowObjectType()), diags
+		}
+		obj, d2 := types.ObjectValue(pageTemplateRowAttrTypes(), map[string]attr.Value{"modules": modList})
+		diags.Append(d2...)
+		if diags.HasError() {
+			return types.ListNull(pageTemplateRowObjectType()), diags
+		}
+		values = append(values, obj)
+	}
+	out, d := types.ListValue(pageTemplateRowObjectType(), values)
+	diags.Append(d...)
+	return out, diags
 }
 
 func (r *pageTemplateResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -308,24 +394,21 @@ func (r *pageTemplateResource) Read(ctx context.Context, req resource.ReadReques
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
-// Delete removes the template, unless it is the one the instance renders as
-// everyone's home page.
+// Delete restores an adopted template's original layout, or deletes a template
+// Terraform created.
 //
-// The guard exists because this is the only operation in the feature that can
-// break the instance for every user rather than just the operator. DataHub
-// bootstraps a default template and provides no API to point at a different one
-// (see docs/design/provider-home-page-layout.md), so deleting the template the
-// pointer names leaves the organisation with no home page and a dangling
-// reference. The documented way to manage the home page is to adopt that
-// template, which makes an ordinary `terraform destroy` the natural route into
-// this failure -- a docs warning alone is weak protection against the default
-// behaviour of a core Terraform verb.
+// Which of the two happens is decided by original_rows, recorded at Create.
+// Restoring rather than deleting is what makes `terraform destroy` mean the
+// right thing for an adopted platform object: put back what was there before
+// Terraform touched it. It also removes the need to refuse the verb outright,
+// which an earlier version of this resource did.
 //
-// The check is deliberately best-effort. If the pointer cannot be read -- a
-// restricted token, an instance without the settings aspect -- the delete
-// proceeds with a warning rather than failing, because a guard that makes the
-// resource permanently undeletable when an unrelated read fails is worse than
-// the hazard it prevents.
+// When the original layout cannot be found the resource refuses instead of
+// guessing. DataHub retains only the last 20 versions of any aspect and a
+// managed template writes a version on every change, so the oldest surviving
+// version is whatever the window happens to hold -- there is no way to know it
+// is the layout Terraform displaced. Restoring an arbitrary point in someone
+// else's history would be silent and wrong, so it is reported and left alone.
 func (r *pageTemplateResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state pageTemplateResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
@@ -334,32 +417,80 @@ func (r *pageTemplateResource) Delete(ctx context.Context, req resource.DeleteRe
 	}
 
 	urn := state.URN.ValueString()
+	id := state.PageTemplateID.ValueString()
 
-	defaultURN, err := r.client.GetDefaultHomePageTemplateURN(ctx)
-	switch {
-	case err != nil:
-		resp.Diagnostics.AddWarning("Could not confirm whether this is the default home page template",
-			fmt.Sprintf("Reading the organisation's default template pointer failed, so the "+
-				"safety check was skipped and the delete proceeded: %s\n\n"+
-				"If %s was the default home page template, the organisation now has no home "+
-				"page. Re-create the template to restore it.", err, urn))
-	case defaultURN != "" && defaultURN == urn:
-		resp.Diagnostics.AddError("Refusing to delete the organisation's default home page template",
-			fmt.Sprintf("%s is the template DataHub renders as the home page for every user in "+
-				"this organisation, and DataHub provides no way to point at a different one. "+
-				"Deleting it would leave the organisation with no home page.\n\n"+
-				"To stop managing this template without destroying it, remove it from state "+
-				"instead of destroying it:\n\n"+
-				"    terraform state rm datahub_page_template.<name>\n\n"+
-				"That leaves the layout exactly as it is and hands it back to the DataHub UI. "+
-				"If you genuinely intend to remove the home page, delete the template in the "+
-				"DataHub UI.", urn))
+	// Terraform created this template, so destroying it is an ordinary delete.
+	if state.OriginalRows.IsNull() {
+		if err := r.client.DeletePageTemplate(ctx, urn); err != nil {
+			resp.Diagnostics.AddError("Unable to delete page template", err.Error())
+		}
 		return
 	}
 
-	if err := r.client.DeletePageTemplate(ctx, urn); err != nil {
-		resp.Diagnostics.AddError("Unable to delete page template", err.Error())
+	// Adopted. Prefer the copy held in DataHub: it survives the Terraform state
+	// being lost, which is exactly when the state copy is unavailable.
+	restore, source := r.backupRows(ctx, id, &state, &resp.Diagnostics)
+	if restore == nil {
+		hint := ""
+		if oldest := r.client.OldestTemplateRows(ctx, urn); len(oldest) > 0 {
+			hint = fmt.Sprintf("\n\nFor reference, the oldest version DataHub still holds for this "+
+				"template is %v. That is NOT necessarily the layout Terraform replaced -- only "+
+				"the oldest of the last 20 versions -- so the provider will not restore it "+
+				"automatically. Read it in full with:\n\n"+
+				"    GET /openapi/v3/entity/datahubpagetemplate/%s/datahubpagetemplateproperties?version=1",
+				oldest, urn)
+		}
+		resp.Diagnostics.AddError("Cannot restore the template's original layout",
+			fmt.Sprintf("%s was adopted rather than created by Terraform, so destroying it should "+
+				"restore the layout it had beforehand. That layout could not be found: the backup "+
+				"at %s is missing and original_rows is not in state.\n\n"+
+				"Refusing rather than guessing. To stop managing this template and leave it as it "+
+				"is:\n\n    terraform state rm datahub_page_template.<name>%s",
+				urn, datahub.BackupPageTemplateURN(id), hint))
+		return
 	}
+
+	if _, err := r.client.UpsertPageTemplate(ctx, datahub.UpsertPageTemplateInput{
+		ID:          id,
+		Scope:       state.Scope.ValueString(),
+		SurfaceType: state.SurfaceType.ValueString(),
+		Rows:        restore,
+	}); err != nil {
+		resp.Diagnostics.AddError("Unable to restore the original page template layout", err.Error())
+		return
+	}
+
+	if err := r.client.DeletePageTemplate(ctx, datahub.BackupPageTemplateURN(id)); err != nil {
+		resp.Diagnostics.AddWarning("Original layout restored, but its backup could not be removed",
+			fmt.Sprintf("%s was restored from %s. Delete the backup by hand: %s",
+				urn, source, err))
+	}
+}
+
+// backupRows returns the layout to restore and where it came from, preferring
+// the copy stored in DataHub over the copy in Terraform state.
+func (r *pageTemplateResource) backupRows(ctx context.Context, id string, state *pageTemplateResourceModel, diags *diag.Diagnostics) ([][]string, string) {
+	backupURN := datahub.BackupPageTemplateURN(id)
+
+	backup, err := r.client.GetPageTemplateByURN(ctx, backupURN)
+	if err != nil {
+		diags.AddWarning("Could not read the backup template",
+			fmt.Sprintf("Falling back to the copy in Terraform state: %s", err))
+	} else if backup != nil && len(backup.Rows) > 0 {
+		return backup.Rows, backupURN
+	}
+
+	rows, d := pageTemplateRowsFromModel(ctx, state.OriginalRows)
+	diags.Append(d...)
+	if diags.HasError() || len(rows) == 0 {
+		return nil, ""
+	}
+	if backup == nil {
+		diags.AddWarning("Restored from Terraform state rather than the DataHub backup",
+			fmt.Sprintf("The backup at %s was missing, so the original layout came from "+
+				"original_rows in state instead.", backupURN))
+	}
+	return rows, "Terraform state"
 }
 
 func (r *pageTemplateResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
