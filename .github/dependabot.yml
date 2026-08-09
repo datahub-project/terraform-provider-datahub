@@ -1,10 +1,16 @@
 version: 2
 updates:
+  # dependency-type "all" includes indirect requires. Without it these updates
+  # move direct dependencies only, which is how three indirect modules sat on
+  # advisories the provider actually called while the weekly PR arrived on
+  # schedule and looked like coverage. Grouping keeps the extra churn to one PR.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
       day: monday
+    allow:
+      - dependency-type: "all"
     open-pull-requests-limit: 5
     groups:
       go-dependencies:
@@ -16,9 +22,27 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    allow:
+      - dependency-type: "all"
     open-pull-requests-limit: 3
     groups:
       tools-dependencies:
+        patterns:
+          - "*"
+
+  # The third Go module, covered by nothing until now. It pins tfplugindocs for
+  # doc generation and ships nothing to users, so its exposure is low -- but low
+  # should be a conclusion someone reached, not the accident of a missing block.
+  - package-ecosystem: gomod
+    directory: /tools/serve
+    schedule:
+      interval: weekly
+      day: monday
+    allow:
+      - dependency-type: "all"
+    open-pull-requests-limit: 3
+    groups:
+      tools-serve-dependencies:
         patterns:
           - "*"
 
