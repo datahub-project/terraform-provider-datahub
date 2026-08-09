@@ -40,7 +40,7 @@ This line used to enumerate every resource and data source. It drifted twice —
 | 10 | **Lineage / versioning / ER** | *(LOW)* | data source only | Manual lineage overwritten by ingestion. |
 | 11 | **AI / Compass / Documents / Subscriptions** | *(IRRELEVANT)* | none | Runtime/per-user/experimental Cloud features. |
 | 12 | **Infrastructure / ops** | *(IRRELEVANT)* | none | Kafka, ES, K8s, RestoreIndices, Iceberg REST catalog, etc. |
-| 13 | **Home-page layout (page templates/modules)** | `dataHubPageTemplate`, `dataHubPageModule` | resource | Split out of 11 -- `category: core` in OSS, not Cloud-only; `GLOBAL` scope is the org-default admins configure. |
+| 13 | ~~**Home-page layout (page templates/modules)**~~ | `dataHubPageTemplate`, `dataHubPageModule` | resource | **Shipped in v0.21.0 (2026-08-09).** Split out of 11 -- `category: core` in OSS, not Cloud-only; `GLOBAL` scope is the org-default admins configure. |
 
 ---
 
@@ -311,7 +311,9 @@ No TF resource shape. Listed so nothing is silently excluded:
 
 ---
 
-## Category 13: Home-page Layout (Page Templates / Modules)
+## Category 13: Home-page Layout (Page Templates / Modules) -- Shipped
+
+**Shipped in v0.21.0 (2026-08-09)** as `datahub_page_template`, `datahub_page_module` and the read-only `datahub_home_page_settings` data source. The classification work below is what justified building it and is kept for the record; the implemented design is `docs/design/provider-home-page-layout.md`.
 
 Split out of Category 11 (2026-07-28) after a closer look showed the earlier "Cloud-only, runtime/per-user, or experimental" bucketing didn't hold for the `GLOBAL`-scope half of this feature. Verified directly against the OSS repo, using the same two-layer approach as the "Stability classification" note below (entity-model layer + GraphQL/resolver layer), not just a schema-surface grep:
 
@@ -319,9 +321,11 @@ Split out of Category 11 (2026-07-28) after a closer look showed the earlier "Cl
 - **GraphQL/resolver layer**: `upsertPageTemplate`/`deletePageTemplate`/`upsertPageModule`/`deletePageModule` and their resolvers (`UpsertPageTemplateResolver`, `DeletePageTemplateResolver`, `UpsertPageModuleResolver`, `DeletePageModuleResolver`) live in `datahub-graphql-core` — the OSS-stable location per this doc's own classification scheme — with matching unit tests, and the schema is consumed by `datahub-web-react` (the OSS frontend), not just declared and unused. The resolvers gate on a plain `AuthorizationUtils.canManageHomePageTemplates` privilege check when `scope == GLOBAL`; no license/feature-flag gate of the kind that would mark it Cloud-only.
 - Confirmed identical in `datahub-fork` — no Cloud-only override or extension of this specific feature.
 
-**The shape**: `dataHubPageTemplate` holds ordered rows of `dataHubPageModule` references (a `Form`/`metadata_test`-style nested-list resource, not a flat singleton). Both carry `visibility.scope` of `PERSONAL` or `GLOBAL`. `PERSONAL` templates are exactly the per-user, low-value case Category 11 correctly excludes. `GLOBAL` templates are the org-default home-page layout an admin configures — a legitimate platform-config resource under this provider's existing scope rules. See Tier 2 for the proposed `datahub_page_template` + `datahub_page_module` pair.
+**The shape**: `dataHubPageTemplate` holds ordered rows of `dataHubPageModule` references (a `Form`/`metadata_test`-style nested-list resource, not a flat singleton). Both carry `visibility.scope` of `PERSONAL` or `GLOBAL`. `PERSONAL` templates are exactly the per-user, low-value case Category 11 correctly excludes. `GLOBAL` templates are the org-default home-page layout an admin configures — a legitimate platform-config resource under this provider's existing scope rules. Both shipped as the `datahub_page_template` + `datahub_page_module` pair; `PERSONAL` stayed out.
 
-A related but distinct piece stays out of scope for now: `globalSettings.homePage.defaultTemplate` (the pointer saying "this `GLOBAL` template is the one everyone sees") lives on the `globalSettings` singleton from Category 7, which is `category: internal` and — as of this check — has only a read resolver (`GlobalHomePageSettingsResolver`), no public update mutation. Revisit once Category 7's `datahub_global_settings` work looks at that singleton in detail.
+**Resolved 2026-08-06, and it needs no resource at all.** `globalSettings.homePage.defaultTemplate` — the pointer saying "this `GLOBAL` template is the one everyone sees" — lives on the `globalSettings` singleton from Category 7, and the read-only observation above held up: there is a read resolver (`GlobalHomePageSettingsResolver`, now surfaced as `datahub_home_page_settings`) and no mutation that can move the pointer. What changed is the conclusion drawn from it. DataHub seeds one default template per instance and its own UI edits that template *in place* rather than repointing, so the layout is managed by **adopting** the template already pointed at, and a resource wrapping the pointer would have nothing to write. A new `GLOBAL` template under a fresh id applies cleanly and is then rendered to nobody, which is the trap this row previously invited.
+
+Two upstream defects were filed out of this work as [datahub-project/datahub#18935](https://github.com/datahub-project/datahub/issues/18935): the pointer has no mutation, and patching `globalSettingsInfo` through the default path NPEs (`forceGenericPatch: true` does work). If either is fixed, the adoption-and-restore machinery in the template resource becomes simplifiable — that issue is the trigger to revisit, not Category 7.
 
 ---
 
@@ -451,7 +455,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | 10 | `datahub_metadata_test` | resource + data source | yes (API) | API mutations confirmed OSS; management UI is Cloud-only; no nav entry in OSS frontend |
 | ~~14~~ | ~~`datahub_service_account`~~ | resource + data source | yes (1.4.0+) | **Shipped ([PR #72](https://github.com/datahub-project/terraform-provider-datahub/pull/72))**, as designed below. Moved from Tier 3 - OSS since Core v1.4.0. Deterministic aspect write (`service_<id>` + `subTypes=[SERVICE_ACCOUNT]`) like `ownership_type`/`domain`, subtype-guarded read; token is a separate write-once resource; needs Metadata Service Auth enabled |
 | ~~11~~ | ~~`datahub_ownership_type`~~ | resource + data source | yes | **Shipped ([PR #50](https://github.com/datahub-project/terraform-provider-datahub/pull/50))** |
-| 17 | `datahub_page_template` + `datahub_page_module` | resource | yes | See Category 13. Template = ordered rows of module references (`form`/`metadata_test`-style nesting); `GLOBAL`-scope only (reject/ignore `PERSONAL` at plan time, same call as excluding per-asset enrichment); admin-gated via `manageHomePageTemplates`. |
+| 17 | ~~`datahub_page_template` + `datahub_page_module`~~ | resource | yes | **Shipped in v0.21.0 (2026-08-09)**, along with the `datahub_home_page_settings` data source that reads which template the instance renders. See Category 13. Template = ordered rows of module references (`form`/`metadata_test`-style nesting); `GLOBAL`-scope only (reject/ignore `PERSONAL` at plan time, same call as excluding per-asset enrichment); admin-gated via `manageHomePageTemplates`. |
 
 ### Tier 3 — Cloud-only, high leverage, accept stability caveat
 
@@ -492,7 +496,7 @@ A resource without a matching singular data source means a configuration can cre
 | Gap | Note |
 |---|---|
 | `datahub_policy` | The **plural** `datahub_policies` exists but there is no singular lookup, so a config cannot read one policy by id. The oldest of these gaps and the most surprising, since the resource is long-shipped. |
-| `datahub_page_template`, `datahub_page_module` | New with the home-page work. The singular reads are cheap -- the v3 entity endpoint is already used by the resources -- and the published-alternates pattern gives them a real use: a config handed a template URN out-of-band may want to read its layout. |
+| `datahub_page_template`, `datahub_page_module` | Opened by the home-page work and **still open after v0.21.0** -- the resources shipped, these singular data sources did not. The singular reads are cheap -- the v3 entity endpoint is already used by the resources -- and the published-alternates pattern gives them a real use: a config handed a template URN out-of-band may want to read its layout. |
 
 **Do not add plural enumerators for page templates or modules.** There is no `listPageTemplates` GraphQL query at all, so the only enumeration is the OpenAPI v3 collection endpoint, which is OpenSearch-backed: it was observed reporting `count: 1` and then `count: 3` seconds later for the same data. A data source built on it would be intermittently wrong, which the read-path rule in `CLAUDE.md` exists to prevent.
 
@@ -513,7 +517,7 @@ Deliberately **not** counted as gaps: relationship resources (`datahub_corp_grou
 | Package | Covers | Note |
 |---|---|---|
 | **Org settings singletons** | AI settings (with `datahub_ai_plugin` as a child), asset settings, doc-propagation / context-generation, global views; `helpLink` and brand colour folding into the shipped `datahub_organization_display_preferences` | Largest cluster. Reference implementation exists, so this is scoping work, not pattern work. Roughly four resources under the domain-grouping rule, not ten. MCP servers stay blocked on merge-by-slug versus full-list ownership. |
-| **Home-page layout** | `datahub_page_module` + `datahub_page_template`, `GLOBAL` scope only | Confirmed in scope 2026-08-02. **Designed and built 2026-08-06 -- see `docs/design/provider-home-page-layout.md`.** Two resources, not three: URNs are deterministic *provided the provider always supplies them* (both services mint a UUID when the input URN is null), and **the `defaultTemplate` pointer needs no resource at all** -- it is bootstrap-seeded and DataHub's own UI edits the default template in place rather than repointing, so the layout is managed by adopting `home_default_1`. An earlier version of this row called the missing pointer mutation an API gap; that was wrong, and the design doc keeps the reasoning. `PERSONAL` remains out by the per-user rule. |
+| ~~**Home-page layout**~~ | `datahub_page_module` + `datahub_page_template`, `GLOBAL` scope only | **Shipped in v0.21.0 (2026-08-09)** -- see `docs/design/provider-home-page-layout.md`. Confirmed in scope 2026-08-02, built 2026-08-06. Two resources, not three: URNs are deterministic *provided the provider always supplies them* (both services mint a UUID when the input URN is null), and **the `defaultTemplate` pointer needs no resource at all** -- it is bootstrap-seeded and DataHub's own UI edits the default template in place rather than repointing, so the layout is managed by adopting `home_default_1`. An earlier version of this row called the missing pointer mutation an API gap; that was wrong, and the design doc keeps the reasoning. `PERSONAL` remains out by the per-user rule. |
 
 ### Investigate before planning
 
