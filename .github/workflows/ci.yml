@@ -95,9 +95,29 @@ jobs:
       # CLI config with a dev override, so terraform never runs init.
       - run: make test-examples
 
+  vulncheck:
+    name: Vulncheck
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Reports only vulnerabilities the provider actually calls. This is not
+      # redundant with Dependabot: the two consult different databases, and the
+      # x/text and x/net advisories that prompted this job have no GitHub
+      # advisory entry at all. Fetches the vulnerability database at run time,
+      # so an advisory published upstream can turn this red without any change
+      # to the branch -- that is the intent, not a flake.
+      - run: make deps-vulncheck
+
   check:
     name: Check
-    needs: [build, generate, test, examples]
+    needs: [build, generate, test, examples, vulncheck]
     if: always()
     runs-on: ubuntu-latest
     steps:
