@@ -18,17 +18,27 @@ For a template that changes nothing users see, use the `page-template-simple` ex
 
 DataHub renders a user's own template if they have one, and the organisation default otherwise. So adopting the default changes the page for everyone **except** people who have personalised theirs — and the only way to see that is with a second person.
 
-Two optional pieces demonstrate it:
+Two pieces demonstrate it, and both are created unconditionally — without them this example would be little more than `page-template-simple`.
 
-- **`create_alternate_template`** (on by default) publishes a second `GLOBAL` template. Nothing points at it, and **DataHub has no query that lists templates**, so it is unreachable until somebody is handed its URN. That is why `alternate_template_urn` is an output: for this pattern the output *is* the discovery mechanism, not a convenience.
-- **`create_test_user`** (off by default) creates a user who has configured nothing. Log in as them and you see the organisation default — which is the proof that adopting it reached somebody other than the account that ran `terraform apply`.
+**A second `GLOBAL` template.** Nothing points at it, and **DataHub has no query that lists templates**, so it is unreachable until somebody is handed its URN. That is why `alternate_template_urn` is an output: for this pattern the output *is* the discovery mechanism, not a convenience.
 
-Any user can then switch themselves to the alternate with two API calls and **no privilege at all**: `updateUserHomePageSettings` is ungated and hard-scoped to the caller, so nobody can change anyone else's page. `terraform output switch_to_alternate_instructions` prints them. No personal access token is needed — a session cookie from `/logIn` is enough.
+**⚠️ A second user.** This example **creates a real login** on whatever instance you apply it to — `tf-example-homepage-viewer@example.invalid` by default, overridable with `test_user_email`. They configure nothing, so they see the organisation default, which is the proof that adopting it reached somebody other than the account that ran the apply.
+
+No password is set for them. The provider generates a throwaway and returns a **single-use reset link, valid 24 hours**:
 
 ```bash
-terraform apply -var create_test_user=true -var test_user_password='...'
+terraform output -raw test_user_password_reset_url
+```
+
+Open it, set a password, then log in as that user. Terraform cannot show a secret once — outputs live in state and can be re-read indefinitely — so an expiring link is the closest honest equivalent, and better than generating a password the state would keep forever.
+
+Once logged in, they can switch themselves to the alternate with two API calls and **no privilege at all**: `updateUserHomePageSettings` is ungated and hard-scoped to the caller, so nobody can change anyone else's page. No access token is needed — a session cookie from `/logIn` is enough.
+
+```bash
 terraform output -raw switch_to_alternate_instructions
 ```
+
+`terraform destroy` removes the user along with everything else. On open-source DataHub the sign-up guard rejects any address whose entity already exists, so a skipped destroy leaves that address unusable on that instance until the user is deleted.
 
 Note there is no way to make the alternate the *organisation* default. Nothing can move that pointer; changing what everyone sees means editing the template it already names.
 

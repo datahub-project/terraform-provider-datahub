@@ -112,8 +112,6 @@ resource "datahub_page_template" "home" {
 #
 # Any user can then point themselves at it, with no privilege at all.
 resource "datahub_page_template" "alternate" {
-  count = var.create_alternate_template ? 1 : 0
-
   page_template_id = "tf-example-homepage-alternate"
   surface_type     = "HOME_PAGE"
 
@@ -134,17 +132,26 @@ resource "datahub_page_template" "alternate" {
 # The point of this user is that they configured nothing. With no personal
 # template of their own they see the organisation default -- which is how you
 # tell that adopting the default template reached somebody other than the
-# account that applied it.
+# account that applied it. Without them this example is barely more than
+# page-template-simple.
 #
-# On DataHub Cloud the user's URN is derived from the email and ignores the
-# username, so the two are set to the same value and the config works on both.
+# No password is set. Omitting initial_password makes the provider generate a
+# throwaway one and return a single-use reset link with a 24-hour TTL, which is
+# published in outputs.tf. That is deliberately better than generating a
+# password here: a Terraform output lives in state permanently and can be
+# re-read at any time, so a generated password would be less protected than the
+# write-only attribute it replaced. A link that expires is not.
+#
+# It also means the example needs no input, so it applies unattended.
+#
+# No role is assigned, so the user gets whatever a new native user gets by
+# default -- which is the point, since they are here to represent somebody who
+# configured nothing.
+#
+# On DataHub Cloud the URN is derived from the email and ignores the username,
+# so both are set to the same value and the config works on either flavour.
 resource "datahub_local_user_login" "viewer" {
-  count = var.create_test_user ? 1 : 0
-
   username  = var.test_user_email
   email     = var.test_user_email
   full_name = "TF Example Homepage Viewer"
-
-  # Write-only: never stored in Terraform state.
-  initial_password = var.test_user_password
 }

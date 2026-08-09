@@ -48,15 +48,15 @@ output "verify_command" {
 # this output the publication mechanism, not a convenience.
 output "alternate_template_urn" {
   description = "URN of the opt-in alternate layout. Distribute this; nothing in DataHub will reveal it."
-  value       = one(datahub_page_template.alternate[*].urn)
+  value       = datahub_page_template.alternate.urn
 }
 
 # Two calls, no personal access token needed: log in for a session cookie, then
 # set your own pointer. updateUserHomePageSettings needs no privilege and is
 # hard-scoped to the caller, so a user can only ever change their own page.
 output "switch_to_alternate_instructions" {
-  description = "Commands a user runs to adopt the alternate layout. Substitute their own password."
-  value = var.create_alternate_template ? format(
+  description = "Commands the test user runs to adopt the alternate layout, once they have set a password via password_reset_url."
+  value = format(
     <<-EOT
     # 1. Log in and keep the session cookie
     curl -sS -c cookies.txt -X POST "$DATAHUB_GMS_URL/logIn" \
@@ -74,12 +74,25 @@ output "switch_to_alternate_instructions" {
     , var.test_user_email,
     jsonencode({
       query     = "mutation u($input: UpdateUserHomePageSettingsInput!){ updateUserHomePageSettings(input:$input) }"
-      variables = { input = { pageTemplate = one(datahub_page_template.alternate[*].urn) } }
+      variables = { input = { pageTemplate = datahub_page_template.alternate.urn } }
     })
-  ) : "Set create_alternate_template = true to publish an alternate layout."
+  )
+}
+
+# Single-use, 24-hour TTL. This is the only time it is obtainable in a usable
+# form -- send it to whoever is playing the test user so they can set their own
+# password, then log in and adopt the alternate layout above.
+#
+# Terraform cannot show a value once: outputs live in state and can be re-read
+# indefinitely. A link that expires is the closest honest equivalent, which is
+# why no password is generated here.
+output "test_user_password_reset_url" {
+  description = "Single-use password reset link for the test user, valid 24 hours."
+  value       = datahub_local_user_login.viewer.password_reset_url
+  sensitive   = true
 }
 
 output "test_user_urn" {
   description = "URN of the created test user, if any. On DataHub Cloud this is derived from the email."
-  value       = one(datahub_local_user_login.viewer[*].user_urn)
+  value       = datahub_local_user_login.viewer.user_urn
 }
