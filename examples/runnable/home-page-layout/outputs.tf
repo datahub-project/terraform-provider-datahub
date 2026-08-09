@@ -55,7 +55,7 @@ output "alternate_template_urn" {
 # set your own pointer. updateUserHomePageSettings needs no privilege and is
 # hard-scoped to the caller, so a user can only ever change their own page.
 output "switch_to_alternate_instructions" {
-  description = "Commands the test user runs to adopt the alternate layout, once they have set a password via password_reset_url."
+  description = "Commands the test user runs to adopt the alternate layout, using the password you supplied as TF_VAR_test_user_password."
   value = format(
     <<-EOT
     # 1. Log in and keep the session cookie
@@ -77,19 +77,6 @@ output "switch_to_alternate_instructions" {
       variables = { input = { pageTemplate = datahub_page_template.alternate.urn } }
     })
   )
-}
-
-# Single-use, 24-hour TTL. This is the only time it is obtainable in a usable
-# form -- send it to whoever is playing the test user so they can set their own
-# password, then log in and adopt the alternate layout above.
-#
-# Terraform cannot show a value once: outputs live in state and can be re-read
-# indefinitely. A link that expires is the closest honest equivalent, which is
-# why no password is generated here.
-output "test_user_password_reset_url" {
-  description = "Single-use password reset link for the test user, valid 24 hours."
-  value       = datahub_local_user_login.viewer.password_reset_url
-  sensitive   = true
 }
 
 output "test_user_urn" {

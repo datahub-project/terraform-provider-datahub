@@ -24,13 +24,18 @@ Two pieces demonstrate it, and both are created unconditionally — without them
 
 **⚠️ A second user.** This example **creates a real login** on whatever instance you apply it to — `tf-example-homepage-viewer@example.invalid` by default, overridable with `test_user_email`. They configure nothing, so they see the organisation default, which is the proof that adopting it reached somebody other than the account that ran the apply.
 
-No password is set for them. The provider generates a throwaway and returns a **single-use reset link, valid 24 hours**:
+**You supply the password**, and it is never stored:
 
 ```bash
-terraform output -raw test_user_password_reset_url
+export TF_VAR_test_user_password=$(openssl rand -base64 24)
+echo "$TF_VAR_test_user_password"    # note it down; you need it to log in
 ```
 
-Open it, set a password, then log in as that user. Terraform cannot show a secret once — outputs live in state and can be re-read indefinitely — so an expiring link is the closest honest equivalent, and better than generating a password the state would keep forever.
+`initial_password` is a write-only attribute, so Terraform passes it to DataHub and keeps nothing — not in state, not in the plan file. The plan shows it as `(write-only attribute)` rather than a value.
+
+The example will not invent one for you, and fails at plan time with instructions if you forget. That is deliberate: Terraform cannot generate a secret and show it to you without also keeping it forever. A root output is persisted in state by definition, and an ephemeral value cannot be a root output at all — `Ephemeral outputs are not allowed in context of a root module`. So every generate-and-display scheme, with or without a third-party provider, ends with the credential in state. Supplying it out of band is the only shape that does not.
+
+Keep the variable exported for `terraform destroy` as well; Terraform evaluates variable validation on both.
 
 Once logged in, they can switch themselves to the alternate with two API calls and **no privilege at all**: `updateUserHomePageSettings` is ungated and hard-scoped to the caller, so nobody can change anyone else's page. No access token is needed — a session cookie from `/logIn` is enough.
 
@@ -54,9 +59,15 @@ Note there is no way to make the alternate the *organisation* default. Nothing c
 export DATAHUB_GMS_URL="http://localhost:8080"
 export DATAHUB_GMS_TOKEN="<your-token>"
 
+# The test user's password. Write-only -- never written to state.
+export TF_VAR_test_user_password=$(openssl rand -base64 24)
+echo "$TF_VAR_test_user_password"
+
 terraform init
 terraform apply
 ```
+
+Passing it as an environment variable rather than `-var` keeps it out of shell history. Forgetting it fails at plan time with instructions rather than silently doing something else.
 
 
 ## Verify

@@ -135,14 +135,15 @@ resource "datahub_page_template" "alternate" {
 # account that applied it. Without them this example is barely more than
 # page-template-simple.
 #
-# No password is set. Omitting initial_password makes the provider generate a
-# throwaway one and return a single-use reset link with a 24-hour TTL, which is
-# published in outputs.tf. That is deliberately better than generating a
-# password here: a Terraform output lives in state permanently and can be
-# re-read at any time, so a generated password would be less protected than the
-# write-only attribute it replaced. A link that expires is not.
+# The password comes from you, and is never stored. initial_password is
+# write-only, so Terraform passes it to DataHub and keeps nothing.
 #
-# It also means the example needs no input, so it applies unattended.
+# Terraform cannot generate one and show it to you without also keeping it: a
+# root output is persisted in state by definition, and an ephemeral value
+# cannot be a root output at all ("Ephemeral outputs are not allowed in context
+# of a root module"). So every generate-and-display scheme ends with the
+# credential in state permanently. Supplying it out of band avoids that
+# entirely, and variables.tf fails loudly if you forget.
 #
 # No role is assigned, so the user gets whatever a new native user gets by
 # default -- which is the point, since they are here to represent somebody who
@@ -154,4 +155,7 @@ resource "datahub_local_user_login" "viewer" {
   username  = var.test_user_email
   email     = var.test_user_email
   full_name = "TF Example Homepage Viewer"
+
+  # Write-only: never written to Terraform state.
+  initial_password = var.test_user_password
 }
