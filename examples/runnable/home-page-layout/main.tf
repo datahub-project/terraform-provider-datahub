@@ -67,17 +67,19 @@ resource "datahub_page_module" "runbook" {
 # The template -- the layout those modules sit in
 # ---------------------------------------------------------------------------
 
-# By default this creates a template of its own, which applies and destroys
-# cleanly but is NOT what anyone sees: nothing points at it. That default keeps
-# the example safe to run and safe to tear down on a shared instance.
+# This is the page your users see. Applying replaces it for everyone who has
+# not personalised their own, and `terraform destroy` puts back the layout it
+# had beforehand rather than deleting it.
 #
-# Set adopt_default_template = true to manage the page users actually see. The
-# id then comes from the data source above rather than being hardcoded, because
-# home_default_1 is a bootstrap value rather than an API guarantee.
+# The id comes from the data source rather than being hardcoded, because
+# home_default_1 is a bootstrap value rather than an API guarantee. There is no
+# way to point DataHub at a different template, so managing the home page means
+# managing this one.
 #
-# Read the destroy caveat in the README before switching it on.
+# For a template that changes nothing users see, see the page-template-simple
+# example instead.
 resource "datahub_page_template" "home" {
-  page_template_id = var.adopt_default_template ? data.datahub_home_page_settings.current.default_template_id : "tf-example-homepage-demo"
+  page_template_id = data.datahub_home_page_settings.current.default_template_id
   surface_type     = "HOME_PAGE"
 
   # This resource owns the whole layout. Every apply sends the complete set of

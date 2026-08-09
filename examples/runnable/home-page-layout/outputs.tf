@@ -38,11 +38,6 @@ output "verify_command" {
   )
 }
 
-# Where to look in the UI.
-output "home_page_url" {
-  description = "Open this to see the home page. Reflects the example only when is_the_live_home_page is true."
-  value       = "$DATAHUB_GMS_URL/"
-}
 
 # ---------------------------------------------------------------------------
 # Publishing the alternate template
