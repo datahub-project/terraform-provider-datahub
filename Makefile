@@ -2,6 +2,10 @@
 # Builds the provider binary into ./bin instead of $GOPATH/bin.
 
 GO ?= go
+# Pinned so local runs and CI analyse with the same tool. The vulnerability
+# database it queries is always fetched fresh, so a pin here does not stale the
+# findings -- only the analyser.
+GOVULNCHECK_VERSION ?= v1.6.0
 BIN_DIR ?= bin
 BINARY_NAME ?= terraform-provider-datahub
 TOOL_NAME ?= datahub-tf-extract
@@ -24,7 +28,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples deps-outdated deps-outdated-all deps-update deps-update-all test test-examples testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
+.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-outdated deps-outdated-all deps-update deps-update-all test test-examples testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -38,6 +42,7 @@ help:
 	@echo "  lint          Run golangci-lint"
 	@echo "  generate      Run go generate in tools/"
 	@echo "  bump-examples Bump the datahub provider version pin across examples/runnable; VERSION=x.y.z required"
+	@echo "  deps-vulncheck     Report vulnerabilities this module actually calls (govulncheck; also run in CI)"
 	@echo "  deps-outdated      List direct dependencies (go.mod requires) with newer versions available"
 	@echo "  deps-outdated-all  List all dependencies (direct + indirect) with newer versions available"
 	@echo "  deps-update        Update direct dependencies to latest + go mod tidy; review 'git diff' before commit"
@@ -153,6 +158,13 @@ endif
 # The check targets query the Go module proxy for newer versions but change nothing.
 # The update targets mutate go.mod/go.sum -- review 'git diff' before committing.
 # Run through mise in your shell so the pinned Go is used, e.g. 'mise exec -- make deps-outdated'.
+# Reports only vulnerabilities this module actually calls, which is a much
+# smaller set than "vulnerable version present in the graph" -- and a different
+# set, since the Go vulnerability database carries entries GitHub's advisory
+# database does not. Neither this nor Dependabot subsumes the other.
+deps-vulncheck:
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
 deps-outdated:
 	@echo "Direct dependencies with newer versions available:"
 	@$(GO) list -u -m -f '{{if and .Update (not .Indirect)}}  {{.Path}}: {{.Version}} -> {{.Update.Version}}{{end}}' all | grep . || echo "  (none - all direct dependencies are current)"
