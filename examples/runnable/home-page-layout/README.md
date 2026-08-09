@@ -52,6 +52,7 @@ Note there is no way to make the alternate the *organisation* default. Nothing c
 - A reachable DataHub instance, OSS or Cloud.
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` exported.
 - A token whose principal holds **Manage Home Page Templates**. Without it, DataHub rejects any write to a `GLOBAL`-scoped template or module.
+- `curl` and `jq`, used by the commands this example emits as outputs.
 
 ## Run
 

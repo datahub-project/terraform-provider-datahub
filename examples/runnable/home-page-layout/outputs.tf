@@ -58,10 +58,16 @@ output "switch_to_alternate_instructions" {
   description = "Commands the test user runs to adopt the alternate layout, using the password you supplied as TF_VAR_test_user_password."
   value = format(
     <<-EOT
-    # 1. Log in and keep the session cookie
+    # 1. Log in and keep the session cookie.
+    #    The password is read from the variable you already exported, so this
+    #    pastes and runs as-is, and the credential never appears in the command
+    #    itself, in your shell history, or in this output.
+    #
+    #    jq builds the body rather than string interpolation, so a password
+    #    containing a quote or backslash cannot break the JSON.
     curl -sS -c cookies.txt -X POST "$DATAHUB_GMS_URL/logIn" \
       -H 'Content-Type: application/json' \
-      -d '{"username":"%s","password":"<your-password>"}'
+      -d "$(jq -nc --arg u '%s' --arg p "$TF_VAR_test_user_password" '{username:$u,password:$p}')"
 
     # 2. Point yourself at the alternate layout
     curl -sS -b cookies.txt -X POST "$DATAHUB_GMS_URL/api/v2/graphql" \

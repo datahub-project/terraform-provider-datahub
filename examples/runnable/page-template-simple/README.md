@@ -9,6 +9,7 @@ This example deliberately does **not** touch the page your users see. It creates
 - A reachable DataHub instance, OSS or Cloud.
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` exported.
 - A token whose principal holds **Manage Home Page Templates**. DataHub rejects any write to a `GLOBAL`-scoped template or module without it.
+- `curl` and `jq`, used by the commands this example emits as outputs.
 
 ## Run
 
