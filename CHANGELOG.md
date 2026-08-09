@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-08-09
+
 ### Added
 
 - **Home-page layout is now managed in Terraform**, via `datahub_page_module` for each widget, `datahub_page_template` for the rows they sit in, and a read-only `datahub_home_page_settings` data source. Both resources always send a deterministic URN derived from the id you supply, which is what DataHub's own UI does not do -- create a template through the UI and DataHub mints a random UUID, so an estate that is torn down and rebuilt comes back with a different template every time. Fixed ids mean a demo or test instance rebuilds with its landing page intact. Module `type` is passed to DataHub unvalidated rather than checked against a list compiled into the provider: DataHub's module catalogue grew from 22 types to 30 in a single Cloud release, and a compiled-in list would make each new type unusable until the provider shipped a release.
@@ -379,7 +381,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.18.0...v0.19.0
