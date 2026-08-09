@@ -77,6 +77,8 @@ terraform apply
 
 Passing it as an environment variable rather than `-var` keeps it out of shell history. Forgetting it fails at plan time with instructions rather than silently doing something else.
 
+To change the test user's address or the runbook link, copy `terraform.tfvars.example` to `terraform.tfvars` and uncomment what you need — that file is gitignored. The password is deliberately absent from it, since a write-only value belongs in an environment variable rather than a file on disk.
+
 
 ## Verify
 
