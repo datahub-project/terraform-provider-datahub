@@ -69,3 +69,9 @@ import/
 
 # Reference code
 repos/
+
+# Session cookie jars. The home-page example tells users to run
+# `curl -c cookies.txt` from the example directory, so a successful login
+# writes a live session cookie here. Never commit one.
+cookies.txt
+*.cookies

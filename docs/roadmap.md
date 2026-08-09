@@ -485,6 +485,19 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 
 **Deliberately unprioritised.** These are not a queue and carry no commitment to build. What is recorded instead is **readiness** -- how much is unknown before work could sensibly start -- which is a property of the work rather than a decision about it. Assigning order is a separate call.
 
+### Missing singular data sources (audited 2026-08-09)
+
+A resource without a matching singular data source means a configuration can create the thing but not look one up it does not manage. Audited against the registration lists in `internal/provider/provider.go`, which is the only honest source -- the roadmap's prose coverage claims have drifted before.
+
+| Gap | Note |
+|---|---|
+| `datahub_policy` | The **plural** `datahub_policies` exists but there is no singular lookup, so a config cannot read one policy by id. The oldest of these gaps and the most surprising, since the resource is long-shipped. |
+| `datahub_page_template`, `datahub_page_module` | New with the home-page work. The singular reads are cheap -- the v3 entity endpoint is already used by the resources -- and the published-alternates pattern gives them a real use: a config handed a template URN out-of-band may want to read its layout. |
+
+**Do not add plural enumerators for page templates or modules.** There is no `listPageTemplates` GraphQL query at all, so the only enumeration is the OpenAPI v3 collection endpoint, which is OpenSearch-backed: it was observed reporting `count: 1` and then `count: 3` seconds later for the same data. A data source built on it would be intermittently wrong, which the read-path rule in `CLAUDE.md` exists to prevent.
+
+Deliberately **not** counted as gaps: relationship resources (`datahub_corp_group_member`, `datahub_role_assignment`, `datahub_structured_property_assignment`) have no entity of their own to read; the typed assertion resources are covered by the generic `datahub_assertion` data source; and `datahub_local_user_login` is read through `datahub_corp_user`.
+
 ### Ready to plan (design understood, no open questions)
 
 | Package | Covers | Note |
@@ -500,7 +513,7 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 | Package | Covers | Note |
 |---|---|---|
 | **Org settings singletons** | AI settings (with `datahub_ai_plugin` as a child), asset settings, doc-propagation / context-generation, global views; `helpLink` and brand colour folding into the shipped `datahub_organization_display_preferences` | Largest cluster. Reference implementation exists, so this is scoping work, not pattern work. Roughly four resources under the domain-grouping rule, not ten. MCP servers stay blocked on merge-by-slug versus full-list ownership. |
-| **Home-page layout** | `datahub_page_module` + `datahub_page_template` + `datahub_home_page_settings`, `GLOBAL` scope only | Confirmed in scope 2026-08-02. **Designed 2026-08-06 -- see `docs/design/provider-home-page-layout.md`**, which resolves the two questions that were open here: URNs are deterministic *provided the provider always supplies them* (both services mint a UUID when the input URN is null), and the `defaultTemplate` pointer has no GraphQL write at all, so the singleton needs an OpenAPI v3 `PATCH` on `globalSettingsInfo` -- `POST` would replace the whole aspect and wipe SSO, notifications and MCP settings. `PERSONAL` remains out by the per-user rule. |
+| **Home-page layout** | `datahub_page_module` + `datahub_page_template`, `GLOBAL` scope only | Confirmed in scope 2026-08-02. **Designed and built 2026-08-06 -- see `docs/design/provider-home-page-layout.md`.** Two resources, not three: URNs are deterministic *provided the provider always supplies them* (both services mint a UUID when the input URN is null), and **the `defaultTemplate` pointer needs no resource at all** -- it is bootstrap-seeded and DataHub's own UI edits the default template in place rather than repointing, so the layout is managed by adopting `home_default_1`. An earlier version of this row called the missing pointer mutation an API gap; that was wrong, and the design doc keeps the reasoning. `PERSONAL` remains out by the per-user rule. |
 
 ### Investigate before planning
 

@@ -73,6 +73,8 @@ var urnKeyedResources = map[string]urnKey{
 	"datahub_ingestion_source":     {"source_id", "urn:li:dataHubIngestionSource:"},
 	"datahub_local_user_login":     {"username", "urn:li:corpuser:"},
 	"datahub_ownership_type":       {"type_id", "urn:li:ownershipType:"},
+	"datahub_page_module":          {"page_module_id", "urn:li:dataHubPageModule:"},
+	"datahub_page_template":        {"page_template_id", "urn:li:dataHubPageTemplate:"},
 	"datahub_policy":               {"policy_id", "urn:li:dataHubPolicy:"},
 	"datahub_remote_executor_pool": {"pool_id", "urn:li:dataHubRemoteExecutorPool:"},
 	"datahub_secret":               {"name", "urn:li:dataHubSecret:"},

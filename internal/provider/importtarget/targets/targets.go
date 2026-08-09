@@ -201,6 +201,23 @@ func init() {
 		OSSCompatible: true,
 	})
 
+	// Page modules have no list data source yet, so bulk import cannot
+	// enumerate them. Registered with Enumerate: nil so the coverage test sees
+	// a deliberate entry rather than an omission; import by id still works.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName: "datahub_page_module",
+		Enumerate:        nil,
+		IDFromURN:        func(urn string) string { return strings.TrimPrefix(urn, datahub.PageModuleURNPrefix) },
+		OSSCompatible:    true,
+	})
+
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName: "datahub_page_template",
+		Enumerate:        nil,
+		IDFromURN:        func(urn string) string { return strings.TrimPrefix(urn, datahub.PageTemplateURNPrefix) },
+		OSSCompatible:    true,
+	})
+
 	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_policy",
 		DataSourceTypeName: "datahub_policies",

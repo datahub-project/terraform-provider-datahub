@@ -88,6 +88,8 @@ type mockServer struct {
 	// the OpenAPI v3 collection endpoints (whole-aspect replace semantics).
 	globalTags      map[string][]string
 	ownershipTypes  map[string]mockOwnershipType
+	pageModules     map[string]mockPageModule
+	pageTemplates   map[string]mockPageTemplate
 	dataProducts    map[string]mockDataProduct
 	assertions      map[string]mockAssertion
 	actionPipelines map[string]mockActionPipeline
@@ -126,6 +128,8 @@ func NewServer(t *testing.T) *httptest.Server {
 		entityStructuredProps: make(map[string]map[string][]spMockValue),
 		globalTags:            make(map[string][]string),
 		ownershipTypes:        make(map[string]mockOwnershipType),
+		pageModules:           make(map[string]mockPageModule),
+		pageTemplates:         make(map[string]mockPageTemplate),
 		dataProducts:          make(map[string]mockDataProduct),
 		assertions:            make(map[string]mockAssertion),
 		actionPipelines:       make(map[string]mockActionPipeline),
@@ -144,6 +148,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubpagemodule/", s.handlePageModuleItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubpagetemplate/", s.handlePageTemplateItem)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup", s.handleCorpGroupCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpgroup/", s.handleCorpGroupItem)
 	mux.HandleFunc("/openapi/v3/entity/domain", s.handleDomainWrite)
@@ -218,6 +224,14 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleSearchAcrossEntities(w, req.Variables)
 	case strings.Contains(q, "upsertConnection"):
 		s.handleCreateOrUpdateConnection(w, req.Variables)
+	case strings.Contains(q, "upsertPageModule"):
+		s.handleUpsertPageModule(w, req.Variables)
+	case strings.Contains(q, "deletePageModule"):
+		s.handleDeletePageModule(w, req.Variables)
+	case strings.Contains(q, "upsertPageTemplate"):
+		s.handleUpsertPageTemplate(w, req.Variables)
+	case strings.Contains(q, "deletePageTemplate"):
+		s.handleDeletePageTemplate(w, req.Variables)
 	case strings.Contains(q, "createDomain"):
 		s.handleCreateDomain(w, req.Variables)
 	case strings.Contains(q, "moveDomain"):

@@ -1,0 +1,37 @@
+# Copy this file to terraform.tfvars and uncomment the variables you want to
+# override. terraform.tfvars is gitignored and will not be committed.
+
+# Address for the test user this example creates.
+#
+# Used as both the username and the email field. On DataHub Cloud the user's
+# URN is derived from the email and the username is ignored, so the two must
+# match; an email address satisfies that on both flavours.
+#
+# The default is a .invalid address, which can never be a real mailbox. Change
+# it only if you want the account to correspond to a real person -- and note
+# that `terraform destroy` hard-deletes the user entity, not just its
+# credentials.
+#
+# test_user_email = "alice@example.com"
+
+# Target for the link module on the page.
+#
+# runbook_url = "https://runbooks.example.com/data-platform"
+
+# test_user_password is DELIBERATELY not listed here.
+#
+# It is a write-only attribute: Terraform hands it to DataHub and stores it
+# nowhere, neither in state nor in the plan file. Putting it in terraform.tfvars
+# would undo half of that by writing the credential to disk in plaintext, where
+# it outlives the shell that created it. Export it instead, so it dies with the
+# session:
+#
+#     export TF_VAR_test_user_password=$(openssl rand -base64 24)
+#     echo "$TF_VAR_test_user_password"   # note it down; you need it to log in
+#
+# You will need it exported for `terraform destroy` as well, because Terraform
+# evaluates variable validation on both.
+#
+# If you do prefer a file, terraform.tfvars is gitignored so it will not be
+# committed -- but it is still a plaintext credential sitting in your working
+# tree, and nothing will remind you to delete it.
