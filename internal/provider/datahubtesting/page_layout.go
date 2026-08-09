@@ -4,6 +4,7 @@
 package datahubtesting
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -471,5 +472,238 @@ resource "datahub_page_template" "test" {
 			Config: cfg,
 			Check:  resource.TestCheckResourceAttr("datahub_page_template.test", "rows.#", "0"),
 		},
+	}
+}
+
+// PageModuleListParamsSteps exercises the two creatable module types whose
+// params carry lists, which nothing else covers.
+//
+// ASSET_COLLECTION and HIERARCHY are the only creatable types with a list-valued
+// field, and before this scenario no list param had ever round-tripped in either
+// direction -- optionalStringList sat at zero coverage. Both live-only defects
+// found in this feature so far were in exactly this area (params being non-null,
+// and the creatable-type rule), and both passed a green mock suite, so the
+// untested conversions are where the next one would be.
+func PageModuleListParamsSteps(prefix string) []resource.TestStep {
+	collection := providerBlock + fmt.Sprintf(`
+resource "datahub_page_module" "test" {
+  page_module_id = "%[1]s-coll"
+  name           = "TF Test Collection"
+  type           = "ASSET_COLLECTION"
+
+  params = {
+    asset_collection = {
+      asset_urns = ["urn:li:domain:tf-test-a", "urn:li:domain:tf-test-b"]
+    }
+  }
+}
+`, prefix)
+
+	hierarchy := providerBlock + fmt.Sprintf(`
+resource "datahub_page_module" "test2" {
+  page_module_id = "%[1]s-hier"
+  name           = "TF Test Hierarchy"
+  type           = "HIERARCHY"
+
+  params = {
+    hierarchy_view = {
+      asset_urns            = ["urn:li:domain:tf-test-a"]
+      show_related_entities = true
+    }
+  }
+}
+`, prefix)
+
+	return []resource.TestStep{
+		{
+			Config: collection,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("datahub_page_module.test", "params.asset_collection.asset_urns.#", "2"),
+				resource.TestCheckResourceAttr("datahub_page_module.test", "params.asset_collection.asset_urns.1",
+					"urn:li:domain:tf-test-b"),
+				// Order within the list must survive, not merely membership.
+				resource.TestCheckResourceAttr("datahub_page_module.test", "params.asset_collection.asset_urns.0",
+					"urn:li:domain:tf-test-a"),
+			),
+		},
+		{
+			Config: hierarchy,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("datahub_page_module.test2", "params.hierarchy_view.asset_urns.#", "1"),
+				resource.TestCheckResourceAttr("datahub_page_module.test2", "params.hierarchy_view.show_related_entities", "true"),
+			),
+		},
+	}
+}
+
+// PageModuleImportSteps imports a module created outside Terraform.
+//
+// datahub_page_module's ImportState had zero coverage while every other
+// resource in the provider sat between 53% and 72% -- a shipped, registered
+// import target that nothing exercised.
+func PageModuleImportSteps(prefix string) []resource.TestStep {
+	moduleID := prefix + "-import"
+
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_page_module" "imported" {
+  page_module_id = %q
+  name           = "TF Test Imported"
+  type           = "RICH_TEXT"
+
+  params = {
+    rich_text = {
+      content = "imported"
+    }
+  }
+}
+`, moduleID)
+
+	return []resource.TestStep{
+		{
+			PreConfig:          func() { seedPageModule(moduleID, "TF Test Imported", "imported") },
+			Config:             cfg,
+			ResourceName:       "datahub_page_module.imported",
+			ImportState:        true,
+			ImportStateId:      moduleID,
+			ImportStatePersist: true,
+			ImportStateCheck: func(states []*terraform.InstanceState) error {
+				if len(states) != 1 {
+					return fmt.Errorf("expected 1 imported state, got %d", len(states))
+				}
+				attrs := states[0].Attributes
+				if got := attrs["type"]; got != "RICH_TEXT" {
+					return fmt.Errorf("imported type = %q, want RICH_TEXT", got)
+				}
+				if got := attrs["params.rich_text.content"]; got != "imported" {
+					return fmt.Errorf("imported params did not round-trip: %q", got)
+				}
+				return nil
+			},
+		},
+	}
+}
+
+// PageTemplateRestoreFromStateSteps deletes the DataHub-side backup and checks
+// the destroy still restores, from the copy in Terraform state.
+//
+// This is the fallback rung of the restore ladder, and it is the one that runs
+// when something has already gone wrong -- exactly when a bug costs most. The
+// CheckDestroy is where the assertion lives, because the restore happens during
+// teardown rather than in a step.
+func PageTemplateRestoreFromStateSteps(prefix string) (steps []resource.TestStep, checkDestroy resource.TestCheckFunc) {
+	templateID := prefix + "-fallback"
+	original := [][]string{
+		{"urn:li:dataHubPageModule:your_assets"},
+		{"urn:li:dataHubPageModule:top_domains"},
+	}
+
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_page_template" "fallback" {
+  page_template_id = %q
+
+  rows = [
+    { modules = ["urn:li:dataHubPageModule:platforms"] },
+  ]
+}
+`, templateID)
+
+	steps = []resource.TestStep{
+		{
+			PreConfig: func() { seedPageTemplate(templateID, original) },
+			Config:    cfg,
+			Check: resource.TestCheckResourceAttr("datahub_page_template.fallback",
+				"original_rows.#", "2"),
+		},
+		{
+			// Remove the authoritative copy, leaving only original_rows in state.
+			PreConfig: func() {
+				if err := DeleteSeededPageTemplate("tfprovider-backup-" + templateID); err != nil {
+					panic(fmt.Sprintf("could not delete the backup template: %v", err))
+				}
+			},
+			Config: cfg,
+		},
+	}
+
+	checkDestroy = func(*terraform.State) error {
+		rows, err := readPageTemplateRows(templateID)
+		if err != nil {
+			return fmt.Errorf("reading the template after destroy: %w", err)
+		}
+		if len(rows) != 2 || len(rows[0]) != 1 || rows[0][0] != "urn:li:dataHubPageModule:your_assets" {
+			return fmt.Errorf("destroy did not restore the original layout from state, got %v", rows)
+		}
+		return nil
+	}
+	return steps, checkDestroy
+}
+
+// seedPageModule creates a page module outside Terraform.
+func seedPageModule(moduleID, name, content string) {
+	body := fmt.Sprintf(`{"query":"mutation u($input: UpsertPageModuleInput!){ upsertPageModule(input:$input){urn} }",`+
+		`"variables":{"input":{"urn":"urn:li:dataHubPageModule:%s","name":%q,"type":"RICH_TEXT","scope":"GLOBAL",`+
+		`"params":{"richTextParams":{"content":%q}}}}}`, moduleID, name, content)
+	postGraphQL(body, "seedPageModule")
+}
+
+// readPageTemplateRows reads a template's rows through the strongly-consistent
+// entity endpoint, for assertions that run outside a Terraform step.
+func readPageTemplateRows(templateID string) ([][]string, error) {
+	url := fmt.Sprintf("%s/openapi/v3/entity/datahubpagetemplate/urn:li:dataHubPageTemplate:%s",
+		os.Getenv("DATAHUB_GMS_URL"), templateID)
+	req, err := http.NewRequest(http.MethodGet, url, nil) //nolint:noctx
+	if err != nil {
+		return nil, fmt.Errorf("building the read request: %w", err)
+	}
+	if tok := os.Getenv("DATAHUB_GMS_TOKEN"); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("reading the template: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d reading the template", resp.StatusCode)
+	}
+
+	var entity struct {
+		Props struct {
+			Value struct {
+				Rows []struct {
+					Modules []string `json:"modules"`
+				} `json:"rows"`
+			} `json:"value"`
+		} `json:"dataHubPageTemplateProperties"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&entity); err != nil {
+		return nil, fmt.Errorf("decoding the template: %w", err)
+	}
+	out := make([][]string, 0, len(entity.Props.Value.Rows))
+	for _, r := range entity.Props.Value.Rows {
+		out = append(out, r.Modules)
+	}
+	return out, nil
+}
+
+// postGraphQL sends a mutation and panics on transport or HTTP failure, which is
+// what a test seeding helper should do: a seed that silently failed would turn
+// into a confusing assertion failure several steps later.
+func postGraphQL(body, caller string) {
+	req, err := http.NewRequest(http.MethodPost, os.Getenv("DATAHUB_GMS_URL")+"/api/graphql", strings.NewReader(body)) //nolint:noctx
+	if err != nil {
+		panic(fmt.Sprintf("%s: build request: %v", caller, err))
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := os.Getenv("DATAHUB_GMS_TOKEN"); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(fmt.Sprintf("%s: POST: %v", caller, err))
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		panic(fmt.Sprintf("%s: unexpected status %d", caller, resp.StatusCode))
 	}
 }

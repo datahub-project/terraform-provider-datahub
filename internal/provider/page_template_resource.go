@@ -474,17 +474,26 @@ func (r *pageTemplateResource) Delete(ctx context.Context, req resource.DeleteRe
 func (r *pageTemplateResource) backupRows(ctx context.Context, id string, state *pageTemplateResourceModel, diags *diag.Diagnostics) ([][]string, string) {
 	backupURN := datahub.BackupPageTemplateURN(id)
 
+	// Existence, not emptiness, decides whether a copy is usable. An adopted
+	// template that legitimately had no rows captures an empty layout, and
+	// restoring it to empty is the correct outcome -- treating empty as "no
+	// backup" would refuse the destroy of every template that was empty when
+	// Terraform found it. Found by trying to write the test for the refusal
+	// branch and discovering it fired on a case that should have restored.
 	backup, err := r.client.GetPageTemplateByURN(ctx, backupURN)
 	if err != nil {
 		diags.AddWarning("Could not read the backup template",
 			fmt.Sprintf("Falling back to the copy in Terraform state: %s", err))
-	} else if backup != nil && len(backup.Rows) > 0 {
+	} else if backup != nil {
 		return backup.Rows, backupURN
 	}
 
+	if state.OriginalRows.IsNull() || state.OriginalRows.IsUnknown() {
+		return nil, ""
+	}
 	rows, d := pageTemplateRowsFromModel(ctx, state.OriginalRows)
 	diags.Append(d...)
-	if diags.HasError() || len(rows) == 0 {
+	if diags.HasError() {
 		return nil, ""
 	}
 	if backup == nil {
