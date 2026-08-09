@@ -39,6 +39,13 @@ Keep the variable exported for `terraform destroy` as well; Terraform evaluates 
 
 Once logged in, they can switch themselves to the alternate with two API calls and **no privilege at all**: `updateUserHomePageSettings` is ungated and hard-scoped to the caller, so nobody can change anyone else's page. No access token is needed — a session cookie from `/logIn` is enough.
 
+Those two calls go to the DataHub **frontend**, not to GMS. On open-source DataHub these are different hosts and GMS returns 404 for both; on DataHub Cloud one host serves both:
+
+```bash
+export DATAHUB_FRONTEND_URL=http://localhost:9002   # Quickstart
+export DATAHUB_FRONTEND_URL="$DATAHUB_GMS_URL"      # DataHub Cloud
+```
+
 ```bash
 terraform output -raw switch_to_alternate_instructions
 ```

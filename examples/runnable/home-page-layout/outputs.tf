@@ -58,6 +58,14 @@ output "switch_to_alternate_instructions" {
   description = "Commands the test user runs to adopt the alternate layout, using the password you supplied as TF_VAR_test_user_password."
   value = format(
     <<-EOT
+    # NOTE: these two calls go to the DataHub FRONTEND, not to GMS. On
+    # open-source DataHub they are different hosts -- frontend :9002, GMS :8080
+    # -- and GMS returns 404 for both. On DataHub Cloud one host serves both, so
+    # DATAHUB_FRONTEND_URL and DATAHUB_GMS_URL are the same value there.
+    #
+    #   export DATAHUB_FRONTEND_URL=http://localhost:9002   # Quickstart
+    #   export DATAHUB_FRONTEND_URL="$DATAHUB_GMS_URL"      # DataHub Cloud
+    #
     # 1. Log in and keep the session cookie.
     #    The password is read from the variable you already exported, so this
     #    pastes and runs as-is, and the credential never appears in the command
@@ -65,12 +73,12 @@ output "switch_to_alternate_instructions" {
     #
     #    jq builds the body rather than string interpolation, so a password
     #    containing a quote or backslash cannot break the JSON.
-    curl -sS -c cookies.txt -X POST "$DATAHUB_GMS_URL/logIn" \
+    curl -sS -c cookies.txt -X POST "$DATAHUB_FRONTEND_URL/logIn" \
       -H 'Content-Type: application/json' \
       -d "$(jq -nc --arg u '%s' --arg p "$TF_VAR_test_user_password" '{username:$u,password:$p}')"
 
     # 2. Point yourself at the alternate layout
-    curl -sS -b cookies.txt -X POST "$DATAHUB_GMS_URL/api/v2/graphql" \
+    curl -sS -b cookies.txt -X POST "$DATAHUB_FRONTEND_URL/api/v2/graphql" \
       -H 'Content-Type: application/json' \
       -d '%s'
 
