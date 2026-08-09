@@ -12,6 +12,24 @@ The point of doing this in Terraform is that the layout becomes part of the esta
 
 Read the cleanup section before switching it on.
 
+## Showing who the default actually reaches
+
+DataHub renders a user's own template if they have one, and the organisation default otherwise. So adopting the default changes the page for everyone **except** people who have personalised theirs — and the only way to see that is with a second person.
+
+Two optional pieces demonstrate it:
+
+- **`create_alternate_template`** (on by default) publishes a second `GLOBAL` template. Nothing points at it, and **DataHub has no query that lists templates**, so it is unreachable until somebody is handed its URN. That is why `alternate_template_urn` is an output: for this pattern the output *is* the discovery mechanism, not a convenience.
+- **`create_test_user`** (off by default) creates a user who has configured nothing. Log in as them and you see the organisation default — which is the proof that adopting it reached somebody other than the account that ran `terraform apply`.
+
+Any user can then switch themselves to the alternate with two API calls and **no privilege at all**: `updateUserHomePageSettings` is ungated and hard-scoped to the caller, so nobody can change anyone else's page. `terraform output switch_to_alternate_instructions` prints them. No personal access token is needed — a session cookie from `/logIn` is enough.
+
+```bash
+terraform apply -var create_test_user=true -var test_user_password='...'
+terraform output -raw switch_to_alternate_instructions
+```
+
+Note there is no way to make the alternate the *organisation* default. Nothing can move that pointer; changing what everyone sees means editing the template it already names.
+
 ## Prerequisites
 
 - A reachable DataHub instance, OSS or Cloud.

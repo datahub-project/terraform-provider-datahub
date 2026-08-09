@@ -169,6 +169,18 @@ Before implementing any new resource or data source, read `docs/design/datahub-m
 
 ## Example conventions
 
+### Directory naming: `-simple` for the minimal example
+
+**A runnable example that exists to show the minimal use of one resource is named `<resource>-simple`. Everything else is named for the scenario it demonstrates.**
+
+So `tag-simple`, `domain-simple`, `structured-property-simple` are reference examples: the smallest configuration that exercises the resource, nothing decorative. `financial-services`, `local-iam`, `action-pipeline-dataplex-sync` are scenario pieces, named for what they show rather than what they use.
+
+This was the original convention and it eroded because nobody wrote it down. Two directories drifted to `-basic` (`executor-pool-basic`, `secret-basic`) before it was noticed, and twelve of nineteen examples are scenario-named -- correctly, in most cases. **Standardise on `-simple`**; the two `-basic` names are grandfathered rather than renamed, because a directory rename changes the identifiers inside it and the uniqueness test treats those as attribution for orphaned entities.
+
+Worth knowing the counter-argument, since it will come up: `basic` is the near-universal suffix for the minimal acceptance *test* across Terraform providers (`TestAccResourceX_basic`). It does not govern here -- it names test functions rather than example directories, providers' `examples/` trees have no shared convention at all, and this repository's own tests use `_Lifecycle`, `_List` and `_DataSource` rather than `_basic`.
+
+A resource can have both: `page-template-simple` is the minimal reference, `home-page-layout` the demonstrative piece. When it does, keep the expensive or risky behaviour in the scenario example and let the `-simple` one stay boring -- that is what makes it useful to copy from.
+
 ### File layout
 
 Runnable examples follow the standard HashiCorp convention for file separation:
@@ -192,7 +204,7 @@ Use a `tf-example-` prefix on machine-readable IDs (e.g. `group_id`, `policy_id`
 
 The scheme that delivers it: **`tf-example-<example-slug>-<name>`**, where `<example-slug>` is a short fixed token naming the origin directory, and the matching display name is `TF Example <Slug> - <Name>`. So `examples/runnable/domain-simple` owns `tf-example-domain-finance` / "TF Example Domain - Finance", and `examples/runnable/glossary-node-term-simple` owns `tf-example-glossary-finance` / "TF Example Glossary - Finance". Adding the slug is what makes the identifier self-describing; without it, "unique" would be satisfied by a random suffix that tells a sweeper nothing.
 
-Current slugs, one per directory: `dataplex`, `sqlite`, `snowflake` / `snowflake-ingest` (the two connection examples), `dp`, `domain`, `pool`, `fibo`, `glossary`, `csv`, `iam`, `ownership`, `azure`, `secret`, `governance`, `property`, `tag`. A directory whose name already reads as the slug (`assertion-volume-sqlite` -> `tf-example-sqlite-assertion`) needs nothing more. DataHub secret names keep their SCREAMING_SNAKE convention and take the same shape uppercased: `TF_EXAMPLE_SECRET_BASIC`, `TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME`.
+Current slugs, one per directory: `dataplex`, `sqlite`, `snowflake` / `snowflake-ingest` (the two connection examples), `dp`, `domain`, `pool`, `fibo`, `glossary`, `csv`, `iam`, `ownership`, `azure`, `secret`, `governance`, `property`, `tag`, `homepage`, `pagetpl`. A directory whose name already reads as the slug (`assertion-volume-sqlite` -> `tf-example-sqlite-assertion`) needs nothing more. DataHub secret names keep their SCREAMING_SNAKE convention and take the same shape uppercased: `TF_EXAMPLE_SECRET_BASIC`, `TF_EXAMPLE_AZURE_ABS_ACCOUNT_NAME`.
 
 Two further points, both learned the hard way:
 

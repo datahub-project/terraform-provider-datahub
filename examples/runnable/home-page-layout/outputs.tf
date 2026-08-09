@@ -43,3 +43,48 @@ output "home_page_url" {
   description = "Open this to see the home page. Reflects the example only when is_the_live_home_page is true."
   value       = "$DATAHUB_GMS_URL/"
 }
+
+# ---------------------------------------------------------------------------
+# Publishing the alternate template
+# ---------------------------------------------------------------------------
+
+# DataHub has no query that lists page templates, so a user cannot discover this
+# one. Handing out the URN is the only way it becomes reachable -- which makes
+# this output the publication mechanism, not a convenience.
+output "alternate_template_urn" {
+  description = "URN of the opt-in alternate layout. Distribute this; nothing in DataHub will reveal it."
+  value       = one(datahub_page_template.alternate[*].urn)
+}
+
+# Two calls, no personal access token needed: log in for a session cookie, then
+# set your own pointer. updateUserHomePageSettings needs no privilege and is
+# hard-scoped to the caller, so a user can only ever change their own page.
+output "switch_to_alternate_instructions" {
+  description = "Commands a user runs to adopt the alternate layout. Substitute their own password."
+  value = var.create_alternate_template ? format(
+    <<-EOT
+    # 1. Log in and keep the session cookie
+    curl -sS -c cookies.txt -X POST "$DATAHUB_GMS_URL/logIn" \
+      -H 'Content-Type: application/json' \
+      -d '{"username":"%s","password":"<your-password>"}'
+
+    # 2. Point yourself at the alternate layout
+    curl -sS -b cookies.txt -X POST "$DATAHUB_GMS_URL/api/v2/graphql" \
+      -H 'Content-Type: application/json' \
+      -d '%s'
+
+    # To go back to the organisation default, replace the variables above with:
+    #   {"input":{"removePageTemplate":true}}
+    EOT
+    , var.test_user_email,
+    jsonencode({
+      query     = "mutation u($input: UpdateUserHomePageSettingsInput!){ updateUserHomePageSettings(input:$input) }"
+      variables = { input = { pageTemplate = one(datahub_page_template.alternate[*].urn) } }
+    })
+  ) : "Set create_alternate_template = true to publish an alternate layout."
+}
+
+output "test_user_urn" {
+  description = "URN of the created test user, if any. On DataHub Cloud this is derived from the email."
+  value       = one(datahub_local_user_login.viewer[*].user_urn)
+}

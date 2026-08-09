@@ -98,3 +98,51 @@ resource "datahub_page_template" "home" {
     },
   ]
 }
+
+# ---------------------------------------------------------------------------
+# An alternate layout users can opt into
+# ---------------------------------------------------------------------------
+
+# A second GLOBAL template. Nothing points at it, and DataHub has no query that
+# lists templates -- so the only way anyone reaches it is by being told its URN.
+# That is why it is published in outputs.tf: for this pattern the output is not
+# a convenience, it is the entire discovery mechanism.
+#
+# Any user can then point themselves at it, with no privilege at all.
+resource "datahub_page_template" "alternate" {
+  count = var.create_alternate_template ? 1 : 0
+
+  page_template_id = "tf-example-homepage-alternate"
+  surface_type     = "HOME_PAGE"
+
+  rows = [
+    {
+      modules = [datahub_page_module.welcome.urn]
+    },
+    {
+      modules = [local.data_products_module]
+    },
+  ]
+}
+
+# ---------------------------------------------------------------------------
+# A second user, to show who the organisation default actually reaches
+# ---------------------------------------------------------------------------
+
+# The point of this user is that they configured nothing. With no personal
+# template of their own they see the organisation default -- which is how you
+# tell that adopting the default template reached somebody other than the
+# account that applied it.
+#
+# On DataHub Cloud the user's URN is derived from the email and ignores the
+# username, so the two are set to the same value and the config works on both.
+resource "datahub_local_user_login" "viewer" {
+  count = var.create_test_user ? 1 : 0
+
+  username  = var.test_user_email
+  email     = var.test_user_email
+  full_name = "TF Example Homepage Viewer"
+
+  # Write-only: never stored in Terraform state.
+  initial_password = var.test_user_password
+}
