@@ -1,16 +1,24 @@
 version: 2
 updates:
-  # dependency-type "all" includes indirect requires. Without it these updates
-  # move direct dependencies only, which is how three indirect modules sat on
-  # advisories the provider actually called while the weekly PR arrived on
-  # schedule and looked like coverage. Grouping keeps the extra churn to one PR.
+  # These updates deliberately move direct dependencies only, which is the
+  # gomod default. Indirect versions are chosen by minimal version selection --
+  # the maximum of the minimums every module in the graph asks for -- so an
+  # indirect dependency behind its latest release is the version this build's
+  # dependencies collectively agreed on, not drift. Raising one unilaterally
+  # puts the build in a combination nobody upstream tested, and the parent
+  # library is better placed to judge that than a weekly bot.
+  #
+  # Indirect coverage comes from the two mechanisms that answer the question
+  # currency cannot: Dependabot security updates, which reach the indirect
+  # graph when an advisory lands, and the Vulncheck CI job, which reports
+  # whether a vulnerable symbol is actually called. Neither is a cadence.
+  # Override an indirect version by hand for a named reason -- an advisory, or
+  # a bug actually hit -- not on a schedule.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
       day: monday
-    allow:
-      - dependency-type: "all"
     open-pull-requests-limit: 5
     groups:
       go-dependencies:
@@ -22,24 +30,21 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    allow:
-      - dependency-type: "all"
     open-pull-requests-limit: 3
     groups:
       tools-dependencies:
         patterns:
           - "*"
 
-  # The third Go module, covered by nothing until now. It pins tfplugindocs for
-  # doc generation and ships nothing to users, so its exposure is low -- but low
-  # should be a conclusion someone reached, not the accident of a missing block.
+  # The third Go module, covered by nothing until 2026-08-09. It pins
+  # tfplugindocs for doc generation and ships nothing to users, so its exposure
+  # is low -- but low should be a conclusion someone reached, not the accident
+  # of a missing block.
   - package-ecosystem: gomod
     directory: /tools/serve
     schedule:
       interval: weekly
       day: monday
-    allow:
-      - dependency-type: "all"
     open-pull-requests-limit: 3
     groups:
       tools-serve-dependencies:
