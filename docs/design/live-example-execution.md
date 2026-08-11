@@ -242,7 +242,9 @@ Wall-clock, **measured 2026-08-11 both locally and in CI**. The original estimat
 
 `timeout-minutes: 75` stays. It is sized for a cold image pull, not for the examples, and at 4.5 minutes observed there is no reason to tighten it toward a figure that would turn a slow pull into a failure.
 
-**All of the above is against DataHub v1.7.0**, both locally and in CI, even though `QUICKSTART_VERSION` read `v1.5.0.6` at the time. That pin had aged out of the datahub CLI's quickstart version map and was silently substituted for the CLI's default -- visible in the CI log for this very run as `Using alternate quickstart configuration for version 'v1.5.0.6'`. Fixed separately; the numbers stand, but v1.7.0 is the version they describe.
+**All of the above is against DataHub v1.7.0**, both locally and in CI.
+
+Worth recording how that was established, because for the first measured run it was not what the Makefile claimed. `QUICKSTART_VERSION` then read `v1.5.0.6`, which had aged out of the datahub CLI's quickstart version map and was silently substituted for the CLI's default -- the CI log for that run carries `Using alternate quickstart configuration for version 'v1.5.0.6'` in plain sight. So the effective target was whatever the CLI preferred on the day, and the figures happened to describe v1.7.0 rather than the pinned version. #127 fixed that: the pin now names v1.7.0, an unrecognised version fails the run instead of being substituted, and `quickstart-up` verifies the running `datahub-gms` image tag against the pin. Later runs of this job print `Verified running acryldata/datahub-gms:v1.7.0`, so the version behind any future measurement is on the record rather than inferred.
 
 Three conclusions, the third of which was a surprise:
 
