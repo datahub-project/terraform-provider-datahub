@@ -20,7 +20,11 @@ DATAHUB_GMS_URL ?= http://localhost:8080
 TFPLUGINDOCS_SERVE_BIN := $(BIN_DIR)/tfplugindocs-serve
 QUICKSTART_GMS_URL := http://localhost:8080
 TOKEN_ACTOR ?= urn:li:corpuser:datahub
-QUICKSTART_VERSION ?= v1.5.0.6
+# Must be a version the datahub CLI's quickstart version map still recognises.
+# When it is not, the CLI substitutes its default (currently v1.7.0 images
+# against a master compose file) rather than failing -- see the version-drift
+# guard in quickstart-up for why that has to be checked rather than trusted.
+QUICKSTART_VERSION ?= v1.7.0
 QUICKSTART_HEALTH_TIMEOUT ?= 600
 QUICKSTART_HEALTH_INTERVAL ?= 5
 
@@ -86,8 +90,8 @@ quickstart-up:
 	@if datahub docker check >/dev/null 2>&1; then \
 		echo "Quickstart already healthy; reusing"; \
 	else \
-		echo "Starting Quickstart (first pull can take 5-10 min)"; \
-		datahub docker quickstart --accept-version-default --version $(QUICKSTART_VERSION); \
+		echo "Starting Quickstart $(QUICKSTART_VERSION) (first pull can take 5-10 min)"; \
+		datahub docker quickstart --version $(QUICKSTART_VERSION); \
 	fi
 	@echo "Polling GMS until ready..."
 	@end=$$(( $$(date +%s) + $(QUICKSTART_HEALTH_TIMEOUT) )); \
@@ -99,6 +103,40 @@ quickstart-up:
 		sleep $(QUICKSTART_HEALTH_INTERVAL); \
 	done
 	@echo "Quickstart healthy at $(QUICKSTART_GMS_URL)"
+# Version-drift guard. The pin above is a request, not a guarantee: the datahub
+# CLI resolves an unrecognised --version to its own default, and with
+# --accept-version-default it did so behind a single line of yellow output. That
+# is not hypothetical -- the pin read v1.5.0.6 for months while every run
+# actually booted v1.7.0 images against a master compose file, which was found
+# only by reading image tags off stopped containers. Anything derived from "the
+# tested version" was wrong for as long as that lasted.
+#
+# So verify rather than trust, by asking Docker what is actually running. This
+# also catches the reuse path above, where an instance left over from a
+# different pin is silently adopted.
+# Only exact version tags are checkable. 'default', 'head', 'stable' and
+# 'quickstart' are aliases the CLI resolves to whatever it currently prefers, so
+# there is no expected image tag to compare against and asking for one would
+# report a mismatch on a perfectly legitimate request.
+	@case "$(QUICKSTART_VERSION)" in \
+		v[0-9]*) ;; \
+		*) echo "QUICKSTART_VERSION=$(QUICKSTART_VERSION) is an alias, not an exact version; skipping the drift check"; exit 0 ;; \
+	esac; \
+	running=$$(docker ps --filter "name=datahub-datahub-gms" --format '{{.Image}}' | head -1); \
+	if [ -z "$$running" ]; then \
+		echo "WARNING: no datahub-gms container found; cannot verify the booted version"; \
+	else \
+		want="acryldata/datahub-gms:$(QUICKSTART_VERSION)"; \
+		if [ "$$running" != "$$want" ]; then \
+			echo "ERROR: Quickstart is running $$running but QUICKSTART_VERSION asks for $(QUICKSTART_VERSION)."; \
+			echo "       Either the CLI substituted a different version (check for a"; \
+			echo "       'Using alternate quickstart configuration' line above, and confirm"; \
+			echo "       $(QUICKSTART_VERSION) is still in the CLI's quickstart version map), or an"; \
+			echo "       instance from a different pin was reused. Run 'make quickstart-up FRESH=1'."; \
+			exit 1; \
+		fi; \
+		echo "Verified running $$running"; \
+	fi
 
 quickstart-down:
 	datahub docker nuke
