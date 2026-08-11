@@ -196,7 +196,9 @@ The two probes below are kept because both findings are independently true and b
 
 ### Probe 1: `PATCH` works, but not in the shape you would reach for first
 
-Verified against a local OSS Quickstart running **v1.7.0** (`make quickstart-up` reused an existing container set rather than the pinned `v1.5.0.6`, so treat the version as v1.7.0, not the Makefile default).
+Verified against a local OSS Quickstart running **v1.7.0**.
+
+**Cause corrected 2026-08-12.** This note previously blamed the discrepancy on `make quickstart-up` reusing an existing container set. That was the wrong explanation: the pin was not being honoured at all. `v1.5.0.6` had aged out of the datahub CLI's quickstart version map, and `--accept-version-default` made the CLI substitute its own default -- v1.7.0 images against a `master` compose file -- behind one line of yellow output. So every run booted v1.7.0 whether or not anything was left over. The flag is gone, the pin now names a version that resolves to itself, and `quickstart-up` verifies the running image tag rather than trusting the request.
 
 **Corrected 2026-08-06.** This section previously said `PATCH` returns 500 for this aspect "and always will". That was wrong, and wrong in a way worth recording because the same mistake is easy to repeat: it read the template registry and the failing code path, but not the branch above them that chooses between two implementations. **Read the dispatch, not just the handler.**
 
