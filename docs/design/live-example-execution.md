@@ -224,27 +224,31 @@ Its own workflow, and its own Quickstart, rather than extra steps inside `live-a
 
 Triggers: `schedule`, `workflow_dispatch`, and `pull_request` gated on the existing `run-live-ci` label -- matching the `if:` condition at `nightly-live.yml:34-38`, minus `push`. Excluding push-to-main is a deliberate trade: `live-acceptance` already boots a Quickstart on every merge, and booting a second doubles the cost of every merge to catch a narrower class of regression a few hours earlier. Promote it to `push` later if the measured wall-clock turns out to be small.
 
-Wall-clock, **measured 2026-08-11** on a local Quickstart (Apple Silicon, `QUICKSTART_VERSION=v1.5.0.6`). The original estimate of 1-3 minutes per example was wrong by two orders of magnitude, and the correction changes a conclusion, so the estimates are kept alongside for comparison:
+Wall-clock, **measured 2026-08-11 both locally and in CI**. The original estimate of 1-3 minutes per example was wrong by two orders of magnitude. Local figures are an Apple Silicon Quickstart; CI figures are a GitHub-hosted `ubuntu-latest` runner, from the first run of `live-examples.yml` on PR #128. **Quote the CI column when reasoning about CI** -- the runners are roughly three times slower and it is the CI number that has to fit a timeout.
 
-| Phase | Estimated | Measured | Notes |
-|---|---|---|---|
-| Quickstart boot | 5-10 min | 5-10 min | Unchanged, and it dominates everything else |
-| Provider build | under 1 min | ~10 s | `make install` |
-| `provider-install-verification` | seconds | **0.8 s** | Creates nothing |
-| `tag-simple` | 1-3 min | **0.8 s** | |
-| `domain-simple` | 1-3 min (slow end) | **1.0 s**, 2.5 s with re-apply | The delete backoff did not fire at all |
-| `structured-and-custom-properties` | 1-3 min | **20.7 s** | 15 s of which is the deliberate `settleAfterDestroy` pause |
-| `page-template-simple` | 1-3 min | **0.8 s** | |
-| `home-page-layout` | 1-3 min | **0.9 s** | Including the restore assertion |
-| End-of-run sweep | under 1 min | **0.03 s** | 21 URNs |
-| **Six examples, excluding boot** | 15-40 min | **~25 s** | |
+| Phase | Estimated | Local | CI | Notes |
+|---|---|---|---|---|
+| Quickstart boot | 5-10 min | 5-10 min | **178 s** | Warm image cache locally; CI pulls but is faster than the estimate |
+| Provider build | under 1 min | ~10 s | included below | `make install` |
+| `provider-install-verification` | seconds | 0.8 s | **1.2 s** | Creates nothing |
+| `tag-simple` | 1-3 min | 0.8 s | **2.3 s** | |
+| `domain-simple` | 1-3 min (slow end) | 1.0 s / 2.5 s with re-apply | **4.2 s** | The delete backoff did not fire at all |
+| `structured-and-custom-properties` | 1-3 min | 20.7 s | **21.7 s** | 15 s of which is the deliberate `settleAfterDestroy` pause |
+| `page-template-simple` | 1-3 min | 0.8 s | **1.6 s** | |
+| `home-page-layout` | 1-3 min | 0.9 s | **2.5 s** | Including the restore assertion |
+| End-of-run sweep | under 1 min | 0.03 s | **0.06 s** | 21 URNs |
+| **Six examples, excluding boot** | 15-40 min | ~25 s | **75 s** | |
+| **Whole job** | 25-50 min | -- | **4.5 min** | boot + examples + teardown (2 s) |
 
-`timeout-minutes: 75` stays, because the boot is what it protects against, not the examples.
+`timeout-minutes: 75` stays. It is sized for a cold image pull, not for the examples, and at 4.5 minutes observed there is no reason to tighten it toward a figure that would turn a slow pull into a failure.
 
-Two conclusions change:
+**All of the above is against DataHub v1.7.0**, both locally and in CI, even though `QUICKSTART_VERSION` read `v1.5.0.6` at the time. That pin had aged out of the datahub CLI's quickstart version map and was silently substituted for the CLI's default -- visible in the CI log for this very run as `Using alternate quickstart configuration for version 'v1.5.0.6'`. Fixed separately; the numbers stand, but v1.7.0 is the version they describe.
 
-- **Expanding to all 16 Quickstart-capable examples costs almost nothing.** If the ten deferred ones behave like these six, the whole slice runs in well under two minutes. The maintenance cost of the run list, not wall-clock, is the real argument for staging the expansion.
-- **The case for excluding `push` is weaker than it looked.** That argument was "booting a second Quickstart doubles the cost of every merge", and it is still true -- but the cost is entirely the boot, and none of it is the examples. If the two jobs were ever merged onto one Quickstart, running stage C on every push would add seconds. That is not proposed here, because a shared instance breaks the destroy-leaves-nothing assertion (see "Cleanup guarantees"), but the trade should be re-read with real numbers rather than the estimates that motivated it.
+Three conclusions, the third of which was a surprise:
+
+- **Expanding to all 16 Quickstart-capable examples costs almost nothing.** If the ten deferred ones behave like these six, the full slice is a couple of minutes in CI. The maintenance cost of the run list, not wall-clock, is the real argument for staging the expansion.
+- **The case for excluding `push` is weaker than it looked.** The argument was "booting a second Quickstart doubles the cost of every merge". Still true, but the cost is almost entirely boot. A shared instance would make stage C on every push nearly free -- and is still rejected, because sharing breaks the destroy-leaves-nothing assertion (see "Cleanup guarantees"). Worth re-reading with these numbers rather than the estimates that motivated it. Note the two jobs run in parallel, so adding stage C to the nightly costs runner-minutes, not wall-clock.
+- **In `live-acceptance`, the boot is NOT the dominant cost -- the tests are.** Splitting the step (previously one opaque `make testacc-quickstart` block) showed 193 s of boot against **307 s of acceptance tests**. The expectation before measuring was the opposite, and it matters for triage: if that job slows down, look at the suite first, not at image pulls. Stage C is the reverse shape -- 178 s boot against 75 s of examples -- so the two jobs need different instincts, which is exactly why neither should be a single unattributed step.
 
 Failure reporting: fail the job, name the example directory and the phase (apply, plan, destroy, sweep) in the first line of the error, and upload state plus logs as artifacts. Because the harness is a Go test, each example should be a `t.Run` subtest named for its directory, so the GitHub summary lists exactly which examples failed rather than one opaque failure.
 

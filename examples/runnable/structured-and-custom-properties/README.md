@@ -83,6 +83,14 @@ existing property mapping. Qualified names that differ only by '.' vs '_' normal
 to the same field name (proposed qualifiedName='tf-example.governance.tier').
 ```
 
-DataHub normalises `.` to `_` when deriving the field name, so the property collides with the residue of its own earlier definition. This is a server-side limitation, not something the provider can work around: the definition it is asked to create is rejected before it exists.
+DataHub normalises `.` to `_` when deriving the field name, so the property collides with the residue of its own earlier definition. Elasticsearch cannot drop a field from an index mapping without recreating the index, so this is not something the provider can work around: the definition it is asked to create is rejected before it exists.
 
-If you hit it, the options are to pick a different `property_id`, or to rebuild the search index. Verified against DataHub Quickstart `v1.5.0.6` in August 2026. This is also why the project's live example tests run against a throwaway Quickstart rather than a shared instance -- here a *successful* run is what makes the next one fail.
+**This is intended DataHub behaviour, not a defect.** Mapping reclaim is deferred to the system-update job because hard-delete fanout can be large. See [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974) and the [hard-delete](https://docs.datahub.com/docs/api/tutorials/structured-properties#hard-delete) and [index mappings cleanup](https://docs.datahub.com/docs/api/tutorials/structured-properties#index-mappings-cleanup) docs.
+
+Recovery, in preference order:
+
+1. **Avoid the situation.** For a schema change, bump the property's `version` rather than destroying and recreating it. Same URN and `qualifiedName`; search moves to the new versioned field, and the ES field name is never burned.
+2. **Reclaim the mapping** on the next system-update (Helm upgrade/install, or Quickstart start) with both `ELASTICSEARCH_INDEX_BUILDER_MAPPINGS_REINDEX=true` and `ENABLE_STRUCTURED_PROPERTIES_SYSTEM_UPDATE=true`. That rebuilds entity indices from current definitions so orphaned fields drop. Expect a full index recreate. `RestoreIndices` alone is **not** enough. Any remaining assignment value on an index blocks removal for that index.
+3. **Pick a different `property_id`.** Immediate, and what the DataHub project itself does in its own smoke tests.
+
+Verified against DataHub Quickstart `v1.7.0` in August 2026. This is also why the project's live example tests run against a throwaway Quickstart rather than a shared instance -- here a *successful* run is what makes the next one fail.
