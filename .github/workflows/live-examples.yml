@@ -49,7 +49,14 @@ jobs:
       - name: Install Python dev deps (datahub CLI)
         run: make dev-deps
 
-      - name: Boot Quickstart, run the live examples, always tear down
+      # Booting is its own step so its cost is attributable rather than folded
+      # into the tests. Local measurement puts the six examples at ~25 seconds,
+      # so essentially all of this job's wall-clock is expected to be the boot --
+      # but that should be readable off the run page, not inferred.
+      - name: Boot Quickstart
+        run: make quickstart-up
+
+      - name: Apply and destroy the runnable examples
         # TF_ACC_LOG captures the provider's own tflog stream, which the container
         # logs below do not contain.
         #
@@ -63,10 +70,12 @@ jobs:
         env:
           TF_ACC_LOG: WARN
           TF_ACC_LOG_PATH: ${{ github.workspace }}/provider-logs/live-examples.log
+        # No EXIT trap here. Teardown is the last step, after the diagnostics
+        # have read the containers -- a trap firing at the end of this step would
+        # nuke them first, which is exactly why live-acceptance's failure logs
+        # were empty for as long as they existed.
         run: |
           mkdir -p provider-logs
-          trap 'echo "Tearing down Quickstart"; datahub docker nuke >/dev/null 2>&1 || true' EXIT
-          make quickstart-up
           TOKEN=$(make quickstart-token) || { echo "Failed to mint a PAT"; exit 1; }
           DATAHUB_GMS_URL=http://localhost:8080 DATAHUB_GMS_TOKEN="$TOKEN" make test-examples-live
 
@@ -96,3 +105,10 @@ jobs:
           name: live-examples-quickstart-logs
           path: quickstart-logs/
           if-no-files-found: ignore
+
+      # Always, and last: after the capture steps above, never before.
+      # `if: always()` covers cancellation too, which a shell EXIT trap does not
+      # reliably survive.
+      - name: Tear down Quickstart
+        if: always()
+        run: make quickstart-down || true
