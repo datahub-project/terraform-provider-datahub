@@ -32,7 +32,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-outdated deps-outdated-all deps-update deps-update-all test test-examples testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
+.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-outdated deps-outdated-all deps-update deps-update-all test test-examples test-examples-live testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -53,6 +53,8 @@ help:
 	@echo "  deps-update-all    Update all dependencies (direct + indirect) to latest + go mod tidy; review before commit"
 	@echo "  test          Run unit tests"
 	@echo "  test-examples Run terraform validate over every example against the built provider"
+	@echo "  test-examples-live Apply and destroy the runnable examples against a live DataHub"
+	@echo "                     instance; needs DATAHUB_GMS_URL/TOKEN. EXAMPLES=\"a b\" narrows it"
 	@echo "                (needs terraform on PATH; no DataHub instance and no network)"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
 	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
@@ -234,6 +236,22 @@ testacc:
 test-examples: install
 	TF_EXAMPLE_VALIDATE=1 $(GO) test -v -timeout 10m -parallel=10 \
 		-run 'TestExampleSnippetsValidate|TestCompleteExamplesValidate|TestEveryExampleIsValidated' \
+		./internal/provider/
+
+# Stage C: apply and destroy the runnable examples against a live DataHub
+# instance. Unlike test-examples, this needs a real instance -- there is no mock
+# mode, because the whole point is what only a server can reveal.
+#
+# Serial and slow by design (see docs/design/live-example-execution.md), so this
+# is not part of `make test`. EXAMPLES="a b" narrows it for local iteration.
+test-examples-live: install
+	@if [ -z "$$DATAHUB_GMS_URL" ] || [ -z "$$DATAHUB_GMS_TOKEN" ]; then \
+		echo "DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN must be set."; \
+		echo "For a local Quickstart: make quickstart-up && eval \"\$$(make quickstart-token)\""; \
+		exit 1; \
+	fi
+	TF_EXAMPLE_LIVE=1 $(GO) test -v -timeout 70m -count=1 \
+		-run 'TestLiveExamples' \
 		./internal/provider/
 
 testacc-local: install

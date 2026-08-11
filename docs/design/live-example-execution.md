@@ -1,6 +1,8 @@
 # Live example execution (stage C)
 
-Maintainer-facing design for running the runnable examples for real -- `terraform apply` then `terraform destroy` against a live DataHub Quickstart -- rather than only type-checking them. This is a design, not an implementation: nothing described here exists yet.
+Maintainer-facing design for running the runnable examples for real -- `terraform apply` then `terraform destroy` against a live DataHub Quickstart -- rather than only type-checking them.
+
+**Status: the first slice is implemented.** `internal/provider/example_live_test.go` holds the harness, `internal/provider/example_live_classification_test.go` the run list and the completeness check, `.github/workflows/live-examples.yml` the CI job, and `make test-examples-live` runs it locally. Six of the twenty-one runnable examples are applied live; the other fifteen are classified as excluded, ten of them only until the expansion slice. Sections below that describe a decision still read as a design; where implementation changed one, the section says so.
 
 ## Where this sits
 
@@ -17,9 +19,11 @@ Stage B is deliberately `validate` and not `plan`: the comment at `example_valid
 
 Stage C is not a substitute for the acceptance suite. The acceptance tests already assert entity content resource by resource, against both a mock and a live Quickstart (`Makefile:104-110`, `.github/workflows/live-acceptance.yml`). Stage C asserts something the acceptance suite structurally cannot: that the *published configuration a user copies* is applyable and destroyable as written.
 
-## Scope: all 19 runnable examples classified
+## Scope: all 21 runnable examples classified
 
 Every directory under `examples/runnable/` falls into exactly one primary bucket. Several carry secondary blockers that would independently disqualify them; those are named so that a later reclassification (say, if a Cloud-capable target became available) does not have to rediscover them.
+
+**This table listed 19 directories when the design was written. Two more arrived with #116**, and both are Quickstart-capable -- see `home-page-layout` and `page-template-simple` below. The drift is worth noting rather than quietly fixing: it is exactly what `TestEveryRunnableExampleIsClassified` exists to catch, and had the harness existed at the time, #116 could not have merged without classifying them.
 
 | Directory | Primary verdict | Why | Secondary blockers |
 |---|---|---|---|
@@ -31,6 +35,8 @@ Every directory under `examples/runnable/` falls into exactly one primary bucket
 | `domain-simple` | Runs on Quickstart | Six `datahub_domain` resources in a three-level hierarchy | Nested destroy hits the child-domain race (see "Flakiness") |
 | `executor-pool-basic` | Cloud-only | `datahub_remote_executor_pool` (`main.tf:19`) is `cloudOnlyBadge` (`remote_executor_pool_resource.go:64`) | README documents a 30-90 second `PROVISIONING_PENDING` to `READY` wait |
 | `financial-services` | Too expensive or slow | Terraform reads two generated files (`main.tf:27`, `assertions.tf:22`), both produced by an in-directory `Makefile` that `pip install`s dependencies and shallow-clones a 40-60 MB repository (`Makefile:20-23`); README quotes 147 domains, 147 glossary nodes and 1500-2000 terms at full scale | Also Cloud-only: five assertion resources in `assertions.tf` are all `cloudOnlyBadge`. Also needs `ANTHROPIC_API_KEY` for `scripts/iso20022/auto_tag.py`. On a fresh checkout the `fileexists` guards make the plan empty, so a naive run would pass vacuously |
+| `home-page-layout` | Runs on Quickstart | Page templates and modules are `category: core` in OSS, and OSS ships the entity model and mutations with no UI, so this is the only way to customise a home page there | **Inverts the absence assertion**: it adopts the instance's default template, so destroy restores the previous layout rather than deleting it. Also needs `TF_VAR_test_user_password` (no default, WriteOnly) and a per-run unique `test_user_email`, since `datahub_local_user_login` is subject to the OSS signUp guard |
+| `page-template-simple` | Runs on Quickstart | Two modules and a template nothing points at, all OSS-capable | None -- no variables, and it changes nothing users see |
 | `glossary-node-term-simple` | Runs on Quickstart | Four glossary nodes, four terms, all OSS-capable | Owns `urn:li:glossaryTerm:tf-example-revenue`, shared with `structured-and-custom-properties` |
 | `ingestion-source-csv-enricher` | Runs on Quickstart | One `datahub_ingestion_source` (`main.tf:19`). The CSV URL at `main.tf:30` is fetched by the executor at ingestion time, not by Terraform, so apply needs no network | None |
 | `ingestion-source-lookup` | Runs on Quickstart (conditional) | Read-only: one `data "datahub_ingestion_source"` (`main.tf:20`) | Depends on `datahub-gc` existing. `main.tf:16` asserts it is "present on every DataHub instance"; **I did not verify that a freshly booted Quickstart has finished creating it.** Gate on a preflight probe, or hold this example back until the claim is confirmed |
@@ -43,7 +49,9 @@ Every directory under `examples/runnable/` falls into exactly one primary bucket
 | `structured-property-simple` | Runs on Quickstart | Two structured properties plus two lookups | Deletes structured properties (assigned to nothing, so a much narrower blast radius) |
 | `tag-simple` | Runs on Quickstart | Three tags plus two lookups | `data.datahub_tags.all` is `searchAcrossEntities`-backed and eventually consistent (`tags_list.go:11-13`) |
 
-Totals: **14 run on Quickstart**, **3 are Cloud-only**, **2 are too expensive or slow**.
+Totals: **16 run on Quickstart**, **3 are Cloud-only**, **2 are too expensive or slow**.
+
+**Of the 16, the first slice runs 6**: `provider-install-verification` (preflight), `tag-simple` (index-lagged plural data source), `domain-simple` (child-delete race), `structured-and-custom-properties` (worst CAT-2583 shape), `page-template-simple` (the boring control) and `home-page-layout` (restore-on-destroy). The other ten are marked `deferred` rather than permanently excluded, so the expansion slice does not have to re-derive which is which. The slice was chosen to cover both known flake classes and the assertion inversion rather than to maximise example count -- the point of stopping at six is that every wall-clock figure below is still an estimate.
 
 The fourth bucket, **needs-external-credentials, is empty as a primary verdict**, and that is a finding rather than an oversight. Every example that needs a real third-party credential is already excluded by a stronger reason: `remote-executor-azure` on cost, `action-pipeline-dataplex-sync` on Cloud-only, `financial-services` on cost and Cloud-only. The two Snowflake examples look like members of the bucket but are not: DataHub stores the connection blob without ever dialling Snowflake, so synthetic values apply and destroy exactly like real ones.
 
@@ -162,13 +170,23 @@ Serial execution solves the collisions but does *not* by itself solve the asynch
 
 Four assertions per example, ordered by value per unit of maintenance. Everything below is generic -- none of it names an attribute of any resource -- which is what keeps stage C from becoming a second copy of the acceptance suite.
 
+**Amended during implementation (2026-08-11), on three points.** The design had absence-after-destroy and no corresponding presence check, which turned out to be an asymmetry worth closing rather than a simplification:
+
+1. **Added: every managed URN must exist after apply** (assertion 2b below). Not redundant with the plan check. A plan is clean whenever the provider's `Read` agrees with state, so a `Read` that returned prior state without consulting the server would plan clean over a server holding nothing -- a class `plan` structurally cannot see. Nearly free, because the URN harvest already exists for the destroy check: one GET per managed resource, roughly 30-40 for the whole slice.
+2. **Added: re-apply after destroy** for husk-exposed configurations (assertion 5). A CAT-2583 husk carries no content aspects and is invisible in the UI; what it actually *does* is block re-creation of its own URN. A second apply tests that consequence directly instead of inferring it from an aspect probe.
+3. **Amended: absence is no longer universal.** `home-page-layout` adopts the instance's default home-page template, so its destroy restores the previous layout rather than deleting it. Those addresses are listed in `mustSurvive` and the assertion inverts -- absence there would mean the restore never happened. A `mustSurvive` entry matching no harvested resource is itself a failure, so a stale expectation cannot pass by asserting nothing.
+
+**Rejected: re-running `terraform destroy` to confirm emptiness.** After a successful destroy the state holds no resources, so a repeat run reports "No changes. No objects need to be destroyed" and exits 0 regardless of what the server still holds. Terraform's post-destroy view is definitionally empty, which is precisely why the absence check leaves Terraform and reads the entity endpoint. The whole-configuration destroy *retry* under "Cleanup guarantees" is recovery from a failed destroy, not verification of a successful one -- a different thing wearing a similar shape.
+
 **0. Apply succeeds, destroy succeeds.** Implicit, and the single highest-value bit. A published example that does not apply is the defect stage C is chiefly hunting.
 
 **1. `terraform plan` after apply proposes no resource changes.** This catches the whole drift and normalisation class -- a server that rewrites a value, a `Read` that maps an aspect back differently from how `Create` wrote it, a `Computed` attribute the provider forgets to set. It costs one extra plan.
 
 Use `-detailed-exitcode` as the cheap first pass (0 means clean, 2 means changes). Do **not** treat exit 2 as the verdict. Several examples read plural data sources that are OpenSearch-backed and therefore index-lagged: `data.datahub_tags.all` (`tag-simple/main.tf:57`, backed by `searchAcrossEntities` per `tags_list.go:11-13`), `data.datahub_data_products.all` (`data-product-simple/main.tf:126`, `data_products_list.go:11-13`), `data.datahub_structured_properties.all` (`structured-property-simple/main.tf:64`), `data.datahub_ownership_types.all` (`ownership-type-simple/main.tf:45`, `listOwnershipTypes` per `ownership_types_list.go:38-44`). Between the apply and the plan the index catches up, the list grows, the output value changes, and the plan is non-empty for a reason that is not a provider defect. So on exit 2, re-run as `terraform plan -out=tfplan` plus `terraform show -json tfplan` and fail only if `resource_changes` contains an action other than `no-op`. Output-only churn is reported as a log line, not a failure.
 
-**2. Destroy leaves nothing, checked through the strongly-consistent read path.** `GET /openapi/v3/entity/{lowercase-type}/{urn}` reads MySQL and is the only read the provider is permitted to trust for this (the rule and the `datahub_secret` incident that produced it are in `CLAUDE.md`). A GraphQL `list*` here would report "gone" for an entity that is merely unindexed, which is the failure mode this assertion exists to catch inverted.
+**1b. Every managed URN exists on the server after apply.** Added during implementation. The same harvest as assertion 2, read through the same strongly-consistent endpoint, so the added cost is one GET per managed resource. `AssertURNPresent` (`internal/provider/datahubtesting/urn_presence.go`) carries the reasoning in its own failure message, because a reader hitting it will reasonably ask why the plan check did not catch it first -- and the answer is that it structurally cannot.
+
+**2. Destroy leaves nothing** -- except addresses listed in `mustSurvive`, where the assertion inverts -- **checked through the strongly-consistent read path.** `GET /openapi/v3/entity/{lowercase-type}/{urn}` reads MySQL and is the only read the provider is permitted to trust for this (the rule and the `datahub_secret` incident that produced it are in `CLAUDE.md`). A GraphQL `list*` here would report "gone" for an entity that is merely unindexed, which is the failure mode this assertion exists to catch inverted.
 
 Harvest the URNs from state immediately before destroy, via `terraform show -json` filtered to `values.root_module.resources[] | select(.mode == "managed")`, taking each resource's `urn` attribute. Filtering on `mode == "managed"` is what keeps the check honest: it automatically excludes `data.datahub_corp_user.member.urn`, which in `local-iam` resolves to `urn:li:corpuser:datahub`, an account the example must not delete and the harness must not expect to disappear.
 
@@ -206,18 +224,27 @@ Its own workflow, and its own Quickstart, rather than extra steps inside `live-a
 
 Triggers: `schedule`, `workflow_dispatch`, and `pull_request` gated on the existing `run-live-ci` label -- matching the `if:` condition at `nightly-live.yml:34-38`, minus `push`. Excluding push-to-main is a deliberate trade: `live-acceptance` already boots a Quickstart on every merge, and booting a second doubles the cost of every merge to catch a narrower class of regression a few hours earlier. Promote it to `push` later if the measured wall-clock turns out to be small.
 
-Expected wall-clock, all estimates -- **nothing here is measured, and the first implementation should report real numbers back into this section**:
+Wall-clock, **measured 2026-08-11** on a local Quickstart (Apple Silicon, `QUICKSTART_VERSION=v1.5.0.6`). The original estimate of 1-3 minutes per example was wrong by two orders of magnitude, and the correction changes a conclusion, so the estimates are kept alongside for comparison:
 
-| Phase | Estimate | Basis |
-|---|---|---|
-| Quickstart boot | 5-10 min | `BUILDING.md:113`; `QUICKSTART_HEALTH_TIMEOUT` defaults to 600s (`Makefile:20`) |
-| Provider build | under 1 min | `make install` |
-| Per example | 1-3 min | apply + plan + destroy + absence checks; `domain-simple` is the slow end because of the delete backoff, `provider-install-verification` the fast end at seconds |
-| 14 examples | 15-40 min | |
-| End-of-run sweep | under 1 min | |
-| **Total** | **25-50 min** | |
+| Phase | Estimated | Measured | Notes |
+|---|---|---|---|
+| Quickstart boot | 5-10 min | 5-10 min | Unchanged, and it dominates everything else |
+| Provider build | under 1 min | ~10 s | `make install` |
+| `provider-install-verification` | seconds | **0.8 s** | Creates nothing |
+| `tag-simple` | 1-3 min | **0.8 s** | |
+| `domain-simple` | 1-3 min (slow end) | **1.0 s**, 2.5 s with re-apply | The delete backoff did not fire at all |
+| `structured-and-custom-properties` | 1-3 min | **20.7 s** | 15 s of which is the deliberate `settleAfterDestroy` pause |
+| `page-template-simple` | 1-3 min | **0.8 s** | |
+| `home-page-layout` | 1-3 min | **0.9 s** | Including the restore assertion |
+| End-of-run sweep | under 1 min | **0.03 s** | 21 URNs |
+| **Six examples, excluding boot** | 15-40 min | **~25 s** | |
 
-Set `timeout-minutes: 75`. That leaves headroom for a slow image pull without letting a genuinely hung run occupy a runner for an hour beyond its budget.
+`timeout-minutes: 75` stays, because the boot is what it protects against, not the examples.
+
+Two conclusions change:
+
+- **Expanding to all 16 Quickstart-capable examples costs almost nothing.** If the ten deferred ones behave like these six, the whole slice runs in well under two minutes. The maintenance cost of the run list, not wall-clock, is the real argument for staging the expansion.
+- **The case for excluding `push` is weaker than it looked.** That argument was "booting a second Quickstart doubles the cost of every merge", and it is still true -- but the cost is entirely the boot, and none of it is the examples. If the two jobs were ever merged onto one Quickstart, running stage C on every push would add seconds. That is not proposed here, because a shared instance breaks the destroy-leaves-nothing assertion (see "Cleanup guarantees"), but the trade should be re-read with real numbers rather than the estimates that motivated it.
 
 Failure reporting: fail the job, name the example directory and the phase (apply, plan, destroy, sweep) in the first line of the error, and upload state plus logs as artifacts. Because the harness is a Go test, each example should be a `t.Run` subtest named for its directory, so the GitHub summary lists exactly which examples failed rather than one opaque failure.
 
@@ -276,6 +303,26 @@ Covered in detail under assertion 1. Four in-scope examples read a GraphQL `list
 ### 6. `ingestion-source-lookup` depends on a bootstrap entity
 
 The example asserts `datahub-gc` is "present on every DataHub instance" (`main.tf:16`). Whether a Quickstart that has just passed `datahub docker check` has finished creating its system ingestion sources is **unverified**. If it has not, this example fails intermittently for a reason that has nothing to do with the provider. Mitigation: preflight-poll `GET /openapi/v3/entity/datahubingestionsource/urn:li:dataHubIngestionSource:datahub-gc` with a bounded budget, skip the example with a clear message when it never appears, and record the finding here once observed.
+
+### 8. Deleting a structured property leaves its Elasticsearch field mapping behind
+
+**Found by the first live run of this harness, 2026-08-11, and not previously recorded anywhere in this repository.** It is not a flake -- it is deterministic, and it makes one example un-rerunnable on any instance that survives.
+
+`examples/runnable/structured-and-custom-properties` creates `tf-example.governance.tier` and `tf-example.governance.regions`, then destroys them. The destroy is genuinely correct: both URNs return 404 from `GET /openapi/v3/entity/structuredproperty/{urn}`, the strongly-consistent path, so the entities are gone. Applying the same configuration again nonetheless fails:
+
+```
+Structured property Elasticsearch field 'tf-example_governance_tier' collides with
+existing property mapping. Qualified names that differ only by '.' vs '_' normalize
+to the same field name (proposed qualifiedName='tf-example.governance.tier').
+```
+
+DataHub normalises `.` to `_` when deriving the search field name, and the mapping created by the first definition is not removed when the definition is deleted. The property therefore collides with its own residue. Note what this is *not*: there is no husk, so this is a different mechanism from CAT-2583 (item 1) and the husk classifier correctly reports nothing -- the entity really is absent.
+
+Three consequences, in descending order of how much they matter:
+
+- **For a user**, `terraform destroy` followed by `terraform apply` of the same structured-property configuration fails, and the only recoveries are choosing a different `property_id` or rebuilding the search index. Worth confirming against a current DataHub and filing upstream if it reproduces; the qualifiedName-collision validator itself is recent.
+- **For this harness**, the ephemeral Quickstart target stops being merely preferable and becomes **mandatory** for this example. The argument under "Cleanup guarantees" was about debris accumulating; this is stronger, because a *successful* run poisons the instance for the next one.
+- **For assertion 5**, the husk-exposed example cannot host the re-apply check, since it can never pass there. The flag moved to `domain-simple`, which is a legitimate host rather than a consolation: domains are the entity type the provider carries create-time husk repair for, so re-applying that configuration tests exactly what a husk does -- block re-creation of a URN whose entity is gone. Verified passing.
 
 ### 7. Quickstart boot
 

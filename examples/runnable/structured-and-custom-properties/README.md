@@ -72,3 +72,17 @@ The term receives two structured-property assignments (`Regions` and `Tier`). `t
 ```bash
 terraform destroy
 ```
+
+### This example cannot be applied twice against the same instance
+
+`terraform destroy` removes both structured properties correctly -- read either URN back through `/openapi/v3/entity/structuredproperty/{urn}` afterwards and DataHub returns 404. What it does **not** remove is the Elasticsearch field mapping DataHub created for each `qualifiedName`. Applying this configuration again against the same instance therefore fails:
+
+```
+Structured property Elasticsearch field 'tf-example_governance_tier' collides with
+existing property mapping. Qualified names that differ only by '.' vs '_' normalize
+to the same field name (proposed qualifiedName='tf-example.governance.tier').
+```
+
+DataHub normalises `.` to `_` when deriving the field name, so the property collides with the residue of its own earlier definition. This is a server-side limitation, not something the provider can work around: the definition it is asked to create is rejected before it exists.
+
+If you hit it, the options are to pick a different `property_id`, or to rebuild the search index. Verified against DataHub Quickstart `v1.5.0.6` in August 2026. This is also why the project's live example tests run against a throwaway Quickstart rather than a shared instance -- here a *successful* run is what makes the next one fail.

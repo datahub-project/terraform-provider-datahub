@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The runnable examples are now applied and destroyed against a live DataHub instance nightly, rather than only type-checked. `terraform validate` never contacts a server, so it cannot see a `Create` that writes an aspect the `Read` cannot parse back, a `Delete` that silently leaves the entity in place, or a value the server normalises into a permanent diff -- and the acceptance suite, which does catch those, works from its own configurations and so says nothing about the ones published here. Six examples run in the first pass; the remaining fifteen are individually classified, and a new example belonging to neither list fails the build. Run it locally with `make test-examples-live` against a Quickstart.
+
+  Two findings came out of the first live run, both worth knowing if you manage structured properties. **Deleting a structured property leaves its Elasticsearch field mapping behind**: the entity is genuinely gone, but creating the same `property_id` again is then rejected with "Elasticsearch field ... collides with existing property mapping", because DataHub normalises `.` to `_` in the field name and the property collides with its own residue. In practice a `terraform destroy` followed by `terraform apply` of the same structured-property configuration fails, and the recoveries are a different `property_id` or a search-index rebuild. This is distinct from the resurrection-husk behaviour the provider already works around -- there is no husk here, and the provider's delete is correct. Separately, `examples/runnable/structured-and-custom-properties` therefore cannot be applied twice against one instance, which is documented in the example rather than worked around.
+
 ## [0.21.0] - 2026-08-09
 
 ### Added
