@@ -325,6 +325,7 @@ func assertPlanClean(t *testing.T, env liveExampleEnv, dir string, vars map[stri
 	var plan struct {
 		ResourceChanges []struct {
 			Address string `json:"address"`
+			Mode    string `json:"mode"`
 			Change  struct {
 				Actions []string `json:"actions"`
 			} `json:"change"`
@@ -337,6 +338,14 @@ func assertPlanClean(t *testing.T, env liveExampleEnv, dir string, vars map[stri
 
 	var changed []string
 	for _, rc := range plan.ResourceChanges {
+		// Managed resources only, for the same reason harvestURNs filters the
+		// same way. Terraform lists data sources in resource_changes too, and a
+		// read it defers to apply carries actions ["read"] -- not "no-op", so it
+		// would be reported here as though the published example failed to
+		// converge, naming a data source as the culprit.
+		if rc.Mode != "managed" {
+			continue
+		}
 		for _, a := range rc.Change.Actions {
 			if a != "no-op" {
 				changed = append(changed, fmt.Sprintf("%s: %s", rc.Address, strings.Join(rc.Change.Actions, ",")))
