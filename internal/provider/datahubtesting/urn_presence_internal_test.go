@@ -144,6 +144,45 @@ func TestAssertionsPassWhenServerAgrees(t *testing.T) {
 	})
 }
 
+// CheckURNAbsent, unlike the assertion it backs, returns its verdict as a value
+// -- so this is the one place the FAILING direction of the absence check is
+// testable at all. The comment above records why that is otherwise impossible,
+// and a check that only ever proves itself silent on a clean server cannot
+// distinguish "correct" from "returns success unconditionally".
+func TestCheckURNAbsent(t *testing.T) {
+	t.Parallel()
+
+	const urn = "urn:li:domain:test-check-absent"
+
+	t.Run("empty on 404", func(t *testing.T) {
+		t.Parallel()
+		if problem := CheckURNAbsent(context.Background(), entityDocServer(t, 404, `{}`), "datahub_domain", urn); problem != "" {
+			t.Errorf("CheckURNAbsent on a 404 returned %q, want empty", problem)
+		}
+	})
+
+	t.Run("classifies a husk", func(t *testing.T) {
+		t.Parallel()
+		body := `{"urn":"` + urn + `","domainKey":{},"structuredProperties":{}}`
+		problem := CheckURNAbsent(context.Background(), entityDocServer(t, 200, body), "datahub_domain", urn)
+		if problem == "" {
+			t.Fatal("CheckURNAbsent returned empty for an entity the server still holds; " +
+				"every post-destroy absence check in the live harness would pass vacuously")
+		}
+		if !strings.Contains(problem, urn) {
+			t.Errorf("CheckURNAbsent message does not name the URN: %q", problem)
+		}
+	})
+
+	t.Run("reports content aspects as a delete failure", func(t *testing.T) {
+		t.Parallel()
+		body := `{"urn":"` + urn + `","domainKey":{},"domainProperties":{}}`
+		if problem := CheckURNAbsent(context.Background(), entityDocServer(t, 200, body), "datahub_domain", urn); problem == "" {
+			t.Fatal("CheckURNAbsent returned empty for an entity still carrying content aspects")
+		}
+	})
+}
+
 // The two message builders are pure so that the wording is readable by a test
 // rather than only by whoever trips the failure. What is asserted is the load
 // bearing content, not the prose: substrings, in the style of

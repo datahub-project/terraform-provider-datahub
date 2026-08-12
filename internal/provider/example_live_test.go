@@ -221,55 +221,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		t.Fatalf("[%s] destroy failed: %v\n%s", ex.dir, err, out)
 	}
 
-	if ex.settleAfterDestroy {
-		t.Logf("[%s] settling %s before the absence check (CAT-2583)", ex.dir, settleAfterDestroyPause)
-		time.Sleep(settleAfterDestroyPause)
-	}
-
-	// Assertion 3b: absence, except where the example's whole point is that the
-	// entity survives.
-	survive := make(map[string]bool, len(ex.mustSurvive))
-	for _, addr := range ex.mustSurvive {
-		survive[addr] = true
-	}
-	seen := make(map[string]bool, len(ex.mustSurvive))
-	remaining := make([]harvestedURN, 0, len(harvested))
-
-	for _, h := range harvested {
-		if survive[h.address] {
-			seen[h.address] = true
-			// Inverted deliberately. home-page-layout adopts the instance's
-			// default home-page template, so destroy restores the layout it
-			// replaced rather than deleting a template the organisation depends
-			// on. Absence here would mean the restore did not happen.
-			//
-			// Its own message rather than AssertURNPresent's: that one is written
-			// for the after-apply case and blames Create, which would send a
-			// maintainer looking in entirely the wrong place.
-			present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
-			switch {
-			case err != nil:
-				t.Errorf("[%s] %s (%s) is expected to survive destroy, but presence "+
-					"could not be established: %v", ex.dir, h.address, h.urn, err)
-			case !present:
-				t.Errorf("[%s] %s (%s) was deleted by destroy, but this example adopts an "+
-					"entity it did not create, so destroy is supposed to RESTORE it. The "+
-					"instance has been left without it.", ex.dir, h.address, h.urn)
-			}
-			continue
-		}
-		datahubtesting.AssertURNAbsent(t, env.client, h.resourceType, h.urn)
-		remaining = append(remaining, h)
-	}
-
-	// A mustSurvive address that matched nothing is a stale expectation, and it
-	// would otherwise pass silently while asserting nothing at all.
-	for _, addr := range ex.mustSurvive {
-		if !seen[addr] {
-			t.Errorf("[%s] mustSurvive names %q, which is not a managed resource in the "+
-				"harvested state; the restore assertion checked nothing", ex.dir, addr)
-		}
-	}
+	remaining := assertDestroyLeftNothing(t, env, ex, harvested, "first destroy", true)
 
 	// Assertion 5: prove re-creation is not blocked. A husk is invisible in the
 	// UI and carries no content aspects; what it actually does is refuse the next
@@ -300,6 +252,91 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 	}
 
 	return remaining
+}
+
+// assertDestroyLeftNothing runs assertion 3b for one destroy cycle: absence for
+// every URN the example created, inverted for the addresses listed in
+// mustSurvive, plus the stale-expectation guard on the table itself.
+//
+// Extracted because the harness destroys twice and the second destroy deserves
+// the same scrutiny as the first. It is the destroy that follows a re-creation,
+// so it is the only one positioned to show a delete path that works on a
+// freshly created entity and not on a re-created one.
+//
+// cycle labels every message with which destroy it belongs to; without it a
+// failure report gives a maintainer no way to tell the two apart.
+//
+// Returns the URNs it proved absent, and the caller feeds only those into the
+// next cycle. That is what keeps one survivor to one report: the cycle that
+// first saw it survive names it, and neither the later cycle nor the end-of-run
+// sweep repeats the accusation over a URN already known to be there.
+func assertDestroyLeftNothing(t *testing.T, env liveExampleEnv, ex liveExample, harvested []harvestedURN, cycle string, checkStaleMustSurvive bool) []harvestedURN {
+	t.Helper()
+
+	// Deliberately symmetric with the first cycle. The pause exists so the
+	// absence check does not race the asynchronous CAT-2583 side effect, and that
+	// side effect does not care which destroy fired it -- skipping the settle on
+	// the second cycle to save fifteen seconds would buy false failures. It costs
+	// nothing today: every example that sets settleAfterDestroy also opts out of
+	// the re-apply, so no example currently reaches this branch twice.
+	if ex.settleAfterDestroy {
+		t.Logf("[%s] %s: settling %s before the absence check (CAT-2583)", ex.dir, cycle, settleAfterDestroyPause)
+		time.Sleep(settleAfterDestroyPause)
+	}
+
+	survive := make(map[string]bool, len(ex.mustSurvive))
+	for _, addr := range ex.mustSurvive {
+		survive[addr] = true
+	}
+	seen := make(map[string]bool, len(ex.mustSurvive))
+	absent := make([]harvestedURN, 0, len(harvested))
+
+	for _, h := range harvested {
+		if survive[h.address] {
+			seen[h.address] = true
+			// Inverted deliberately. home-page-layout adopts the instance's
+			// default home-page template, so destroy restores the layout it
+			// replaced rather than deleting a template the organisation depends
+			// on. Absence here would mean the restore did not happen.
+			//
+			// Its own message rather than AssertURNPresent's: that one is written
+			// for the after-apply case and blames Create, which would send a
+			// maintainer looking in entirely the wrong place.
+			present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
+			switch {
+			case err != nil:
+				t.Errorf("[%s] %s: %s (%s) is expected to survive destroy, but presence "+
+					"could not be established: %v", ex.dir, cycle, h.address, h.urn, err)
+			case !present:
+				t.Errorf("[%s] %s: %s (%s) was deleted by destroy, but this example adopts an "+
+					"entity it did not create, so destroy is supposed to RESTORE it. The "+
+					"instance has been left without it.", ex.dir, cycle, h.address, h.urn)
+			}
+			continue
+		}
+		if problem := datahubtesting.CheckURNAbsent(context.Background(), env.client, h.resourceType, h.urn); problem != "" {
+			t.Errorf("[%s] %s: %s", ex.dir, cycle, problem)
+			continue
+		}
+		absent = append(absent, h)
+	}
+
+	// A mustSurvive address that matched nothing is a stale expectation, and it
+	// would otherwise pass silently while asserting nothing at all.
+	//
+	// First cycle only. This is table hygiene rather than a check on the server,
+	// and its answer cannot change between two destroys of the same state -- so
+	// running it twice would present one wrong table entry as two failures.
+	if checkStaleMustSurvive {
+		for _, addr := range ex.mustSurvive {
+			if !seen[addr] {
+				t.Errorf("[%s] mustSurvive names %q, which is not a managed resource in the "+
+					"harvested state; the restore assertion checked nothing", ex.dir, addr)
+			}
+		}
+	}
+
+	return absent
 }
 
 // assertPlanClean fails when terraform plans a change to any resource after a

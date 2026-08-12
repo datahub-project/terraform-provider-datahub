@@ -55,15 +55,30 @@ func URNPresent(ctx context.Context, client *datahub.Client, urn string) (bool, 
 func AssertURNAbsent(t *testing.T, client *datahub.Client, resourceType, urn string) {
 	t.Helper()
 
-	shape, probeErr := probeAspectShape(context.Background(), client, urn)
+	if problem := CheckURNAbsent(context.Background(), client, resourceType, urn); problem != "" {
+		t.Error(problem)
+	}
+}
+
+// CheckURNAbsent is the same question as AssertURNAbsent, answered as a value:
+// the empty string when the server holds nothing for urn, and otherwise the
+// classified message describing what it does hold.
+//
+// Two callers need the value rather than the assertion. The live example harness
+// runs the absence check twice per example, once after each destroy, and has to
+// prefix every message with which cycle it belongs to -- a message emitted from
+// inside an assertion cannot carry that. It also has to know WHICH URNs it
+// proved absent, so a URN that survived is reported by the cycle that first saw
+// it survive and not again by every later one.
+func CheckURNAbsent(ctx context.Context, client *datahub.Client, resourceType, urn string) string {
+	shape, probeErr := probeAspectShape(ctx, client, urn)
 	if probeErr != nil {
-		t.Error(describeProbeFailure("absence", resourceType, urn, probeErr))
-		return
+		return describeProbeFailure("absence", resourceType, urn, probeErr)
 	}
 	if !shape.found {
-		return
+		return ""
 	}
-	t.Error(describeStillExists(resourceType, urn, shape, nil))
+	return describeStillExists(resourceType, urn, shape, nil)
 }
 
 // describeProbeFailure renders the message for a probe that could not answer the
