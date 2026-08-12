@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -273,6 +274,41 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		}
 		t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
 
+		// Re-harvest rather than reuse the first harvest, and require the two to
+		// agree. Reuse would be cheaper and would quietly check the wrong URNs: a
+		// re-created entity landing on a different URN leaves the new one behind
+		// with nothing looking for it, while the absence check dutifully confirms
+		// the old one is gone. A mismatch is itself worth failing on -- it means
+		// URN derivation is not deterministic across re-creation, which is a
+		// property every import, every data source lookup and every user's second
+		// apply depends on.
+		reharvested := harvestURNs(t, env, dir, vars, ex.dir+" (re-apply)")
+		assertHarvestsMatch(t, ex.dir, harvested, reharvested)
+
+		// Second-cycle input: the URNs the first destroy proved absent, taken from
+		// the re-harvest, plus anything the re-apply produced that the first apply
+		// did not. Skipped are the ones already reported as survivors and the
+		// mustSurvive addresses -- the first because a survivor belongs to the
+		// cycle that found it, the second because this function's return value also
+		// feeds the end-of-run sweep, where an entity destroy is supposed to RESTORE
+		// would read as a late resurrection. The cost is that the restore assertion
+		// runs once per example rather than twice.
+		absentAfterFirst := make(map[string]bool, len(remaining))
+		for _, h := range remaining {
+			absentAfterFirst[h.urn] = true
+		}
+		firstSeen := make(map[string]bool, len(harvested))
+		for _, h := range harvested {
+			firstSeen[h.urn] = true
+		}
+		secondCycle := make([]harvestedURN, 0, len(reharvested))
+		for _, h := range reharvested {
+			if firstSeen[h.urn] && !absentAfterFirst[h.urn] {
+				continue
+			}
+			secondCycle = append(secondCycle, h)
+		}
+
 		// The second destroy, explicit and asserted, mirroring the first. Leaving
 		// it to the registered cleanup would have the re-apply prove only that
 		// creation is unblocked, while the teardown of what it created went
@@ -292,10 +328,121 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		}
 		applied = false
 
-		remaining = assertDestroyLeftNothing(t, env, ex, remaining, "second destroy", false)
+		remaining = assertDestroyLeftNothing(t, env, ex, secondCycle, "second destroy", false)
 	}
 
 	return remaining
+}
+
+// assertHarvestsMatch fails when re-applying the same configuration produced a
+// different set of address-to-URN pairs from the first apply.
+//
+// Both directions matter and they fail for different reasons. A pair present the
+// first time and absent the second means the re-apply created something else
+// under that address, so the entity the harness is about to assert the absence of
+// is not the entity that now exists. A pair present only the second time is
+// unaccounted-for debris: nothing harvested it before the first destroy, so no
+// absence check and no sweep entry covers it.
+//
+// Compared as pairs rather than as two URN sets because an address whose URN
+// changed and a URN that moved to another address are different defects, and the
+// pair naming both is what makes the report actionable.
+func assertHarvestsMatch(t *testing.T, label string, first, second []harvestedURN) {
+	t.Helper()
+
+	if problem := describeHarvestMismatch(first, second); problem != "" {
+		t.Errorf("[%s] %s", label, problem)
+	}
+}
+
+// describeHarvestMismatch returns the empty string when the two harvests agree,
+// and otherwise the report. Pure, and separate from the assertion above, for the
+// reason the message builders in datahubtesting are: a message reachable only by
+// failing a test is a message no test can read, and a comparison that can only be
+// observed passing is indistinguishable from one that always passes.
+func describeHarvestMismatch(first, second []harvestedURN) string {
+	index := func(hs []harvestedURN) map[string]bool {
+		m := make(map[string]bool, len(hs))
+		for _, h := range hs {
+			m[h.address+" -> "+h.urn] = true
+		}
+		return m
+	}
+	firstSet, secondSet := index(first), index(second)
+
+	var lost, gained []string
+	for pair := range firstSet {
+		if !secondSet[pair] {
+			lost = append(lost, pair)
+		}
+	}
+	for pair := range secondSet {
+		if !firstSet[pair] {
+			gained = append(gained, pair)
+		}
+	}
+	sort.Strings(lost)
+	sort.Strings(gained)
+
+	if len(lost) == 0 && len(gained) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("the re-applied configuration harvested a different set of URNs than the "+
+		"first apply, so URN derivation is not deterministic across re-creation. Only present "+
+		"the first time:\n  %s\nOnly present after the re-apply (debris no absence check and "+
+		"no sweep entry covers):\n  %s",
+		strings.Join(lost, "\n  "), strings.Join(gained, "\n  "))
+}
+
+// TestDescribeHarvestMismatch exercises both directions, which is the whole point
+// of the message builder being pure: the live harness only ever reaches this
+// comparison against a well-behaved provider, so a version that returned "no
+// mismatch" unconditionally would pass every live run there has ever been.
+func TestDescribeHarvestMismatch(t *testing.T) {
+	t.Parallel()
+
+	a := harvestedURN{address: "datahub_domain.finance", resourceType: "datahub_domain", urn: "urn:li:domain:finance"}
+	b := harvestedURN{address: "datahub_tag.pii", resourceType: "datahub_tag", urn: "urn:li:tag:pii"}
+	// Same address, different URN: the shape a non-deterministic key produces.
+	aMoved := harvestedURN{address: a.address, resourceType: a.resourceType, urn: "urn:li:domain:finance-9f3c"}
+
+	t.Run("identical harvests agree", func(t *testing.T) {
+		t.Parallel()
+		if problem := describeHarvestMismatch([]harvestedURN{a, b}, []harvestedURN{b, a}); problem != "" {
+			t.Errorf("order should not matter, got: %s", problem)
+		}
+	})
+
+	t.Run("a URN that changed is reported in both directions", func(t *testing.T) {
+		t.Parallel()
+		problem := describeHarvestMismatch([]harvestedURN{a, b}, []harvestedURN{aMoved, b})
+		if problem == "" {
+			t.Fatal("no mismatch reported for an address whose URN changed between applies")
+		}
+		for _, want := range []string{a.urn, aMoved.urn, a.address} {
+			if !strings.Contains(problem, want) {
+				t.Errorf("message does not name %q: %s", want, problem)
+			}
+		}
+	})
+
+	t.Run("a URN only the re-apply created is reported", func(t *testing.T) {
+		t.Parallel()
+		problem := describeHarvestMismatch([]harvestedURN{a}, []harvestedURN{a, b})
+		if problem == "" {
+			t.Fatal("no mismatch reported for a resource that only the second apply created")
+		}
+		if !strings.Contains(problem, b.urn) {
+			t.Errorf("message does not name the unaccounted-for URN %q: %s", b.urn, problem)
+		}
+	})
+
+	t.Run("an empty harvest against a populated one is a mismatch", func(t *testing.T) {
+		t.Parallel()
+		if problem := describeHarvestMismatch([]harvestedURN{a}, nil); problem == "" {
+			t.Fatal("no mismatch reported for a re-apply that harvested nothing at all")
+		}
+	})
 }
 
 // assertDestroyLeftNothing runs assertion 3b for one destroy cycle: absence for
