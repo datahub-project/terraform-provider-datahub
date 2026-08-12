@@ -162,11 +162,26 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		phases = []map[string]string{nil}
 	}
 
+	// applied tracks whether a configuration is currently standing. Both explicit
+	// destroys below clear it, and the cleanup returns immediately when it is
+	// false.
+	//
+	// The flag is what lets the safety net stay registered without running a third
+	// destroy over state Terraform has already emptied. Such a destroy is not
+	// harmless noise: it is a terraform invocation per example whose "No changes"
+	// result proves nothing (see the rejected repeat-destroy assertion in the
+	// design), and a failure in it would report against an example that had
+	// already torn itself down correctly.
+	applied := false
+
 	// Registered before the first apply, so a destroy runs even when an
 	// assertion below fails, the harness panics, or the test times out. This is
 	// the difference between one failed example and an instance full of debris.
-	var harvested []harvestedURN
 	t.Cleanup(func() {
+		if !applied {
+			return
+		}
+
 		// A fresh context, NOT t.Context(). The testing package cancels a test's
 		// context just before its Cleanup functions run, so using it here means
 		// every teardown fails instantly with "context canceled" and leaves the
@@ -196,8 +211,13 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 
 		start := time.Now()
 		if out, err := env.terraformIn(t.Context(), t, dir, merged, "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
+			// applied is set BEFORE the error is reported, because a failed apply
+			// still creates whatever it managed before failing. Leaving the flag
+			// false here would tell the cleanup there is nothing to tear down.
+			applied = true
 			t.Fatalf("[%s] apply%s failed: %v\n%s", ex.dir, label, err, out)
 		}
+		applied = true
 		t.Logf("[%s] apply%s took %s", ex.dir, label, time.Since(start).Round(time.Second))
 
 		// Assertion 1: no resource changes proposed after apply.
@@ -206,7 +226,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 
 	// Assertion 3a: every managed URN exists on the server. Harvested once and
 	// reused for the post-destroy check, so this costs one GET per resource.
-	harvested = harvestURNs(t, env, dir, vars, ex.dir)
+	harvested := harvestURNs(t, env, dir, vars, ex.dir)
 	for _, h := range harvested {
 		datahubtesting.AssertURNPresent(t, env.client, h.resourceType, h.urn)
 	}
@@ -220,6 +240,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 	if out, err := env.terraformIn(t.Context(), t, dir, vars, destroyArgs(ex.serialDestroy)...); err != nil {
 		t.Fatalf("[%s] destroy failed: %v\n%s", ex.dir, err, out)
 	}
+	applied = false
 
 	remaining := assertDestroyLeftNothing(t, env, ex, harvested, "first destroy", true)
 
@@ -241,14 +262,37 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 				t.Errorf("[%s] re-apply%s after destroy failed, which is what a CAT-2583 husk "+
 					"does: the entity is gone from the UI but still blocks its own URN. %v\n%s",
 					ex.dir, label, err, out)
+				applied = true
 				reapplied = false
 				break
 			}
+			applied = true
 		}
-		if reapplied {
-			t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
+		if !reapplied {
+			return remaining
 		}
-		// Leave the teardown to the registered Cleanup.
+		t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
+
+		// The second destroy, explicit and asserted, mirroring the first. Leaving
+		// it to the registered cleanup would have the re-apply prove only that
+		// creation is unblocked, while the teardown of what it created went
+		// unchecked -- and the teardown is the half that has actually gone wrong
+		// here before.
+		//
+		// t.Errorf and return rather than t.Fatalf: Fatalf abandons the function,
+		// so the URNs this example created would never reach the end-of-run sweep
+		// and the run's final picture would be missing exactly the example that
+		// failed. The registered cleanup still fires, so the debris is still
+		// pursued.
+		if out, err := env.terraformIn(t.Context(), t, dir, vars, destroyArgs(ex.serialDestroy)...); err != nil {
+			t.Errorf("[%s] second destroy failed after a successful re-apply. Destroy worked "+
+				"the first time on the same configuration, so this is a delete path that "+
+				"cannot remove a re-created entity: %v\n%s", ex.dir, err, out)
+			return remaining
+		}
+		applied = false
+
+		remaining = assertDestroyLeftNothing(t, env, ex, remaining, "second destroy", false)
 	}
 
 	return remaining
