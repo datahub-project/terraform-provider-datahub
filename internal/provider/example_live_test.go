@@ -192,10 +192,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 
 	for i, phaseVars := range phases {
 		merged := mergeVars(vars, phaseVars)
-		label := ""
-		if len(phases) > 1 {
-			label = fmt.Sprintf(" (phase %d/%d)", i+1, len(phases))
-		}
+		label := phaseLabel(i, len(phases))
 
 		start := time.Now()
 		if out, err := env.terraformIn(t.Context(), t, dir, merged, "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
@@ -279,11 +276,24 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 	// apply with "already exists". Testing that consequence beats inferring it.
 	if ex.reapplyAfterDestroy {
 		start := time.Now()
-		if out, err := env.terraformIn(t.Context(), t, dir, mergeVars(vars, lastPhase(phases)), "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
-			t.Errorf("[%s] re-apply after destroy failed, which is what a CAT-2583 husk "+
-				"does: the entity is gone from the UI but still blocks its own URN. %v\n%s",
-				ex.dir, err, out)
-		} else {
+		// Every phase, not just the last one. A phased example is phased because
+		// the first apply is a precondition for the second -- data-product-simple
+		// turns provider defaults on only once the property they reference exists
+		// -- so replaying the final phase alone would apply a configuration whose
+		// precondition was never established, and report the resulting failure as
+		// a blocked re-creation.
+		reapplied := true
+		for i, phaseVars := range phases {
+			label := phaseLabel(i, len(phases))
+			if out, err := env.terraformIn(t.Context(), t, dir, mergeVars(vars, phaseVars), "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
+				t.Errorf("[%s] re-apply%s after destroy failed, which is what a CAT-2583 husk "+
+					"does: the entity is gone from the UI but still blocks its own URN. %v\n%s",
+					ex.dir, label, err, out)
+				reapplied = false
+				break
+			}
+		}
+		if reapplied {
 			t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
 		}
 		// Leave the teardown to the registered Cleanup.
@@ -533,11 +543,13 @@ func mergeVars(base, overlay map[string]string) map[string]string {
 	return merged
 }
 
-func lastPhase(phases []map[string]string) map[string]string {
-	if len(phases) == 0 {
-		return nil
+// phaseLabel names a phase in a message, and returns "" for the single-phase
+// case so an unphased example's messages stay uncluttered.
+func phaseLabel(i, n int) string {
+	if n <= 1 {
+		return ""
 	}
-	return phases[len(phases)-1]
+	return fmt.Sprintf(" (phase %d/%d)", i+1, n)
 }
 
 // selectLiveExamples returns the run list, narrowed by the EXAMPLES filter.
