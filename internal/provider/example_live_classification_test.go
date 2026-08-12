@@ -23,9 +23,13 @@ import (
 
 // liveExample describes one runnable example the harness applies for real.
 //
-// The flags exist because four examples need something the other two do not,
-// and every one of them traces to a documented server behaviour rather than a
-// harness convenience. Nothing here is a knob to turn when CI goes red.
+// The flags exist because some examples need something the others do not, and
+// every one of them traces to a documented server behaviour rather than a harness
+// convenience. Nothing here is a knob to turn when CI goes red.
+//
+// Every field defaults to the stronger behaviour: the zero value asserts more,
+// not less. noReapplyReason in particular is an opt-OUT, so an author who adds an
+// example and thinks about none of this gets the full set of checks.
 type liveExample struct {
 	// dir is the directory name under examples/runnable.
 	dir string
@@ -57,12 +61,36 @@ type liveExample struct {
 	// and it is not an exemption: the assertion is that the restore happened.
 	mustSurvive []string
 
-	// reapplyAfterDestroy applies the configuration a second time after the
-	// destroy. A CAT-2583 husk carries no content aspects and is invisible in
-	// the UI; what it actually does is block re-creation of the same URN. A
-	// second apply tests that consequence directly rather than inferring it
-	// from an aspect probe.
-	reapplyAfterDestroy bool
+	// noReapplyReason opts an example out of the re-apply-and-destroy-again cycle,
+	// which otherwise runs for every example. Empty means it runs; a non-empty
+	// value both suppresses it and says why, because an opt-out nobody can audit
+	// is how a temporary workaround becomes permanent.
+	//
+	// The check is on by default because it costs about a second against a
+	// three-minute Quickstart boot, and because it is the only thing that tests
+	// what a CAT-2583 husk actually DOES: the husk carries no content aspects and
+	// is invisible in the UI, so an aspect probe reports the entity absent while
+	// the next apply is refused with "already exists".
+	//
+	// **Cite the upstream issue number** where one exists. The value of this field
+	// is that someone can sweep it and ask which of the tickets have moved; a
+	// reason describing a server bug without naming it cannot be swept.
+	//
+	// There is exactly ONE admissible category: a server behaviour that makes
+	// applying the same configuration twice against one instance impossible, so
+	// the check can never pass. Two categories that look admissible and are not:
+	//
+	//   - Cost. The measured figure is ~1s per example. Nothing here is worth
+	//     buying a second back.
+	//   - "The check is vacuous because these writes are upserts." That is a claim
+	//     about the provider's own code, not a law of nature. Leaving the check on
+	//     turns it into a regression guard on exactly that claim, which is worth
+	//     more than the second it costs.
+	//
+	// An example that manages no entity at all needs no entry: the harness derives
+	// the skip from an empty URN harvest, so the data-source-only examples cannot
+	// go stale here.
+	noReapplyReason string
 }
 
 // liveExamples are the examples applied and destroyed against a live
@@ -91,19 +119,18 @@ var liveExamples = []liveExample{
 	// Three-level hierarchy, four children across two parents: hits the
 	// child-domain delete race by construction.
 	//
-	// This is where reapplyAfterDestroy is exercised. Domains are the entity type
-	// the provider carries create-time husk repair for (domains.go), so applying
-	// this configuration a second time is a direct test of the thing a husk
-	// actually does -- block re-creation of a URN whose entity is gone. See the
-	// note on structured-and-custom-properties for why the husk-exposed example
-	// cannot host this check itself.
-	{dir: "domain-simple", serialDestroy: true, reapplyAfterDestroy: true},
+	// The most informative host for the re-apply check, though no longer the only
+	// one now that it is on by default. Domains are the entity type the provider
+	// carries create-time husk repair for (domains.go), so applying this
+	// configuration a second time exercises that repair path rather than merely
+	// hoping not to need it.
+	{dir: "domain-simple", serialDestroy: true},
 
 	// The worst CAT-2583 shape in the tree: deletes structured properties that
 	// are assigned to entities the same destroy removes. CHANGELOG.md records
 	// this exact configuration producing husks.
 	//
-	// Deliberately NOT reapplyAfterDestroy, and the reason is a finding rather
+	// The one opt-out from the re-apply check, and the reason is a finding rather
 	// than a preference. Assigning a structured property to an entity creates an
 	// Elasticsearch field for it, and deleting the property does not remove that
 	// field. The entity is provably gone -- 404 on the v3 endpoint -- but a later
@@ -129,6 +156,12 @@ var liveExamples = []liveExample{
 	{
 		dir:                "structured-and-custom-properties",
 		settleAfterDestroy: true,
+		noReapplyReason: "assigning a structured property burns its Elasticsearch field name, " +
+			"and deleting the property does not release it, so this configuration cannot be " +
+			"applied twice against one instance by anyone -- harness or user. Confirmed as " +
+			"intended behaviour with reclaim deferred to system-update on " +
+			"datahub-project/datahub#18974. Sweep condition: re-enable this check when that " +
+			"issue reports the mapping being reclaimed on delete.",
 	},
 
 	// New with #116. Two modules and a template nothing points at, no variables:
@@ -337,6 +370,41 @@ func TestLiveExampleExclusionsHaveReasons(t *testing.T) {
 		if len(ex.reason) < 20 {
 			t.Errorf("liveExampleExclusions[%q] has reason %q, which is too short to "+
 				"explain anything; say what specifically prevents a live run", name, ex.reason)
+		}
+	}
+}
+
+// TestNoReapplyReasonsAreSubstantial is the same guard one level down, on the
+// per-example opt-out from the re-apply check.
+//
+// It exists because that opt-out used to be a bool. A bool records that somebody
+// decided; it cannot record why, so the decision could not be reviewed, and a
+// skip put in for a server bug was indistinguishable from one put in because a
+// run went red. The reason string is only worth the trouble if it is a reason --
+// "flaky", "N/A" or "see above" satisfies a non-empty check and tells the next
+// reader nothing -- so there is a floor on it, matching the exclusions table.
+//
+// The floor is length, not content. A test cannot tell whether an issue number
+// is the right one, and one demanding a link would push a genuine no-ticket case
+// into inventing a plausible URL. Citing the upstream issue is a documented
+// requirement on the field (see noReapplyReason) enforced by review; what this
+// catches is the empty gesture.
+func TestNoReapplyReasonsAreSubstantial(t *testing.T) {
+	t.Parallel()
+
+	// Long enough to have named a mechanism. The shortest genuine reason anyone
+	// has needed so far runs to several lines.
+	const minReasonLen = 40
+
+	for _, ex := range liveExamples {
+		if ex.noReapplyReason == "" {
+			continue
+		}
+		if len(ex.noReapplyReason) < minReasonLen {
+			t.Errorf("liveExamples[%q] opts out of the re-apply check with reason %q (%d "+
+				"chars, minimum %d), which is too short to say what makes applying this "+
+				"configuration twice impossible. Name the server behaviour and cite the "+
+				"upstream issue.", ex.dir, ex.noReapplyReason, len(ex.noReapplyReason), minReasonLen)
 		}
 	}
 }

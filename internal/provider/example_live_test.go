@@ -245,10 +245,16 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 
 	remaining := assertDestroyLeftNothing(t, env, ex, harvested, "first destroy", true)
 
-	// Assertion 5: prove re-creation is not blocked. A husk is invisible in the
-	// UI and carries no content aspects; what it actually does is refuse the next
-	// apply with "already exists". Testing that consequence beats inferring it.
-	if ex.reapplyAfterDestroy {
+	// Assertion 5: prove re-creation is not blocked, then destroy again and assert
+	// that too. A husk is invisible in the UI and carries no content aspects; what
+	// it actually does is refuse the next apply with "already exists". Testing that
+	// consequence beats inferring it from an aspect probe.
+	//
+	// On by default. The opt-out is a reason string in the table, not a bool, so
+	// the skip list can be audited -- see noReapplyReason.
+	if reason := reapplySkipReason(ex, harvested); reason != "" {
+		t.Logf("[%s] not re-applying after destroy: %s", ex.dir, reason)
+	} else {
 		start := time.Now()
 		// Every phase, not just the last one. A phased example is phased because
 		// the first apply is a precondition for the second -- data-product-simple
@@ -332,6 +338,29 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 	}
 
 	return remaining
+}
+
+// reapplySkipReason returns why the re-apply cycle does not run for ex, or the
+// empty string to run it. Default-on: only a tabled reason or an empty harvest
+// suppresses it.
+//
+// The empty-harvest case is DERIVED rather than tabled on purpose. An example
+// that manages no entity -- provider-install-verification reads data.datahub_me
+// and creates nothing, ingestion-source-lookup only looks one up -- has no URN
+// whose re-creation could be blocked, so there is nothing for the check to prove.
+// Tabling that would be a second opt-out list which says only what the harness
+// can already see, and which would go stale the moment such an example grew a
+// managed resource: the entry would keep suppressing a check that had become
+// meaningful.
+func reapplySkipReason(ex liveExample, harvested []harvestedURN) string {
+	if ex.noReapplyReason != "" {
+		return ex.noReapplyReason
+	}
+	if len(harvested) == 0 {
+		return "the URN harvest is empty, so this configuration manages no entity whose " +
+			"re-creation could be blocked (derived, not tabled)"
+	}
+	return ""
 }
 
 // assertHarvestsMatch fails when re-applying the same configuration produced a
