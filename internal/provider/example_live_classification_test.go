@@ -104,15 +104,27 @@ var liveExamples = []liveExample{
 	// this exact configuration producing husks.
 	//
 	// Deliberately NOT reapplyAfterDestroy, and the reason is a finding rather
-	// than a preference. Deleting a structured property leaves its Elasticsearch
-	// field mapping behind: the entity is provably gone (404 on the v3 entity
-	// endpoint) but a later create of the same qualifiedName is rejected with
-	// "Elasticsearch field 'tf-example_governance_tier' collides with existing
-	// property mapping", because DataHub normalises '.' to '_' and the property
-	// collides with its own residue. So this configuration cannot be applied
-	// twice against one instance at all -- not by this harness, and not by a
-	// user. That is a server-side gap, distinct from CAT-2583 (there is no husk
-	// here), and it is why the ephemeral Quickstart target is mandatory for this
+	// than a preference. Assigning a structured property to an entity creates an
+	// Elasticsearch field for it, and deleting the property does not remove that
+	// field. The entity is provably gone -- 404 on the v3 endpoint -- but a later
+	// create of the same qualifiedName is rejected with "Elasticsearch field
+	// 'tf-example_governance_tier' collides with existing property mapping". So
+	// this configuration cannot be applied twice against one instance at all,
+	// not by this harness and not by a user.
+	//
+	// ASSIGNING the property is the trigger, not defining it, and not the dots
+	// in the name. Established by controlled experiment against v1.7.0:
+	// dotted-unassigned and dotless-unassigned both re-apply cleanly, while
+	// dotless-assigned fails with a dot-free field name in the message. That
+	// matches structuredProperties being a dynamic mapping -- the field appears
+	// only once a document carries a value. Ignore what the error says about '.'
+	// versus '_': that describes two distinct names colliding on one field, and
+	// DataHub reuses the wording here.
+	//
+	// The practical rule for a new entry: an example that DEFINES structured
+	// properties can re-apply (see structured-property-simple, verified); one
+	// that ASSIGNS them cannot. Distinct from CAT-2583 -- there is no husk here
+	// -- and it is why the ephemeral Quickstart target is mandatory for this
 	// example rather than merely preferable.
 	{
 		dir:                "structured-and-custom-properties",

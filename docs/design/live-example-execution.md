@@ -310,11 +310,11 @@ Covered in detail under assertion 1. Four in-scope examples read a GraphQL `list
 
 The example asserts `datahub-gc` is "present on every DataHub instance" (`main.tf:16`). Whether a Quickstart that has just passed `datahub docker check` has finished creating its system ingestion sources is **unverified**. If it has not, this example fails intermittently for a reason that has nothing to do with the provider. Mitigation: preflight-poll `GET /openapi/v3/entity/datahubingestionsource/urn:li:dataHubIngestionSource:datahub-gc` with a bounded budget, skip the example with a clear message when it never appears, and record the finding here once observed.
 
-### 8. Deleting a structured property leaves its Elasticsearch field mapping behind
+### 8. Assigning a structured property burns its Elasticsearch field name
 
 **Found by the first live run of this harness, 2026-08-11, and not previously recorded anywhere in this repository.** It is not a flake -- it is deterministic, and it makes one example un-rerunnable on any instance that survives.
 
-`examples/runnable/structured-and-custom-properties` creates `tf-example.governance.tier` and `tf-example.governance.regions`, then destroys them. The destroy is genuinely correct: both URNs return 404 from `GET /openapi/v3/entity/structuredproperty/{urn}`, the strongly-consistent path, so the entities are gone. Applying the same configuration again nonetheless fails:
+`examples/runnable/structured-and-custom-properties` creates `tf-example.governance.tier` and `tf-example.governance.regions`, assigns both to entities, then destroys the lot. The destroy is genuinely correct: both URNs return 404 from `GET /openapi/v3/entity/structuredproperty/{urn}`, the strongly-consistent path, so the entities are gone. Applying the same configuration again nonetheless fails:
 
 ```
 Structured property Elasticsearch field 'tf-example_governance_tier' collides with
@@ -322,11 +322,24 @@ existing property mapping. Qualified names that differ only by '.' vs '_' normal
 to the same field name (proposed qualifiedName='tf-example.governance.tier').
 ```
 
-DataHub normalises `.` to `_` when deriving the search field name, and the mapping created by the first definition is not removed when the definition is deleted. The property therefore collides with its own residue. Note what this is *not*: there is no husk, so this is a different mechanism from CAT-2583 (item 1) and the husk classifier correctly reports nothing -- the entity really is absent.
+**Ignore what that message says about `.` versus `_`.** It describes a different scenario -- two *distinct* qualifiedNames, `a.b` and `a_b`, normalising onto one field -- and DataHub reuses the wording here. This section previously took the message at face value and blamed the dots. That was wrong, and it mattered: it implied a dotless `property_id` would be safe, and it implied any definition burns its name.
+
+**The trigger is assigning a value, not defining the property.** Established by controlled experiment against v1.7.0, changing one variable at a time:
+
+| `qualifiedName` | Value assigned? | Destroy then re-apply |
+|---|---|---|
+| dotless (`tf-example-property-retention-days`) | no | **succeeds** |
+| dotted (`tf-example.reapply.probe`) | no | **succeeds** |
+| dotless (`tf-example-reapply-assigned`) | **yes** | **fails**, on a dot-free field name |
+| dotted (`tf-example.governance.tier`) | **yes** | fails |
+
+Consistent with `structuredProperties` being a `dynamic: true` mapping: the field enters the index only when a *document* carries a value, so a definition alone writes nothing to leave behind. It is also what the maintainer's reply on the upstream issue says, read carefully -- *"any remaining assignment value on an index blocks mapping removal for that index."* Note what this is *not*: there is no husk, so this is a different mechanism from CAT-2583 (item 1) and the husk classifier correctly reports nothing -- the entity really is absent.
+
+**The rule for classifying a new example:** one that *defines* structured properties can be re-applied (`structured-property-simple`, verified empirically); one that *assigns* them cannot.
 
 Three consequences, in descending order of how much they matter:
 
-- **For a user**, `terraform destroy` followed by `terraform apply` of the same structured-property configuration fails, and the only recoveries are choosing a different `property_id` or rebuilding the search index. Worth confirming against a current DataHub and filing upstream if it reproduces; the qualifiedName-collision validator itself is recent.
+- **For a user**, `terraform destroy` followed by `terraform apply` of the same structured-property configuration fails once any value was assigned. Recovery is documented on [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), where the maintainer confirms the behaviour is intended and reclaim is deferred to system-update; renaming the `property_id` buys one more cycle rather than a fix, since assigning the new name burns that too. Preferring a `version` bump over destroy-and-recreate is the actual answer, and `datahub_structured_property` does not currently expose `version` -- see the follow-up note below.
 - **For this harness**, the ephemeral Quickstart target stops being merely preferable and becomes **mandatory** for this example. The argument under "Cleanup guarantees" was about debris accumulating; this is stronger, because a *successful* run poisons the instance for the next one.
 - **For assertion 5**, the husk-exposed example cannot host the re-apply check, since it can never pass there. The flag moved to `domain-simple`, which is a legitimate host rather than a consolation: domains are the entity type the provider carries create-time husk repair for, so re-applying that configuration tests exactly what a husk does -- block re-creation of a URN whose entity is gone. Verified passing.
 
