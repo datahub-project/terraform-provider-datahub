@@ -181,6 +181,25 @@ func TestCheckURNAbsent(t *testing.T) {
 			t.Fatal("CheckURNAbsent returned empty for an entity still carrying content aspects")
 		}
 	})
+
+	// The branch that matters most, and the one the value-returning form exists
+	// to make reachable: a probe that could not answer must report a problem, not
+	// silence. Silence here is indistinguishable from a clean destroy, so a
+	// flaky GMS would let a genuine delete failure through the per-example check
+	// AND the end-of-run sweep, which both treat "no problem" as success.
+	t.Run("a probe failure is a problem, not absence", func(t *testing.T) {
+		t.Parallel()
+		problem := CheckURNAbsent(context.Background(), entityDocServer(t, 500, `{"error":"boom"}`), "datahub_domain", urn)
+		if problem == "" {
+			t.Fatal("CheckURNAbsent returned empty when the probe failed; an undetermined " +
+				"result must not read as a successful delete")
+		}
+		for _, want := range []string{urn, "could not be established", "not a negative result"} {
+			if !strings.Contains(problem, want) {
+				t.Errorf("probe-failure message missing %q\ngot: %s", want, problem)
+			}
+		}
+	})
 }
 
 // The two message builders are pure so that the wording is readable by a test
