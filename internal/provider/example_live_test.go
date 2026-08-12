@@ -345,8 +345,17 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) ([]harvest
 		for i, phaseVars := range phases {
 			label := phaseLabel(i, len(phases))
 			if out, err := env.terraformIn(t.Context(), t, dir, mergeVars(vars, phaseVars), "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
-				t.Errorf("[%s] re-apply%s after destroy failed, which is what a CAT-2583 husk "+
-					"does: the entity is gone from the UI but still blocks its own URN. %v\n%s",
+				// Two known server behaviours produce this symptom and they need
+				// different responses, so name both rather than the first one found.
+				// A CAT-2583 husk is a bug to escalate; a burned structured-property
+				// field is confirmed-intended, and the answer there is a
+				// noReapplyReason entry citing the issue.
+				t.Errorf("[%s] re-apply%s after destroy failed, so destroy left something "+
+					"blocking re-creation of a URN this harness proved absent. Two known "+
+					"causes: a CAT-2583 husk (entity gone from the UI, still blocking its own "+
+					"URN), or an Elasticsearch field burned by a structured-property "+
+					"assignment (datahub-project/datahub#18974) -- the error text below "+
+					"distinguishes them. %v\n%s",
 					ex.dir, label, err, out)
 				applied = true
 				reapplied = false

@@ -168,12 +168,12 @@ Serial execution solves the collisions but does *not* by itself solve the asynch
 
 ## Assertions, in priority order
 
-Four assertions per example, ordered by value per unit of maintenance. Everything below is generic -- none of it names an attribute of any resource -- which is what keeps stage C from becoming a second copy of the acceptance suite.
+Assertions per example, ordered by value per unit of maintenance. The design proposed four; implementation added two and inverted one, and the numbering below keeps the original scheme rather than renumbering, so a reference to "assertion 5" means the same thing in the code, the commit history and here. Everything below is generic -- none of it names an attribute of any resource -- which is what keeps stage C from becoming a second copy of the acceptance suite.
 
 **Amended during implementation (2026-08-11), on three points.** The design had absence-after-destroy and no corresponding presence check, which turned out to be an asymmetry worth closing rather than a simplification:
 
 1. **Added: every managed URN must exist after apply** (assertion 2b below). Not redundant with the plan check. A plan is clean whenever the provider's `Read` agrees with state, so a `Read` that returned prior state without consulting the server would plan clean over a server holding nothing -- a class `plan` structurally cannot see. Nearly free, because the URN harvest already exists for the destroy check: one GET per managed resource, roughly 30-40 for the whole slice.
-2. **Added: re-apply after destroy** for husk-exposed configurations (assertion 5). A CAT-2583 husk carries no content aspects and is invisible in the UI; what it actually *does* is block re-creation of its own URN. A second apply tests that consequence directly instead of inferring it from an aspect probe.
+2. **Added: re-apply after destroy, then destroy again** (assertion 5). A CAT-2583 husk carries no content aspects and is invisible in the UI; what it actually *does* is block re-creation of its own URN. A second apply tests that consequence directly instead of inferring it from an aspect probe. Introduced as opt-in on one example and **made default-on shortly afterwards** -- see "Assertion 5, in full" below for why, and for the second destroy's assertions.
 3. **Amended: absence is no longer universal.** `home-page-layout` adopts the instance's default home-page template, so its destroy restores the previous layout rather than deleting it. Those addresses are listed in `mustSurvive` and the assertion inverts -- absence there would mean the restore never happened. A `mustSurvive` entry matching no harvested resource is itself a failure, so a stale expectation cannot pass by asserting nothing.
 
 **Rejected: re-running `terraform destroy` to confirm emptiness.** After a successful destroy the state holds no resources, so a repeat run reports "No changes. No objects need to be destroyed" and exits 0 regardless of what the server still holds. Terraform's post-destroy view is definitionally empty, which is precisely why the absence check leaves Terraform and reads the entity endpoint. The whole-configuration destroy *retry* under "Cleanup guarantees" is recovery from a failed destroy, not verification of a successful one -- a different thing wearing a similar shape.
@@ -198,6 +198,47 @@ Two gaps in that harvest, both worth naming:
 When a URN is still present, build the failure with the husk classifier rather than a bare "still exists". `describeStillExists` (`husk_diagnostic.go:142-165`) distinguishes a CAT-2583 resurrection (key and contentless aspects only) from a genuine delete failure (content aspects still present), and says which. That distinction is the difference between a five-minute triage and the weeks the comment at `husk_diagnostic.go:30-35` records losing to an unclassified nightly flake. Note that it never tolerates either shape -- a husk blocks re-creation just as effectively -- so this only sharpens the message.
 
 **3. Outputs are non-empty.** Cheap, and it enforces the house rule that every runnable example must expose something the user can act on ("Outputs" in `CLAUDE.md`). `terraform output -json` must return at least one key and no key whose value is `null`. Do not additionally assert that any *particular* output has a particular shape; the index-lagged plural outputs above would make that flaky, and the value here is the smoke test, not the content.
+
+### Assertion 5, in full: re-apply, then destroy again
+
+**Default-on, decided 2026-08-12.** It shipped opt-in on `domain-simple` alone. That allocation had nothing to recommend it once the cost was measured: **about a second per example against a 178-second Quickstart boot**, in exchange for the only check that observes what a husk actually does. An aspect probe reports the entity absent -- correctly -- while the next apply is refused with "already exists". Turning that check off on five of six examples bought a saving invisible next to the boot.
+
+The cycle is: apply, assert, destroy, assert, **re-apply every phase, re-harvest, destroy again, assert again**. Five points about it are load-bearing.
+
+**Every phase is replayed, not just the last.** A phased example is phased because its first apply is a precondition for its second -- `data-product-simple` cannot enable provider defaults until the property those defaults reference exists. Replaying the final phase alone applies a configuration whose precondition was never established, and reports the resulting failure as a blocked re-creation. This was a real bug in the first implementation, latent only because the sole phased example was deferred and the sole re-applying one had one phase.
+
+**The second destroy is explicit and asserted, mirroring the first.** Leaving it to the registered cleanup made the re-apply prove that creation was unblocked while the teardown of what it created went unchecked -- and teardown is the half that has actually gone wrong here. It is the only destroy that follows a re-creation, so it is the only one positioned to show a delete path that works on a freshly created entity and not on a re-created one. It reports through `t.Errorf` and returns rather than `t.Fatalf`, because Fatalf abandons the function before its URNs reach the end-of-run sweep, leaving the final picture missing exactly the example that failed.
+
+**URNs are re-harvested before the second destroy and the two harvests must match.** Reusing the first harvest is cheaper and checks the wrong entities: if a re-created resource lands on a different URN, the absence check confirms the old URN is gone -- which it is -- while the entity that now exists is harvested, asserted and swept by nothing. The disagreement is also worth failing on for its own sake. Deterministic URN derivation across re-creation is what every `import` block, every singular data source lookup and every user's second apply relies on, and nothing else in the suite exercises it, because the acceptance tests create each entity once.
+
+**The settle is symmetric.** `settleAfterDestroy` applies before the second cycle's absence check as well as the first. The pause exists so absence does not race the asynchronous CAT-2583 side effect, and that side effect does not care which destroy fired it; skipping it on the cheaper half to save fifteen seconds would buy false failures. It costs nothing today, because every example that sets `settleAfterDestroy` also opts out of the re-apply.
+
+**One report per survivor.** The assertion helper returns the URNs it proved absent and only those feed the next cycle and the sweep, so a URN that survived is named by the cycle that first saw it and not re-accused downstream. The stale-`mustSurvive` guard runs on the first cycle only: it inspects the table rather than the server, so running it twice would present one wrong table entry as two failures. The cost of that choice is that the restore assertion runs once per example rather than twice -- `mustSurvive` addresses cannot be forwarded, since the returned slice also feeds the sweep, where an entity destroy is meant to RESTORE would read as a late resurrection.
+
+#### The opt-out, and its one admissible category
+
+The opt-out is `noReapplyReason string`, not a bool. A bool records that somebody decided and cannot record why, so a skip installed for a confirmed server behaviour reads identically to one installed because a run went red, and nobody sweeping the list can tell which upstream tickets have moved. **Every reason must cite the upstream issue number where one exists**, and say what would let the check come back. `TestNoReapplyReasonsAreSubstantial` enforces a length floor; the issue citation is enforced by review, because a test cannot tell whether an issue number is the right one and one demanding a link would push a genuine no-ticket case into inventing a plausible URL.
+
+**Exactly one category is admissible: the server will not accept the same configuration twice, so the check can never pass.** Two categories look admissible and are not:
+
+- **Cost.** At ~1s per example there is nothing to buy.
+- **"Vacuous, because these writes are upserts."** This was considered for the connection, ownership-type and ingestion-source examples and rejected. "This write path is an upsert" is a claim about the provider's own code, not a law of nature. Leaving the check on converts a supposedly vacuous assertion into a regression guard on exactly that claim, which is worth more than the second it costs.
+
+**Examples that manage no entity are skipped by derivation, not by table entry.** `provider-install-verification` and `ingestion-source-lookup` read data sources and create nothing, so they have no URN whose re-creation could be blocked; the harness derives the skip from `len(harvested) == 0`. Tabling it would be a second opt-out list restating what the harness can already see, and it would go stale in the one direction that matters -- the entry would keep suppressing the check after the example grew a managed resource and the check became meaningful.
+
+The current opt-out list is one entry long: `structured-and-custom-properties`, for the burned-field mechanism in flakiness item 8, citing [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974).
+
+#### What the end-of-run sweep can now conclude
+
+The sweep's original message blamed any late reappearance on an asynchronous CAT-2583 resurrection. That was sound while every example was destroyed once and left alone. It is not sound for a re-applied example, whose second teardown may be the registered cleanup -- and **a cleanup destroy that failed is a much likelier explanation than a side effect reaching across examples**. Keeping the old wording would send a maintainer to an upstream tracker for a failure whose cause is a few lines up in the same log. So each example records whether its cleanup fired and whether it errored, and the sweep branches:
+
+| Cleanup | Verdict | How it is reported |
+|---|---|---|
+| Did not fire | Genuine late resurrection: the example tore itself down through its own asserted destroys and nothing touched the URN afterwards | `t.Errorf`, original wording |
+| Fired and errored | Debris from a failure the subtest already reported, with the terraform output | `t.Logf` naming the URN -- a second `t.Errorf` would double-count one problem |
+| Fired and succeeded | Undetermined: either it exited 0 without removing the entity, or a resurrection landed after it | `t.Errorf` saying so, and pointing at the aspect shape as the way to tell |
+
+The `applied` flag is what lets the cleanup stay registered as a safety net without becoming a third destroy over state Terraform has already emptied -- such a destroy reports "No changes" and proves nothing (the same reason a repeat destroy was rejected as an assertion above), and a failure inside it would be attributed to an example that had already torn itself down correctly. The flag is set *before* a failed apply is reported, since an apply that fails part-way still leaves behind whatever it managed to create. Note that the cleanup must keep using a fresh `context.WithTimeout(context.Background(), ...)` and never `t.Context()`: the testing package cancels a test's context just before its cleanups run, which already broke this harness once.
 
 **Deliberately excluded: entity-content assertions via the DataHub API.** Checking that `tf-example-pii` came back with description "..." duplicates `TestAcc_Tag_*` exactly, and doubles the maintenance cost of every schema change -- one edit in the acceptance suite, one more here, with the second one easy to forget and easy to let rot. Stage C's job is the configuration-as-published, not the resource semantics.
 
@@ -239,6 +280,21 @@ Wall-clock, **measured 2026-08-11 both locally and in CI**. The original estimat
 | End-of-run sweep | under 1 min | 0.03 s | **0.06 s** | 21 URNs |
 | **Six examples, excluding boot** | 15-40 min | ~25 s | **75 s** | |
 | **Whole job** | 25-50 min | -- | **4.5 min** | boot + examples + teardown (2 s) |
+
+**Re-measured locally 2026-08-12 with assertion 5 default-on**, against a fresh v1.7.0 Quickstart. Four examples now re-apply and destroy twice where one did before; one is skipped by derivation (empty harvest) and one by its tabled reason.
+
+| Example | Re-apply? | Opt-in (2026-08-11) | Default-on (2026-08-12) |
+|---|---|---|---|
+| `provider-install-verification` | no -- empty harvest | 0.8 s | 0.98 s |
+| `tag-simple` | **yes** | 0.8 s | 1.49 s |
+| `domain-simple` | **yes** | 1.0 s / 2.5 s | 1.73 s |
+| `structured-and-custom-properties` | no -- #18974 | 20.7 s | 20.06 s |
+| `page-template-simple` | **yes** | 0.8 s | 1.43 s |
+| `home-page-layout` | **yes** | 0.9 s | 1.34 s |
+| End-of-run sweep | -- | 0.03 s | 0.03 s |
+| **Total, excluding boot** | | ~25 s | **27.06 s** |
+
+So **the whole change costs about two seconds locally** -- roughly 0.6 s per newly-covered example, for a full extra apply, an extra state harvest and an extra destroy each. Against a 178-second boot that is 1% of the job. Extrapolating at the observed CI-to-local ratio of about 3x, the expansion to all sixteen Quickstart-capable examples remains a couple of minutes in CI, and the maintenance cost of the run list is still the real argument for staging it.
 
 `timeout-minutes: 75` stays. It is sized for a cold image pull, not for the examples, and at 4.5 minutes observed there is no reason to tighten it toward a figure that would turn a slow pull into a failure.
 
@@ -332,6 +388,7 @@ to the same field name (proposed qualifiedName='tf-example.governance.tier').
 | dotted (`tf-example.reapply.probe`) | no | **succeeds** |
 | dotless (`tf-example-reapply-assigned`) | **yes** | **fails**, on a dot-free field name |
 | dotted (`tf-example.governance.tier`) | **yes** | fails |
+| dotted (`io.example.terraform.dpManagedBy`), assigned by provider *defaults* | **yes** | fails (2026-08-12, see below) |
 
 Consistent with `structuredProperties` being a `dynamic: true` mapping: the field enters the index only when a *document* carries a value, so a definition alone writes nothing to leave behind. It is also what the maintainer's reply on the upstream issue says, read carefully -- *"any remaining assignment value on an index blocks mapping removal for that index."* Note what this is *not*: there is no husk, so this is a different mechanism from CAT-2583 (item 1) and the husk classifier correctly reports nothing -- the entity really is absent.
 
@@ -341,7 +398,21 @@ Three consequences, in descending order of how much they matter:
 
 - **For a user**, `terraform destroy` followed by `terraform apply` of the same structured-property configuration fails once any value was assigned. Recovery is documented on [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), where the maintainer confirms the behaviour is intended and reclaim is deferred to system-update; renaming the `property_id` buys one more cycle rather than a fix, since assigning the new name burns that too. Preferring a `version` bump over destroy-and-recreate is the actual answer, and `datahub_structured_property` does not currently expose `version` -- see the follow-up note below.
 - **For this harness**, the ephemeral Quickstart target stops being merely preferable and becomes **mandatory** for this example. The argument under "Cleanup guarantees" was about debris accumulating; this is stronger, because a *successful* run poisons the instance for the next one.
-- **For assertion 5**, the husk-exposed example cannot host the re-apply check, since it can never pass there. The flag moved to `domain-simple`, which is a legitimate host rather than a consolation: domains are the entity type the provider carries create-time husk repair for, so re-applying that configuration tests exactly what a husk does -- block re-creation of a URN whose entity is gone. Verified passing.
+- **For assertion 5**, this is the one admissible reason to opt an example out, and `structured-and-custom-properties` is the one example that takes it. When the check was opt-in the flag simply moved to `domain-simple`; now that it is default-on, the example carries a `noReapplyReason` citing #18974 and naming the condition under which the check returns. `domain-simple` remains the most informative host -- domains are the entity type the provider carries create-time husk repair for, so re-applying that configuration exercises the repair path rather than merely hoping not to need it.
+
+**`data-product-simple` also needs the opt-out, established empirically 2026-08-12** rather than assumed from its shape. It was the obvious suspect, since its provider `defaults.structured_properties` assign a marker property to both data products, but "assigns a structured property" had to be confirmed to cover *assignment via provider defaults* and not only an explicit `datahub_structured_property_assignment` resource. It does. Temporarily promoted into the run list and driven through the full cycle against a fresh v1.7.0 Quickstart, its re-apply fails:
+
+```
+Structured property Elasticsearch field 'io_example_terraform_dpManagedBy' collides
+with existing property mapping. (proposed
+qualifiedName='io.example.terraform.dpManagedBy')
+```
+
+Two details in that result are worth more than the verdict. The failure lands in **phase 1**, on `datahub_structured_property.managed_by` -- the *definition* -- even though it was the phase-2 *assignment* that burned the field. That is the mechanism stated exactly: assignment writes the field, and the next attempt to define the same qualifiedName is what gets rejected. And it is why the harness's re-apply failure message names both known causes rather than only the husk: a husk is a bug to escalate, a burned field is confirmed-intended and the answer is a `noReapplyReason` entry.
+
+The example is currently a *deferred* exclusion, so it needs no `noReapplyReason` yet -- an entry there would be unreachable code in a table. **It needs one at the moment it joins the run list**, and the expansion slice must not discover this by watching a red CI run.
+
+Two further examples in the deferred set define structured properties: `structured-property-simple` (assigns nothing -- re-applies cleanly, verified) and nothing else. So the expansion slice inherits exactly one new opt-out.
 
 ### 7. Quickstart boot
 
