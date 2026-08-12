@@ -5,6 +5,8 @@ package datahubtesting
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -140,6 +142,59 @@ func TestAssertionsPassWhenServerAgrees(t *testing.T) {
 		body := `{"urn":"` + urn + `","domainKey":{},"structuredProperties":{}}`
 		AssertURNPresent(t, entityDocServer(t, 200, body), "datahub_domain", urn)
 	})
+}
+
+// The two message builders are pure so that the wording is readable by a test
+// rather than only by whoever trips the failure. What is asserted is the load
+// bearing content, not the prose: substrings, in the style of
+// TestDescribeStillExists next door.
+func TestDescribeProbeFailure(t *testing.T) {
+	t.Parallel()
+
+	msg := describeProbeFailure("absence", "datahub_domain",
+		"urn:li:domain:x", errors.New("connection refused"))
+
+	for _, want := range []string{
+		"datahub_domain",
+		`"urn:li:domain:x"`,
+		"absence could not be established",
+		"connection refused",
+		// The point of the message: undetermined, not negative.
+		"not a negative result",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("describeProbeFailure() missing %q\ngot: %s", want, msg)
+		}
+	}
+
+	// The question is a parameter because the same failure means different
+	// things to the two callers, and a message naming the wrong one would point
+	// a maintainer at the opposite problem.
+	if presence := describeProbeFailure("presence", "datahub_tag", "urn:li:tag:y", errors.New("boom")); !strings.Contains(presence, "presence could not be established") {
+		t.Errorf("describeProbeFailure() did not carry the caller's question\ngot: %s", presence)
+	}
+}
+
+func TestDescribeMissingAfterApply(t *testing.T) {
+	t.Parallel()
+
+	msg := describeMissingAfterApply("datahub_tag", "urn:li:tag:tf-example-pii")
+
+	for _, want := range []string{
+		"datahub_tag",
+		`"urn:li:tag:tf-example-pii"`,
+		"does not exist on the server after a successful apply",
+		// Both candidate causes, so the reader is not left to guess.
+		"Create never wrote it",
+		"different URN",
+		// The reason this assertion exists at all, and the sentence most at risk
+		// of being trimmed by someone who thinks plan already covers it.
+		"terraform plan` cannot detect this",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("describeMissingAfterApply() missing %q\ngot: %s", want, msg)
+		}
+	}
 }
 
 // URNPresent must reject a URN it cannot turn into an entity path rather than

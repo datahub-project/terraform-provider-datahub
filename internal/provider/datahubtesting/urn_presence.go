@@ -5,6 +5,7 @@ package datahubtesting
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -56,14 +57,37 @@ func AssertURNAbsent(t *testing.T, client *datahub.Client, resourceType, urn str
 
 	shape, probeErr := probeAspectShape(context.Background(), client, urn)
 	if probeErr != nil {
-		t.Errorf("%s %q: aspect-shape probe failed, so absence could not be established: %v",
-			resourceType, urn, probeErr)
+		t.Error(describeProbeFailure("absence", resourceType, urn, probeErr))
 		return
 	}
 	if !shape.found {
 		return
 	}
 	t.Error(describeStillExists(resourceType, urn, shape, nil))
+}
+
+// describeProbeFailure renders the message for a probe that could not answer the
+// question at all, so neither presence nor absence was established.
+//
+// Pure, and separated from its caller for the same reason describeStillExists is:
+// a message reachable only by failing a test is a message no test can read. What
+// it has to convey is that the result is UNDETERMINED rather than negative --
+// silence here would otherwise be indistinguishable from a clean destroy.
+func describeProbeFailure(question, resourceType, urn string, probeErr error) string {
+	return fmt.Sprintf("%s %q: aspect-shape probe failed, so %s could not be established: %v. "+
+		"This is not a negative result -- treating it as one would let a failed delete or an "+
+		"unwritten entity report as success.", resourceType, urn, question, probeErr)
+}
+
+// describeMissingAfterApply renders the after-apply failure. Separated from
+// AssertURNPresent so the wording is testable; the explanation of why `plan`
+// cannot catch this is the part worth protecting from a well-meaning trim.
+func describeMissingAfterApply(resourceType, urn string) string {
+	return fmt.Sprintf("%s %q does not exist on the server after a successful apply. Terraform "+
+		"recorded it in state, so either Create never wrote it, or it wrote a different URN "+
+		"than the one it stored. Note that `terraform plan` cannot detect this: a Read that "+
+		"does not consult the server still agrees with state and still plans clean.",
+		resourceType, urn)
 }
 
 // AssertURNPresent fails when the server holds no entity for urn.
@@ -78,16 +102,11 @@ func AssertURNPresent(t *testing.T, client *datahub.Client, resourceType, urn st
 
 	shape, probeErr := probeAspectShape(context.Background(), client, urn)
 	if probeErr != nil {
-		t.Errorf("%s %q: aspect-shape probe failed, so presence could not be established: %v",
-			resourceType, urn, probeErr)
+		t.Error(describeProbeFailure("presence", resourceType, urn, probeErr))
 		return
 	}
 	if shape.found {
 		return
 	}
-	t.Errorf("%s %q does not exist on the server after a successful apply. Terraform "+
-		"recorded it in state, so either Create never wrote it, or it wrote a different "+
-		"URN than the one it stored. Note that `terraform plan` cannot detect this: a "+
-		"Read that does not consult the server still agrees with state and still plans "+
-		"clean.", resourceType, urn)
+	t.Error(describeMissingAfterApply(resourceType, urn))
 }
