@@ -101,6 +101,28 @@ type harvestedURN struct {
 	urn          string
 }
 
+// teardownOutcome records what the registered cleanup destroy did, so the
+// end-of-run sweep can say what a late reappearance means.
+//
+// Written by the cleanup closure and read after the subtest has finished, hence
+// the pointer: a non-parallel t.Run returns only once its cleanups have run, so
+// by sweep time these fields are settled.
+type teardownOutcome struct {
+	// fired is true when the cleanup destroy actually ran, which happens only when
+	// a configuration was still standing at the end of the subtest.
+	fired bool
+	// errored is true when it ran and still failed after its one retry.
+	errored bool
+}
+
+// liveExampleRun is one example's contribution to the sweep: the URNs it proved
+// absent, and what its teardown did.
+type liveExampleRun struct {
+	dir      string
+	absent   []harvestedURN
+	teardown *teardownOutcome
+}
+
 // TestLiveExamples applies each classified example, asserts against it, and
 // destroys it.
 //
@@ -112,13 +134,13 @@ type harvestedURN struct {
 func TestLiveExamples(t *testing.T) {
 	env := setupLiveExamples(t)
 
-	var swept []harvestedURN
+	var runs []liveExampleRun
 
 	for _, ex := range selectLiveExamples(t) {
 		// Not t.Parallel: see the comment above.
 		t.Run(ex.dir, func(t *testing.T) {
-			urns := runLiveExample(t, env, ex)
-			swept = append(swept, urns...)
+			urns, teardown := runLiveExample(t, env, ex)
+			runs = append(runs, liveExampleRun{dir: ex.dir, absent: urns, teardown: teardown})
 		})
 	}
 
@@ -129,29 +151,79 @@ func TestLiveExamples(t *testing.T) {
 	// because the two have different causes and different fixes -- a URN failing
 	// only here means the delete worked and something put it back.
 	t.Run("end-of-run-sweep", func(t *testing.T) {
-		if len(swept) == 0 {
+		var total int
+		for _, run := range runs {
+			total += len(run.absent)
+		}
+		if total == 0 {
 			t.Skip("no URNs harvested; nothing to sweep")
 		}
-		for _, h := range swept {
-			present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
-			if err != nil {
-				t.Errorf("sweep: probing %s (%s): %v", h.urn, h.address, err)
-				continue
-			}
-			if present {
-				t.Errorf("sweep: %s (%s) is present again at the end of the run, having "+
-					"passed its own post-destroy check. The destroy worked and something "+
-					"put it back -- the CAT-2583 side effect is asynchronous and can land "+
-					"after a later example has started.", h.urn, h.address)
+		for _, run := range runs {
+			for _, h := range run.absent {
+				present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
+				if err != nil {
+					t.Errorf("sweep: probing %s (%s): %v", h.urn, h.address, err)
+					continue
+				}
+				if present {
+					reportLateReappearance(t, run, h)
+				}
 			}
 		}
-		t.Logf("swept %d URNs from %d examples", len(swept), len(liveExamples))
+		t.Logf("swept %d URNs from %d examples", total, len(runs))
 	})
 }
 
+// reportLateReappearance renders the sweep's verdict on one URN that is back.
+//
+// The wording has to depend on the example's teardown, because since the
+// re-apply check became the default the sweep no longer has one explanation. Its
+// original message blamed an asynchronous CAT-2583 resurrection, which was sound
+// while a URN reaching the sweep had been destroyed once and left alone. A
+// re-applied example destroys twice and hands the second teardown to the
+// cleanup, and a cleanup destroy that failed is a far likelier explanation for a
+// URN being present than a server side effect reaching across examples.
+//
+// Getting this wrong is expensive in a specific way: it sends a maintainer to an
+// upstream bug for a failure whose cause is one scroll up in the same log.
+func reportLateReappearance(t *testing.T, run liveExampleRun, h harvestedURN) {
+	t.Helper()
+
+	switch {
+	case run.teardown == nil || !run.teardown.fired:
+		// The example tore itself down through its own asserted destroys and the
+		// safety net never ran. Nothing in the harness touched this URN after it
+		// was proved absent, so a resurrection is the explanation.
+		t.Errorf("sweep: %s (%s) is present again at the end of the run, having "+
+			"passed its own post-destroy check. The destroy worked and something "+
+			"put it back -- the CAT-2583 side effect is asynchronous and can land "+
+			"after a later example has started.", h.urn, h.address)
+
+	case run.teardown.errored:
+		// Already reported, with the terraform output, by the subtest that owns it.
+		// A second Errorf here would double-count one failure and invite a hunt for
+		// an upstream bug that is not involved.
+		t.Logf("sweep: %s (%s) is present, and [%s] reported its cleanup destroy failing. "+
+			"This is debris from that failure rather than a separate finding -- triage "+
+			"the destroy, not the sweep.", h.urn, h.address, run.dir)
+
+	default:
+		// The cleanup ran and reported success, yet the URN is back. Either the
+		// destroy did not remove what it claimed, or a resurrection landed after it.
+		// Nothing here can separate the two, and guessing would be worse than saying
+		// so.
+		t.Errorf("sweep: %s (%s) is present again at the end of the run. [%s] ran a cleanup "+
+			"destroy that reported success, so this is UNDETERMINED: either that destroy "+
+			"left the entity behind while exiting 0, or a CAT-2583 resurrection landed "+
+			"after it. Check whether the entity carries content aspects -- a husk points "+
+			"at the resurrection, a populated entity at the destroy.", h.urn, h.address, run.dir)
+	}
+}
+
 // runLiveExample drives one example through apply, assertions and destroy,
-// returning the URNs it created so the end-of-run sweep can re-check them.
-func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harvestedURN {
+// returning the URNs it proved absent so the end-of-run sweep can re-check them,
+// and what its teardown did so the sweep can interpret a reappearance.
+func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) ([]harvestedURN, *teardownOutcome) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -175,6 +247,11 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 	// already torn itself down correctly.
 	applied := false
 
+	// Read by the end-of-run sweep, after this subtest and its cleanups have
+	// finished, to tell debris from a failed teardown apart from a genuine late
+	// resurrection.
+	teardown := &teardownOutcome{}
+
 	// Registered before the first apply, so a destroy runs even when an
 	// assertion below fails, the harness panics, or the test times out. This is
 	// the difference between one failed example and an instance full of debris.
@@ -182,6 +259,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		if !applied {
 			return
 		}
+		teardown.fired = true
 
 		// A fresh context, NOT t.Context(). The testing package cancels a test's
 		// context just before its Cleanup functions run, so using it here means
@@ -201,6 +279,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		// race. -parallelism=1 for the nested-domain case removes the
 		// concurrency that widens the guard's stale-index window.
 		if out2, err2 := env.terraformIn(ctx, t, dir, vars, destroyArgs(ex.serialDestroy)...); err2 != nil {
+			teardown.errored = true
 			t.Errorf("[%s] destroy failed twice; the instance holds debris from this "+
 				"example. First error: %v\nRetry output:\n%s", ex.dir, err, out2)
 		}
@@ -276,7 +355,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 			applied = true
 		}
 		if !reapplied {
-			return remaining
+			return remaining, teardown
 		}
 		t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
 
@@ -330,14 +409,14 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 			t.Errorf("[%s] second destroy failed after a successful re-apply. Destroy worked "+
 				"the first time on the same configuration, so this is a delete path that "+
 				"cannot remove a re-created entity: %v\n%s", ex.dir, err, out)
-			return remaining
+			return remaining, teardown
 		}
 		applied = false
 
 		remaining = assertDestroyLeftNothing(t, env, ex, secondCycle, "second destroy", false)
 	}
 
-	return remaining
+	return remaining, teardown
 }
 
 // reapplySkipReason returns why the re-apply cycle does not run for ex, or the
