@@ -38,6 +38,23 @@ jobs:
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-live-ci'))
     uses: ./.github/workflows/live-acceptance.yml
 
+  # Stage C: applies and destroys the runnable examples for real, proving the
+  # configuration a user copies works as published. Its own Quickstart, so its
+  # destroy-leaves-nothing assertion is not confused by the acceptance suite's
+  # own entities.
+  #
+  # No `push` trigger, unlike live-acceptance above. live-acceptance already
+  # boots a Quickstart on every merge, and booting a second doubles the cost of
+  # every merge to catch a narrower class of regression a few hours earlier.
+  # Promote it to push if the measured wall-clock turns out to be small.
+  live-examples:
+    name: Live Examples
+    if: |
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-live-ci'))
+    uses: ./.github/workflows/live-examples.yml
+
   # Proves a published release is usable, against the artifact the Registry
   # actually serves rather than a locally built binary. On a release event
   # checkout takes the tag, so the version pinned in the example is the one just

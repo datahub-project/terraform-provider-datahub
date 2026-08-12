@@ -72,3 +72,36 @@ The term receives two structured-property assignments (`Regions` and `Tier`). `t
 ```bash
 terraform destroy
 ```
+
+### This example cannot be applied twice against the same instance
+
+`terraform destroy` removes both structured properties correctly -- read either URN back through `/openapi/v3/entity/structuredproperty/{urn}` afterwards and DataHub returns 404. What it does **not** remove is the Elasticsearch field mapping DataHub created for each `qualifiedName`. Applying this configuration again against the same instance therefore fails:
+
+```
+Structured property Elasticsearch field 'tf-example_governance_tier' collides with
+existing property mapping. Qualified names that differ only by '.' vs '_' normalize
+to the same field name (proposed qualifiedName='tf-example.governance.tier').
+```
+
+**Ignore what that message says about `.` versus `_`.** It describes a different situation -- two *distinct* names, `a.b` and `a_b`, normalising onto one field -- and DataHub reuses the same wording for this one. Punctuation has nothing to do with it, and renaming to a dotless `property_id` does not help.
+
+**What burns the field name is assigning a value, not defining the property.** Established by controlled experiment against Quickstart `v1.7.0` in August 2026:
+
+| `qualifiedName` | A value was assigned? | Destroy, then apply again |
+|---|---|---|
+| dotless | no | **succeeds** |
+| dotted | no | **succeeds** |
+| dotless | **yes** | **fails** |
+| dotted | **yes** | **fails** |
+
+That is consistent with `structuredProperties` being a `dynamic: true` mapping: a field appears in the index only once a *document* contains it, which requires some entity to actually carry a value. A definition on its own writes no document field, so it leaves nothing behind -- which is why `examples/runnable/structured-property-simple` can be applied repeatedly, while this example cannot. Elasticsearch then cannot drop a mapped field without recreating the index, so the provider has no way to clean up: the definition it is asked to create is rejected before it exists.
+
+**This is intended DataHub behaviour, not a defect.** Mapping reclaim is deferred to the system-update job because hard-delete fanout can be large. See [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974) and the [hard-delete](https://docs.datahub.com/docs/api/tutorials/structured-properties#hard-delete) and [index mappings cleanup](https://docs.datahub.com/docs/api/tutorials/structured-properties#index-mappings-cleanup) docs. Note the maintainer's own phrasing there, which points at the same mechanism: *"any remaining assignment value on an index blocks mapping removal for that index."*
+
+Recovery, in preference order:
+
+1. **Avoid the situation.** For a schema change, bump the property's `version` rather than destroying and recreating it. Same URN and `qualifiedName`; search moves to a new versioned field, and the old field name is never burned. (DataHub derives a different ES field name entirely once `version` is set, which is what makes this work.)
+2. **Reclaim the mapping** on the next system-update (Helm upgrade/install, or Quickstart start) with both `ELASTICSEARCH_INDEX_BUILDER_MAPPINGS_REINDEX=true` and `ENABLE_STRUCTURED_PROPERTIES_SYSTEM_UPDATE=true`. That rebuilds entity indices from current definitions so orphaned fields drop. Expect a full index recreate. `RestoreIndices` alone is **not** enough, and any remaining assignment value on an index blocks removal for that index.
+3. **Pick a different `property_id`** -- but only as a last resort, and knowing it buys one more cycle rather than a fix: assign the new name and it burns too.
+
+This is also why the project's live example tests run against a throwaway Quickstart rather than a shared instance -- here a *successful* run is what makes the next one fail.

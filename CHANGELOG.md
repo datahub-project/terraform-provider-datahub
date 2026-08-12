@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The runnable examples are now applied and destroyed against a live DataHub instance nightly, rather than only type-checked. `terraform validate` never contacts a server, so it cannot see a `Create` that writes an aspect the `Read` cannot parse back, a `Delete` that silently leaves the entity in place, or a value the server normalises into a permanent diff -- and the acceptance suite, which does catch those, works from its own configurations and so says nothing about the ones published here. Six examples run in the first pass; the remaining fifteen are individually classified, and a new example belonging to neither list fails the build. Run it locally with `make test-examples-live` against a Quickstart.
+
+  One finding came out of the first live run that is worth knowing if you manage structured properties. **Once a structured property has been assigned to an entity, deleting the property does not release its Elasticsearch field name.** The entity is genuinely gone, but creating the same `property_id` again is rejected with "Elasticsearch field ... collides with existing property mapping". So `terraform destroy` followed by `terraform apply` of the same configuration fails, once any value was assigned.
+
+  Assigning is the trigger, not defining, and not punctuation in the name: verified by experiment, a property that is defined but never assigned re-applies cleanly whether or not its `qualifiedName` contains dots, and one that was assigned fails even with a dot-free name. Disregard the part of DataHub's error message about `.` versus `_` -- that describes two *different* names colliding on one field, and the same wording is reused here. This is also distinct from the resurrection-husk behaviour the provider already works around: there is no husk, and the provider's delete is correct.
+
+  [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974) records the behaviour as intended, with mapping reclaim deferred to the system-update job. Renaming the `property_id` buys one more cycle rather than fixing it, since assigning the new name burns that too; the durable answer is to bump the property's `version` instead of destroying and recreating. Consequently `examples/runnable/structured-and-custom-properties` cannot be applied twice against one instance, which its README documents rather than works around.
+
 ## [0.21.0] - 2026-08-09
 
 ### Added

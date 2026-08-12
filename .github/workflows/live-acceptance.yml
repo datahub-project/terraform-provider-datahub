@@ -32,6 +32,14 @@ jobs:
       - name: Install Python dev deps (datahub CLI)
         run: make dev-deps
 
+      # Booting is its own step so its cost is attributable. Previously this ran
+      # inside the test step via `make testacc-quickstart`, which made the whole
+      # thing one opaque block -- roughly eight minutes with nothing to say how
+      # much was image pulls and how much was tests, so a real slowdown could
+      # only be found by comparing durations across runs.
+      - name: Boot Quickstart
+        run: make quickstart-up
+
       - name: Run Quickstart-backed acceptance tests
         # TF_ACC_LOG captures the provider's own tflog stream, which the
         # container logs below do not contain. Without it a settle-barrier
@@ -48,9 +56,16 @@ jobs:
         env:
           TF_ACC_LOG: WARN
           TF_ACC_LOG_PATH: ${{ github.workspace }}/provider-logs/acceptance.log
+        # testacc-local rather than testacc-quickstart: the latter boots the
+        # instance itself and installs a shell EXIT trap that nukes it when this
+        # step ends. That trap is why the failure diagnostics below have never
+        # captured anything -- the containers were already gone by the time the
+        # capture step ran, which is visible in the 182-byte quickstart-logs
+        # artifact from the 2026-08-03 nightly: a ps.txt holding only its header.
+        # Teardown is now an explicit step, ordered after the capture.
         run: |
           mkdir -p provider-logs
-          make testacc-quickstart
+          make testacc-local
 
       - name: Upload provider logs on failure
         if: failure()
@@ -75,3 +90,15 @@ jobs:
           name: quickstart-logs
           path: quickstart-logs/
           if-no-files-found: ignore
+
+      # Last, and always: after the diagnostics above have read the containers,
+      # never before. `if: always()` also covers cancellation, which a shell EXIT
+      # trap inside a single step does not reliably survive.
+      #
+      # On a GitHub-hosted runner this is close to ceremony -- the VM is
+      # discarded either way -- but it keeps the workflow correct if it is ever
+      # run on a self-hosted runner, and it makes the teardown visible as its own
+      # timed step rather than folded invisibly into the tests.
+      - name: Tear down Quickstart
+        if: always()
+        run: make quickstart-down || true

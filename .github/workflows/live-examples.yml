@@ -1,0 +1,114 @@
+name: Live Examples
+
+# Reusable workflow called by nightly-live.yml. Boots a DataHub Quickstart,
+# applies and destroys each classified runnable example against it, and always
+# tears down on exit.
+#
+# Its own workflow and its own Quickstart rather than extra steps inside
+# live-acceptance.yml. Three reasons: the destroy-leaves-nothing assertion is
+# only meaningful on an instance whose contents the harness fully accounts for,
+# and the acceptance suite leaves its own entities behind by design during a
+# run; a failure in one should not mask the other, and the two have completely
+# different triage paths; and live-acceptance's timeout is already sized for its
+# own work.
+#
+# Design: docs/design/live-example-execution.md.
+on:
+  workflow_call:
+
+permissions: read-all
+
+jobs:
+  live-examples:
+    name: Live Examples (Quickstart)
+    runs-on: ubuntu-latest
+    # Estimated 25-50 minutes for the full slice; 75 leaves headroom for a slow
+    # image pull without letting a hung run hold a runner far beyond its budget.
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          # The harness shells out to the terraform binary; the wrapper script
+          # setup-terraform installs by default rewrites stdout, which would
+          # corrupt the JSON that `terraform show -json` is parsed from.
+          terraform_wrapper: false
+
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Python dev deps (datahub CLI)
+        run: make dev-deps
+
+      # Booting is its own step so its cost is attributable rather than folded
+      # into the tests. Local measurement puts the six examples at ~25 seconds,
+      # so essentially all of this job's wall-clock is expected to be the boot --
+      # but that should be readable off the run page, not inferred.
+      - name: Boot Quickstart
+        run: make quickstart-up
+
+      - name: Apply and destroy the runnable examples
+        # TF_ACC_LOG captures the provider's own tflog stream, which the container
+        # logs below do not contain.
+        #
+        # Pinned at WARN deliberately -- do NOT raise this to DEBUG or TRACE.
+        # tflog writes exactly the map it is handed and is not governed by the
+        # schema's Sensitive/WriteOnly markers, which cover state and plan
+        # rendering only. These logs upload as an artifact readable by anyone
+        # with repo read access, so the level is a security boundary, not a
+        # verbosity preference. It matters here specifically: home-page-layout
+        # passes a generated password through a WriteOnly attribute.
+        env:
+          TF_ACC_LOG: WARN
+          TF_ACC_LOG_PATH: ${{ github.workspace }}/provider-logs/live-examples.log
+        # No EXIT trap here. Teardown is the last step, after the diagnostics
+        # have read the containers -- a trap firing at the end of this step would
+        # nuke them first, which is exactly why live-acceptance's failure logs
+        # were empty for as long as they existed.
+        run: |
+          mkdir -p provider-logs
+          TOKEN=$(make quickstart-token) || { echo "Failed to mint a PAT"; exit 1; }
+          DATAHUB_GMS_URL=http://localhost:8080 DATAHUB_GMS_TOKEN="$TOKEN" make test-examples-live
+
+      - name: Upload provider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-examples-provider-logs
+          path: provider-logs/
+          if-no-files-found: ignore
+
+      # Container logs are the other half of a triage: the provider log says what
+      # the provider asked for, these say what the server did with it.
+      - name: Capture Quickstart logs on failure
+        if: failure()
+        run: |
+          mkdir -p quickstart-logs
+          docker ps -a > quickstart-logs/ps.txt 2>&1 || true
+          for c in $(docker ps -aq 2>/dev/null); do
+            docker logs "$c" > "quickstart-logs/${c}.log" 2>&1 || true
+          done
+
+      - name: Upload Quickstart logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-examples-quickstart-logs
+          path: quickstart-logs/
+          if-no-files-found: ignore
+
+      # Always, and last: after the capture steps above, never before.
+      # `if: always()` covers cancellation too, which a shell EXIT trap does not
+      # reliably survive.
+      - name: Tear down Quickstart
+        if: always()
+        run: make quickstart-down || true
