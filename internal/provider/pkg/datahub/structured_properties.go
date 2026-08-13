@@ -281,7 +281,8 @@ func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in Cre
 	}
 	if res.StatusCode >= http.StatusBadRequest {
 		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub structured property write API: %s", res.StatusCode, respBody)
+		return fmt.Errorf("unexpected HTTP %d from DataHub structured property write API: %s",
+			res.StatusCode, explainStructuredPropertyRejection(string(respBody)))
 	}
 	return nil
 }
