@@ -52,6 +52,7 @@ output "retention_days_urn" {
 - `settings` (Attributes) Display and search settings. (see [below for nested schema](#nestedatt--settings))
 - `urn` (String) Full DataHub URN for this structured property.
 - `value_type` (String) Data type for values of this property (e.g. `number`).
+- `version` (String) The definition version (14 digits, `yyyyMMddHHmmss`), or null when the property is un-versioned. Read this before bumping the version on a managed copy: each new value must be greater than the current one.
 
 <a id="nestedatt--allowed_values"></a>
 ### Nested Schema for `allowed_values`
