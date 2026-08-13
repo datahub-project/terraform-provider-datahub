@@ -2,6 +2,8 @@ module github.com/datahub-project/terraform-provider-datahub
 
 go 1.26.5
 
+toolchain go1.26.6
+
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/hcl/v2 v2.24.0

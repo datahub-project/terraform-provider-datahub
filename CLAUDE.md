@@ -111,6 +111,10 @@ Always use `--local`; without it, global mise tools (e.g. `awscli`) appear as no
 
 When bumping, hold `python` at 3.11.x (newer Pythons break `acryl-datahub` compatibility), and keep the `go` pin in sync with the `go` directive in `go.mod`, `tools/go.mod`, and `tools/serve/go.mod` (CI resolves its Go version from `go.mod` via `go-version-file`).
 
+**`mise outdated` will not always show you a new Go release, and the gap can be a security one.** mise applies a `minimum_release_age` gate that hides recent releases -- deliberately, so a bad release is not adopted the day it lands -- and it hid Go 1.26.6 while six standard-library advisories (`net/url`, `html/template`, `crypto/tls`, `net/http`, `encoding/asn1`) sat unfixed in the shipped binary. The only thing that caught it was the `Vulncheck` CI job, which is worth knowing before anyone decides that job is noisy. `mise ls-remote --minimum-release-age 0 go` shows what is being withheld.
+
+**The Go toolchain and the mise pin are therefore allowed to differ, deliberately, and only in that direction.** Where a stdlib advisory needs a newer compiler than mise will yet install, add a `toolchain goX.Y.Z` directive to all three `go.mod` files: Go downloads that toolchain itself (`GOTOOLCHAIN=auto`), so it works in CI regardless of mise's gate and applies to anyone who clones the repository. Do not reach for `minimum_release_age_excludes` instead -- it is tool-granular, so exempting `go` opts it out of the guard permanently rather than adopting one release early. Note the `go` directive is a minimum *language* version and stays where it is; only `toolchain` moves. Re-align once the gate lapses (Vikunja #493812).
+
 ## Release strategy
 
 The project is on `0.x` versioning. The `0.x` prefix is the Terraform Registry's accepted signal for "API is not stable yet"; breaking changes remain permitted until the project chooses to flip to `v1.0`.

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The provider is now built with Go 1.26.6, which fixes six standard-library advisories reachable from this code**: `net/url` (GO-2026-6218), `html/template` (GO-2026-6091), `crypto/tls` (GO-2026-6090), `net/http` (GO-2026-6089), `encoding/asn1` (GO-2026-5972) and one further finding. A Terraform provider spends its life making HTTPS calls and parsing what comes back, so `crypto/tls` and `net/http` are squarely on the path rather than incidental. Nothing in the provider's own code changed; a released binary built from 1.26.5 carries the vulnerable standard library, and one built from 1.26.6 does not.
+
+  Selected via a `toolchain go1.26.6` directive rather than by moving the pinned toolchain, because the version manager used for development withholds very recent releases by design and had not yet offered 1.26.6. Go downloads the named toolchain itself, so this applies to CI and to anyone who clones the repository. The `go` directive is unchanged at 1.26.5: it declares the minimum language version, not the compiler, and nothing here needs newer language features.
+
 ### Changed
 
 - The runnable examples are now applied and destroyed against a live DataHub instance nightly, rather than only type-checked. `terraform validate` never contacts a server, so it cannot see a `Create` that writes an aspect the `Read` cannot parse back, a `Delete` that silently leaves the entity in place, or a value the server normalises into a permanent diff -- and the acceptance suite, which does catch those, works from its own configurations and so says nothing about the ones published here. Six examples run in the first pass; the remaining fifteen are individually classified, and a new example belonging to neither list fails the build. Run it locally with `make test-examples-live` against a Quickstart.
