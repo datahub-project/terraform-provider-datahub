@@ -91,7 +91,14 @@ type StructuredProperty struct {
 type CreateStructuredPropertyInput struct {
 	// ID becomes the URN suffix and the qualifiedName. Required. Always supply
 	// an explicit value; omitting it causes the server to generate a random UUID.
-	ID                 string
+	ID string
+	// Version is the optional definition version (14 digits, yyyyMMddHHmmss).
+	// Empty means un-versioned, and is omitted from the write payload rather
+	// than sent as "": the server rejects any version that is not 14 digits,
+	// and it derives a different Elasticsearch field name for a versioned
+	// definition than for an un-versioned one, so null and "" are not
+	// interchangeable.
+	Version            string
 	DisplayName        string
 	Description        string
 	ValueType          string // short name, e.g. "number"
@@ -199,6 +206,13 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 		"entityTypes":   entityTypeURNs,
 		"cardinality":   cardinality,
 		"immutable":     in.Immutable,
+	}
+	// Omitted, never sent empty: the server's PropertyDefinitionValidator
+	// requires any present version to match [0-9]{14}, so "" is rejected
+	// outright, and toElasticsearchFieldName branches on the field being null
+	// rather than on its content.
+	if in.Version != "" {
+		def["version"] = in.Version
 	}
 	if in.DisplayName != "" {
 		def["displayName"] = in.DisplayName
