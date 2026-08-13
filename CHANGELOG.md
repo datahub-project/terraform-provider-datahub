@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`datahub_structured_property` now takes an optional `version`**, which is the only durable way out of a trap the previous entry documented but could not escape. Once any asset carries a value for a property, deleting the property does not release the Elasticsearch field name DataHub derived from its qualified name, so creating the same `property_id` again is refused with "Elasticsearch field ... collides with existing property mapping". Before this, a Terraform user facing that had two options: ask an operator to reindex every entity index, or burn a fresh `property_id` each cycle -- which buys one more turn rather than fixing anything, since assigning the new name burns that too. A versioned definition derives a different field name, so it is not the same field and cannot collide. Upstream recommends exactly this in [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), as the alternative to hard-deleting a property you need to change. Changing the value updates the property in place on the same URN rather than replacing it, and the `datahub_structured_property` data source now reports the current version so you know what you have to exceed.
+
+  Do not reuse a version, though. A versioned field is burned by an assignment exactly as the un-versioned one is, so re-creating a deleted property at a version it has already carried collides all over again -- measured, not reasoned about: an apply at an earlier version fails with the same message, while a fresh one succeeds. Take a new timestamp each cycle. What `version` buys is an unlimited supply of names for one `property_id`, not immunity.
+
+  The accepted format is narrower than DataHub's own field documentation claims: exactly 14 digits, a `yyyyMMddHHmmss` timestamp. The upstream field comment suggests `v1` and `20240610` and the server rejects both, verified against Quickstart v1.7.0, where each returns an HTTP 400 whose body is a validation-exception dump of the whole aspect rather than anything that names the real constraint. The provider therefore rejects a malformed value at plan time, which also subsumes the separate no-dots rule the server applies when a version is used to permit a breaking change.
+
+  One thing it does not do yet: make a breaking change *in place*. DataHub will accept a narrowed cardinality, a changed `value_type` or a removed allowed value when the version increases, but the provider still plans a destroy-and-create for those, which hard-deletes the property and takes every assigned value with it. Bumping `version` in the same apply does keep the re-create from colliding, so the change lands -- the assigned values just do not survive it.
+
 ## [0.21.1] - 2026-08-14
 
 ### Security
