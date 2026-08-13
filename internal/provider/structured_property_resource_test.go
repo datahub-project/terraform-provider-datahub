@@ -22,6 +22,39 @@ func TestAcc_StructuredProperty_Lifecycle(t *testing.T) {
 	})
 }
 
+func TestAcc_StructuredProperty_Version(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-sp-version")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.StructuredPropertyCheckDestroy,
+		Steps:                    datahubtesting.StructuredPropertyVersionSteps(propertyID),
+	})
+}
+
+func TestAcc_StructuredProperty_VersionedCreate(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-sp-vcreate")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.StructuredPropertyCheckDestroy,
+		Steps:                    datahubtesting.StructuredPropertyVersionedCreateSteps(propertyID),
+	})
+}
+
+func TestAcc_StructuredProperty_InvalidVersion(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	propertyID := tg.Name("tfprovider-sp-badversion")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.StructuredPropertyCheckDestroy,
+		Steps:                    datahubtesting.StructuredPropertyInvalidVersionSteps(propertyID),
+	})
+}
+
 func TestAcc_StructuredProperty_DataSource(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	propertyID := tg.Name("tfprovider-sp-ds")

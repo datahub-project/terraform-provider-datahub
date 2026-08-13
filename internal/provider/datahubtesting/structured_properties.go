@@ -6,14 +6,23 @@ package datahubtesting
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 )
+
+// mockSPVersionRegex is the version format DataHub's PropertyDefinitionValidator
+// enforces on every structuredPropertyDefinition upsert: exactly 14 digits.
+// Enforced here so the mock is no more permissive than the server -- notably it
+// makes "send nothing when version is unset" a tested property, since an empty
+// string would fail this check rather than being quietly stored.
+var mockSPVersionRegex = regexp.MustCompile(`^[0-9]{14}$`)
 
 // mockStructuredProperty mirrors the structured property shape the provider
 // sends and reads.
 type mockStructuredProperty struct {
 	URN                string
 	ID                 string
+	Version            string // optional definition version; empty when un-versioned
 	DisplayName        string
 	Description        string
 	ValueType          string // full URN, e.g. "urn:li:dataType:datahub.number"
@@ -58,6 +67,38 @@ func (s *mockServer) handleStructuredPropertyWrite(w http.ResponseWriter, r *htt
 		return
 	}
 
+	// Mirror the server's version rules before touching stored state, so a
+	// provider that sent a malformed version (or an empty string where the
+	// field should have been omitted) fails here rather than passing against a
+	// mock more permissive than DataHub.
+	for _, e := range entities {
+		def := aspectValueMap(e["propertyDefinition"])
+		if def == nil {
+			continue
+		}
+		version, present := def["version"]
+		if !present {
+			continue
+		}
+		v, _ := version.(string)
+		if !mockSPVersionRegex.MatchString(v) {
+			http.Error(w, `{"error":"Validation Error","message":"Invalid version specified. Must match [0-9]{14}"}`, http.StatusBadRequest)
+			return
+		}
+		urn, _ := e["urn"].(string)
+		id := strings.TrimPrefix(urn, "urn:li:structuredProperty:")
+		s.mu.Lock()
+		prev, existed := s.structuredProperties[id]
+		s.mu.Unlock()
+		// Case-insensitive, and an unchanged version is fine -- the server only
+		// requires a strict increase when the version is what permits a
+		// breaking change.
+		if existed && prev.Version != "" && strings.ToLower(v) < strings.ToLower(prev.Version) {
+			http.Error(w, `{"error":"Validation Error","message":"version must be monotonically increasing"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
 	s.mu.Lock()
 	for _, e := range entities {
 		urn, _ := e["urn"].(string)
@@ -65,6 +106,9 @@ func (s *mockServer) handleStructuredPropertyWrite(w http.ResponseWriter, r *htt
 		def := aspectValueMap(e["propertyDefinition"])
 
 		sp := mockStructuredProperty{URN: urn, ID: id, Cardinality: "SINGLE"}
+		if v, ok := def["version"].(string); ok {
+			sp.Version = v
+		}
 		if v, ok := def["qualifiedName"].(string); ok && v != "" {
 			sp.ID = v
 		}
@@ -201,20 +245,23 @@ func (s *mockServer) handleStructuredPropertyItem(w http.ResponseWriter, r *http
 		}
 	}
 
-	propDef := map[string]any{
-		"value": map[string]any{
-			"qualifiedName": id,
-			"displayName":   sp.DisplayName,
-			"description":   sp.Description,
-			"valueType":     sp.ValueType,
-			"cardinality":   sp.Cardinality,
-			"immutable":     sp.Immutable,
-			"entityTypes":   sp.EntityTypes,
-			"allowedValues": avList,
-			"typeQualifier": map[string]any{
-				"allowedTypes": sp.AllowedEntityTypes,
-			},
+	propDefValue := map[string]any{
+		"qualifiedName": id,
+		"displayName":   sp.DisplayName,
+		"description":   sp.Description,
+		"valueType":     sp.ValueType,
+		"cardinality":   sp.Cardinality,
+		"immutable":     sp.Immutable,
+		"entityTypes":   sp.EntityTypes,
+		"allowedValues": avList,
+		"typeQualifier": map[string]any{
+			"allowedTypes": sp.AllowedEntityTypes,
 		},
+	}
+	// Absent rather than empty for an un-versioned property, mirroring the real
+	// aspect: the field is optional in the PDL and is simply not serialised.
+	if sp.Version != "" {
+		propDefValue["version"] = sp.Version
 	}
 
 	entity := map[string]any{
@@ -222,7 +269,7 @@ func (s *mockServer) handleStructuredPropertyItem(w http.ResponseWriter, r *http
 		"structuredPropertyKey": map[string]any{
 			"value": map[string]any{"id": sp.ID},
 		},
-		"propertyDefinition": propDef,
+		"propertyDefinition": map[string]any{"value": propDefValue},
 	}
 
 	// Only include the structuredPropertySettings aspect when settings were
