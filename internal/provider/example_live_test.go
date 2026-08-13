@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,28 @@ type harvestedURN struct {
 	urn          string
 }
 
+// teardownOutcome records what the registered cleanup destroy did, so the
+// end-of-run sweep can say what a late reappearance means.
+//
+// Written by the cleanup closure and read after the subtest has finished, hence
+// the pointer: a non-parallel t.Run returns only once its cleanups have run, so
+// by sweep time these fields are settled.
+type teardownOutcome struct {
+	// fired is true when the cleanup destroy actually ran, which happens only when
+	// a configuration was still standing at the end of the subtest.
+	fired bool
+	// errored is true when it ran and still failed after its one retry.
+	errored bool
+}
+
+// liveExampleRun is one example's contribution to the sweep: the URNs it proved
+// absent, and what its teardown did.
+type liveExampleRun struct {
+	dir      string
+	absent   []harvestedURN
+	teardown *teardownOutcome
+}
+
 // TestLiveExamples applies each classified example, asserts against it, and
 // destroys it.
 //
@@ -111,13 +134,13 @@ type harvestedURN struct {
 func TestLiveExamples(t *testing.T) {
 	env := setupLiveExamples(t)
 
-	var swept []harvestedURN
+	var runs []liveExampleRun
 
 	for _, ex := range selectLiveExamples(t) {
 		// Not t.Parallel: see the comment above.
 		t.Run(ex.dir, func(t *testing.T) {
-			urns := runLiveExample(t, env, ex)
-			swept = append(swept, urns...)
+			urns, teardown := runLiveExample(t, env, ex)
+			runs = append(runs, liveExampleRun{dir: ex.dir, absent: urns, teardown: teardown})
 		})
 	}
 
@@ -128,29 +151,79 @@ func TestLiveExamples(t *testing.T) {
 	// because the two have different causes and different fixes -- a URN failing
 	// only here means the delete worked and something put it back.
 	t.Run("end-of-run-sweep", func(t *testing.T) {
-		if len(swept) == 0 {
+		var total int
+		for _, run := range runs {
+			total += len(run.absent)
+		}
+		if total == 0 {
 			t.Skip("no URNs harvested; nothing to sweep")
 		}
-		for _, h := range swept {
-			present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
-			if err != nil {
-				t.Errorf("sweep: probing %s (%s): %v", h.urn, h.address, err)
-				continue
-			}
-			if present {
-				t.Errorf("sweep: %s (%s) is present again at the end of the run, having "+
-					"passed its own post-destroy check. The destroy worked and something "+
-					"put it back -- the CAT-2583 side effect is asynchronous and can land "+
-					"after a later example has started.", h.urn, h.address)
+		for _, run := range runs {
+			for _, h := range run.absent {
+				present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
+				if err != nil {
+					t.Errorf("sweep: probing %s (%s): %v", h.urn, h.address, err)
+					continue
+				}
+				if present {
+					reportLateReappearance(t, run, h)
+				}
 			}
 		}
-		t.Logf("swept %d URNs from %d examples", len(swept), len(liveExamples))
+		t.Logf("swept %d URNs from %d examples", total, len(runs))
 	})
 }
 
+// reportLateReappearance renders the sweep's verdict on one URN that is back.
+//
+// The wording has to depend on the example's teardown, because since the
+// re-apply check became the default the sweep no longer has one explanation. Its
+// original message blamed an asynchronous CAT-2583 resurrection, which was sound
+// while a URN reaching the sweep had been destroyed once and left alone. A
+// re-applied example destroys twice and hands the second teardown to the
+// cleanup, and a cleanup destroy that failed is a far likelier explanation for a
+// URN being present than a server side effect reaching across examples.
+//
+// Getting this wrong is expensive in a specific way: it sends a maintainer to an
+// upstream bug for a failure whose cause is one scroll up in the same log.
+func reportLateReappearance(t *testing.T, run liveExampleRun, h harvestedURN) {
+	t.Helper()
+
+	switch {
+	case run.teardown == nil || !run.teardown.fired:
+		// The example tore itself down through its own asserted destroys and the
+		// safety net never ran. Nothing in the harness touched this URN after it
+		// was proved absent, so a resurrection is the explanation.
+		t.Errorf("sweep: %s (%s) is present again at the end of the run, having "+
+			"passed its own post-destroy check. The destroy worked and something "+
+			"put it back -- the CAT-2583 side effect is asynchronous and can land "+
+			"after a later example has started.", h.urn, h.address)
+
+	case run.teardown.errored:
+		// Already reported, with the terraform output, by the subtest that owns it.
+		// A second Errorf here would double-count one failure and invite a hunt for
+		// an upstream bug that is not involved.
+		t.Logf("sweep: %s (%s) is present, and [%s] reported its cleanup destroy failing. "+
+			"This is debris from that failure rather than a separate finding -- triage "+
+			"the destroy, not the sweep.", h.urn, h.address, run.dir)
+
+	default:
+		// The cleanup ran and reported success, yet the URN is back. Either the
+		// destroy did not remove what it claimed, or a resurrection landed after it.
+		// Nothing here can separate the two, and guessing would be worse than saying
+		// so.
+		t.Errorf("sweep: %s (%s) is present again at the end of the run. [%s] ran a cleanup "+
+			"destroy that reported success, so this is UNDETERMINED: either that destroy "+
+			"left the entity behind while exiting 0, or a CAT-2583 resurrection landed "+
+			"after it. Check whether the entity carries content aspects -- a husk points "+
+			"at the resurrection, a populated entity at the destroy.", h.urn, h.address, run.dir)
+	}
+}
+
 // runLiveExample drives one example through apply, assertions and destroy,
-// returning the URNs it created so the end-of-run sweep can re-check them.
-func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harvestedURN {
+// returning the URNs it proved absent so the end-of-run sweep can re-check them,
+// and what its teardown did so the sweep can interpret a reappearance.
+func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) ([]harvestedURN, *teardownOutcome) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -162,11 +235,32 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		phases = []map[string]string{nil}
 	}
 
+	// applied tracks whether a configuration is currently standing. Both explicit
+	// destroys below clear it, and the cleanup returns immediately when it is
+	// false.
+	//
+	// The flag is what lets the safety net stay registered without running a third
+	// destroy over state Terraform has already emptied. Such a destroy is not
+	// harmless noise: it is a terraform invocation per example whose "No changes"
+	// result proves nothing (see the rejected repeat-destroy assertion in the
+	// design), and a failure in it would report against an example that had
+	// already torn itself down correctly.
+	applied := false
+
+	// Read by the end-of-run sweep, after this subtest and its cleanups have
+	// finished, to tell debris from a failed teardown apart from a genuine late
+	// resurrection.
+	teardown := &teardownOutcome{}
+
 	// Registered before the first apply, so a destroy runs even when an
 	// assertion below fails, the harness panics, or the test times out. This is
 	// the difference between one failed example and an instance full of debris.
-	var harvested []harvestedURN
 	t.Cleanup(func() {
+		if !applied {
+			return
+		}
+		teardown.fired = true
+
 		// A fresh context, NOT t.Context(). The testing package cancels a test's
 		// context just before its Cleanup functions run, so using it here means
 		// every teardown fails instantly with "context canceled" and leaves the
@@ -185,6 +279,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 		// race. -parallelism=1 for the nested-domain case removes the
 		// concurrency that widens the guard's stale-index window.
 		if out2, err2 := env.terraformIn(ctx, t, dir, vars, destroyArgs(ex.serialDestroy)...); err2 != nil {
+			teardown.errored = true
 			t.Errorf("[%s] destroy failed twice; the instance holds debris from this "+
 				"example. First error: %v\nRetry output:\n%s", ex.dir, err, out2)
 		}
@@ -192,15 +287,17 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 
 	for i, phaseVars := range phases {
 		merged := mergeVars(vars, phaseVars)
-		label := ""
-		if len(phases) > 1 {
-			label = fmt.Sprintf(" (phase %d/%d)", i+1, len(phases))
-		}
+		label := phaseLabel(i, len(phases))
 
 		start := time.Now()
 		if out, err := env.terraformIn(t.Context(), t, dir, merged, "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
+			// applied is set BEFORE the error is reported, because a failed apply
+			// still creates whatever it managed before failing. Leaving the flag
+			// false here would tell the cleanup there is nothing to tear down.
+			applied = true
 			t.Fatalf("[%s] apply%s failed: %v\n%s", ex.dir, label, err, out)
 		}
+		applied = true
 		t.Logf("[%s] apply%s took %s", ex.dir, label, time.Since(start).Round(time.Second))
 
 		// Assertion 1: no resource changes proposed after apply.
@@ -209,7 +306,7 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 
 	// Assertion 3a: every managed URN exists on the server. Harvested once and
 	// reused for the post-destroy check, so this costs one GET per resource.
-	harvested = harvestURNs(t, env, dir, vars, ex.dir)
+	harvested := harvestURNs(t, env, dir, vars, ex.dir)
 	for _, h := range harvested {
 		datahubtesting.AssertURNPresent(t, env.client, h.resourceType, h.urn)
 	}
@@ -223,20 +320,284 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 	if out, err := env.terraformIn(t.Context(), t, dir, vars, destroyArgs(ex.serialDestroy)...); err != nil {
 		t.Fatalf("[%s] destroy failed: %v\n%s", ex.dir, err, out)
 	}
+	applied = false
 
+	remaining := assertDestroyLeftNothing(t, env, ex, harvested, "first destroy", true)
+
+	// Assertion 5: prove re-creation is not blocked, then destroy again and assert
+	// that too. A husk is invisible in the UI and carries no content aspects; what
+	// it actually does is refuse the next apply with "already exists". Testing that
+	// consequence beats inferring it from an aspect probe.
+	//
+	// On by default. The opt-out is a reason string in the table, not a bool, so
+	// the skip list can be audited -- see noReapplyReason.
+	if reason := reapplySkipReason(ex, harvested); reason != "" {
+		t.Logf("[%s] not re-applying after destroy: %s", ex.dir, reason)
+	} else {
+		start := time.Now()
+		// Every phase, not just the last one. A phased example is phased because
+		// the first apply is a precondition for the second -- data-product-simple
+		// turns provider defaults on only once the property they reference exists
+		// -- so replaying the final phase alone would apply a configuration whose
+		// precondition was never established, and report the resulting failure as
+		// a blocked re-creation.
+		reapplied := true
+		for i, phaseVars := range phases {
+			label := phaseLabel(i, len(phases))
+			if out, err := env.terraformIn(t.Context(), t, dir, mergeVars(vars, phaseVars), "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
+				// Two known server behaviours produce this symptom and they need
+				// different responses, so name both rather than the first one found.
+				// A CAT-2583 husk is a bug to escalate; a burned structured-property
+				// field is confirmed-intended, and the answer there is a
+				// noReapplyReason entry citing the issue.
+				t.Errorf("[%s] re-apply%s after destroy failed, so destroy left something "+
+					"blocking re-creation of a URN this harness proved absent. Two known "+
+					"causes: a CAT-2583 husk (entity gone from the UI, still blocking its own "+
+					"URN), or an Elasticsearch field burned by a structured-property "+
+					"assignment (datahub-project/datahub#18974) -- the error text below "+
+					"distinguishes them. %v\n%s",
+					ex.dir, label, err, out)
+				applied = true
+				reapplied = false
+				break
+			}
+			applied = true
+		}
+		if !reapplied {
+			return remaining, teardown
+		}
+		t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
+
+		// Re-harvest rather than reuse the first harvest, and require the two to
+		// agree. Reuse would be cheaper and would quietly check the wrong URNs: a
+		// re-created entity landing on a different URN leaves the new one behind
+		// with nothing looking for it, while the absence check dutifully confirms
+		// the old one is gone. A mismatch is itself worth failing on -- it means
+		// URN derivation is not deterministic across re-creation, which is a
+		// property every import, every data source lookup and every user's second
+		// apply depends on.
+		reharvested := harvestURNs(t, env, dir, vars, ex.dir+" (re-apply)")
+		assertHarvestsMatch(t, ex.dir, harvested, reharvested)
+
+		// Second-cycle input: the URNs the first destroy proved absent, taken from
+		// the re-harvest, plus anything the re-apply produced that the first apply
+		// did not. Skipped are the ones already reported as survivors and the
+		// mustSurvive addresses -- the first because a survivor belongs to the
+		// cycle that found it, the second because this function's return value also
+		// feeds the end-of-run sweep, where an entity destroy is supposed to RESTORE
+		// would read as a late resurrection. The cost is that the restore assertion
+		// runs once per example rather than twice.
+		absentAfterFirst := make(map[string]bool, len(remaining))
+		for _, h := range remaining {
+			absentAfterFirst[h.urn] = true
+		}
+		firstSeen := make(map[string]bool, len(harvested))
+		for _, h := range harvested {
+			firstSeen[h.urn] = true
+		}
+		secondCycle := make([]harvestedURN, 0, len(reharvested))
+		for _, h := range reharvested {
+			if firstSeen[h.urn] && !absentAfterFirst[h.urn] {
+				continue
+			}
+			secondCycle = append(secondCycle, h)
+		}
+
+		// The second destroy, explicit and asserted, mirroring the first. Leaving
+		// it to the registered cleanup would have the re-apply prove only that
+		// creation is unblocked, while the teardown of what it created went
+		// unchecked -- and the teardown is the half that has actually gone wrong
+		// here before.
+		//
+		// t.Errorf and return rather than t.Fatalf: Fatalf abandons the function,
+		// so the URNs this example created would never reach the end-of-run sweep
+		// and the run's final picture would be missing exactly the example that
+		// failed. The registered cleanup still fires, so the debris is still
+		// pursued.
+		if out, err := env.terraformIn(t.Context(), t, dir, vars, destroyArgs(ex.serialDestroy)...); err != nil {
+			t.Errorf("[%s] second destroy failed after a successful re-apply. Destroy worked "+
+				"the first time on the same configuration, so this is a delete path that "+
+				"cannot remove a re-created entity: %v\n%s", ex.dir, err, out)
+			return remaining, teardown
+		}
+		applied = false
+
+		remaining = assertDestroyLeftNothing(t, env, ex, secondCycle, "second destroy", false)
+	}
+
+	return remaining, teardown
+}
+
+// reapplySkipReason returns why the re-apply cycle does not run for ex, or the
+// empty string to run it. Default-on: only a tabled reason or an empty harvest
+// suppresses it.
+//
+// The empty-harvest case is DERIVED rather than tabled on purpose. An example
+// that manages no entity -- provider-install-verification reads data.datahub_me
+// and creates nothing, ingestion-source-lookup only looks one up -- has no URN
+// whose re-creation could be blocked, so there is nothing for the check to prove.
+// Tabling that would be a second opt-out list which says only what the harness
+// can already see, and which would go stale the moment such an example grew a
+// managed resource: the entry would keep suppressing a check that had become
+// meaningful.
+func reapplySkipReason(ex liveExample, harvested []harvestedURN) string {
+	if ex.noReapplyReason != "" {
+		return ex.noReapplyReason
+	}
+	if len(harvested) == 0 {
+		return "the URN harvest is empty, so this configuration manages no entity whose " +
+			"re-creation could be blocked (derived, not tabled)"
+	}
+	return ""
+}
+
+// assertHarvestsMatch fails when re-applying the same configuration produced a
+// different set of address-to-URN pairs from the first apply.
+//
+// Both directions matter and they fail for different reasons. A pair present the
+// first time and absent the second means the re-apply created something else
+// under that address, so the entity the harness is about to assert the absence of
+// is not the entity that now exists. A pair present only the second time is
+// unaccounted-for debris: nothing harvested it before the first destroy, so no
+// absence check and no sweep entry covers it.
+//
+// Compared as pairs rather than as two URN sets because an address whose URN
+// changed and a URN that moved to another address are different defects, and the
+// pair naming both is what makes the report actionable.
+func assertHarvestsMatch(t *testing.T, label string, first, second []harvestedURN) {
+	t.Helper()
+
+	if problem := describeHarvestMismatch(first, second); problem != "" {
+		t.Errorf("[%s] %s", label, problem)
+	}
+}
+
+// describeHarvestMismatch returns the empty string when the two harvests agree,
+// and otherwise the report. Pure, and separate from the assertion above, for the
+// reason the message builders in datahubtesting are: a message reachable only by
+// failing a test is a message no test can read, and a comparison that can only be
+// observed passing is indistinguishable from one that always passes.
+func describeHarvestMismatch(first, second []harvestedURN) string {
+	index := func(hs []harvestedURN) map[string]bool {
+		m := make(map[string]bool, len(hs))
+		for _, h := range hs {
+			m[h.address+" -> "+h.urn] = true
+		}
+		return m
+	}
+	firstSet, secondSet := index(first), index(second)
+
+	var lost, gained []string
+	for pair := range firstSet {
+		if !secondSet[pair] {
+			lost = append(lost, pair)
+		}
+	}
+	for pair := range secondSet {
+		if !firstSet[pair] {
+			gained = append(gained, pair)
+		}
+	}
+	sort.Strings(lost)
+	sort.Strings(gained)
+
+	if len(lost) == 0 && len(gained) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("the re-applied configuration harvested a different set of URNs than the "+
+		"first apply, so URN derivation is not deterministic across re-creation. Only present "+
+		"the first time:\n  %s\nOnly present after the re-apply (debris no absence check and "+
+		"no sweep entry covers):\n  %s",
+		strings.Join(lost, "\n  "), strings.Join(gained, "\n  "))
+}
+
+// TestDescribeHarvestMismatch exercises both directions, which is the whole point
+// of the message builder being pure: the live harness only ever reaches this
+// comparison against a well-behaved provider, so a version that returned "no
+// mismatch" unconditionally would pass every live run there has ever been.
+func TestDescribeHarvestMismatch(t *testing.T) {
+	t.Parallel()
+
+	a := harvestedURN{address: "datahub_domain.finance", resourceType: "datahub_domain", urn: "urn:li:domain:finance"}
+	b := harvestedURN{address: "datahub_tag.pii", resourceType: "datahub_tag", urn: "urn:li:tag:pii"}
+	// Same address, different URN: the shape a non-deterministic key produces.
+	aMoved := harvestedURN{address: a.address, resourceType: a.resourceType, urn: "urn:li:domain:finance-9f3c"}
+
+	t.Run("identical harvests agree", func(t *testing.T) {
+		t.Parallel()
+		if problem := describeHarvestMismatch([]harvestedURN{a, b}, []harvestedURN{b, a}); problem != "" {
+			t.Errorf("order should not matter, got: %s", problem)
+		}
+	})
+
+	t.Run("a URN that changed is reported in both directions", func(t *testing.T) {
+		t.Parallel()
+		problem := describeHarvestMismatch([]harvestedURN{a, b}, []harvestedURN{aMoved, b})
+		if problem == "" {
+			t.Fatal("no mismatch reported for an address whose URN changed between applies")
+		}
+		for _, want := range []string{a.urn, aMoved.urn, a.address} {
+			if !strings.Contains(problem, want) {
+				t.Errorf("message does not name %q: %s", want, problem)
+			}
+		}
+	})
+
+	t.Run("a URN only the re-apply created is reported", func(t *testing.T) {
+		t.Parallel()
+		problem := describeHarvestMismatch([]harvestedURN{a}, []harvestedURN{a, b})
+		if problem == "" {
+			t.Fatal("no mismatch reported for a resource that only the second apply created")
+		}
+		if !strings.Contains(problem, b.urn) {
+			t.Errorf("message does not name the unaccounted-for URN %q: %s", b.urn, problem)
+		}
+	})
+
+	t.Run("an empty harvest against a populated one is a mismatch", func(t *testing.T) {
+		t.Parallel()
+		if problem := describeHarvestMismatch([]harvestedURN{a}, nil); problem == "" {
+			t.Fatal("no mismatch reported for a re-apply that harvested nothing at all")
+		}
+	})
+}
+
+// assertDestroyLeftNothing runs assertion 3b for one destroy cycle: absence for
+// every URN the example created, inverted for the addresses listed in
+// mustSurvive, plus the stale-expectation guard on the table itself.
+//
+// Extracted because the harness destroys twice and the second destroy deserves
+// the same scrutiny as the first. It is the destroy that follows a re-creation,
+// so it is the only one positioned to show a delete path that works on a
+// freshly created entity and not on a re-created one.
+//
+// cycle labels every message with which destroy it belongs to; without it a
+// failure report gives a maintainer no way to tell the two apart.
+//
+// Returns the URNs it proved absent, and the caller feeds only those into the
+// next cycle. That is what keeps one survivor to one report: the cycle that
+// first saw it survive names it, and neither the later cycle nor the end-of-run
+// sweep repeats the accusation over a URN already known to be there.
+func assertDestroyLeftNothing(t *testing.T, env liveExampleEnv, ex liveExample, harvested []harvestedURN, cycle string, checkStaleMustSurvive bool) []harvestedURN {
+	t.Helper()
+
+	// Deliberately symmetric with the first cycle. The pause exists so the
+	// absence check does not race the asynchronous CAT-2583 side effect, and that
+	// side effect does not care which destroy fired it -- skipping the settle on
+	// the second cycle to save fifteen seconds would buy false failures. It costs
+	// nothing today: every example that sets settleAfterDestroy also opts out of
+	// the re-apply, so no example currently reaches this branch twice.
 	if ex.settleAfterDestroy {
-		t.Logf("[%s] settling %s before the absence check (CAT-2583)", ex.dir, settleAfterDestroyPause)
+		t.Logf("[%s] %s: settling %s before the absence check (CAT-2583)", ex.dir, cycle, settleAfterDestroyPause)
 		time.Sleep(settleAfterDestroyPause)
 	}
 
-	// Assertion 3b: absence, except where the example's whole point is that the
-	// entity survives.
 	survive := make(map[string]bool, len(ex.mustSurvive))
 	for _, addr := range ex.mustSurvive {
 		survive[addr] = true
 	}
 	seen := make(map[string]bool, len(ex.mustSurvive))
-	remaining := make([]harvestedURN, 0, len(harvested))
+	absent := make([]harvestedURN, 0, len(harvested))
 
 	for _, h := range harvested {
 		if survive[h.address] {
@@ -252,44 +613,38 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) []harveste
 			present, err := datahubtesting.URNPresent(context.Background(), env.client, h.urn)
 			switch {
 			case err != nil:
-				t.Errorf("[%s] %s (%s) is expected to survive destroy, but presence "+
-					"could not be established: %v", ex.dir, h.address, h.urn, err)
+				t.Errorf("[%s] %s: %s (%s) is expected to survive destroy, but presence "+
+					"could not be established: %v", ex.dir, cycle, h.address, h.urn, err)
 			case !present:
-				t.Errorf("[%s] %s (%s) was deleted by destroy, but this example adopts an "+
+				t.Errorf("[%s] %s: %s (%s) was deleted by destroy, but this example adopts an "+
 					"entity it did not create, so destroy is supposed to RESTORE it. The "+
-					"instance has been left without it.", ex.dir, h.address, h.urn)
+					"instance has been left without it.", ex.dir, cycle, h.address, h.urn)
 			}
 			continue
 		}
-		datahubtesting.AssertURNAbsent(t, env.client, h.resourceType, h.urn)
-		remaining = append(remaining, h)
+		if problem := datahubtesting.CheckURNAbsent(context.Background(), env.client, h.resourceType, h.urn); problem != "" {
+			t.Errorf("[%s] %s: %s", ex.dir, cycle, problem)
+			continue
+		}
+		absent = append(absent, h)
 	}
 
 	// A mustSurvive address that matched nothing is a stale expectation, and it
 	// would otherwise pass silently while asserting nothing at all.
-	for _, addr := range ex.mustSurvive {
-		if !seen[addr] {
-			t.Errorf("[%s] mustSurvive names %q, which is not a managed resource in the "+
-				"harvested state; the restore assertion checked nothing", ex.dir, addr)
+	//
+	// First cycle only. This is table hygiene rather than a check on the server,
+	// and its answer cannot change between two destroys of the same state -- so
+	// running it twice would present one wrong table entry as two failures.
+	if checkStaleMustSurvive {
+		for _, addr := range ex.mustSurvive {
+			if !seen[addr] {
+				t.Errorf("[%s] mustSurvive names %q, which is not a managed resource in the "+
+					"harvested state; the restore assertion checked nothing", ex.dir, addr)
+			}
 		}
 	}
 
-	// Assertion 5: prove re-creation is not blocked. A husk is invisible in the
-	// UI and carries no content aspects; what it actually does is refuse the next
-	// apply with "already exists". Testing that consequence beats inferring it.
-	if ex.reapplyAfterDestroy {
-		start := time.Now()
-		if out, err := env.terraformIn(t.Context(), t, dir, mergeVars(vars, lastPhase(phases)), "apply", "-auto-approve", "-input=false", "-no-color"); err != nil {
-			t.Errorf("[%s] re-apply after destroy failed, which is what a CAT-2583 husk "+
-				"does: the entity is gone from the UI but still blocks its own URN. %v\n%s",
-				ex.dir, err, out)
-		} else {
-			t.Logf("[%s] re-apply after destroy succeeded in %s", ex.dir, time.Since(start).Round(time.Second))
-		}
-		// Leave the teardown to the registered Cleanup.
-	}
-
-	return remaining
+	return absent
 }
 
 // assertPlanClean fails when terraform plans a change to any resource after a
@@ -533,11 +888,13 @@ func mergeVars(base, overlay map[string]string) map[string]string {
 	return merged
 }
 
-func lastPhase(phases []map[string]string) map[string]string {
-	if len(phases) == 0 {
-		return nil
+// phaseLabel names a phase in a message, and returns "" for the single-phase
+// case so an unphased example's messages stay uncluttered.
+func phaseLabel(i, n int) string {
+	if n <= 1 {
+		return ""
 	}
-	return phases[len(phases)-1]
+	return fmt.Sprintf(" (phase %d/%d)", i+1, n)
 }
 
 // selectLiveExamples returns the run list, narrowed by the EXAMPLES filter.
