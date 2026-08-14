@@ -94,6 +94,20 @@ Discretion example - `datahub_service_account`: a service account has no distinc
 - Lint: `make lint` -- **always run before raising a PR**. The linter includes `gofmt`; misaligned comment spacing (e.g., `"foo",   // comment` with wrong tab count) will fail CI even if the code compiles and tests pass.
 - New worktree: after creating a git worktree for a new branch, run `make dev-override` inside the worktree directory before running any Terraform commands. This generates the gitignored `dev.tfrc` with the absolute path to that worktree's binary, and sets `TF_CLI_CONFIG_FILE` via `.mise.env`. Without it, Terraform picks up the wrong (or no) provider binary.
 
+## Vulnerability scanning covers three Go modules, not one
+
+`make deps-vulncheck` is `govulncheck ./...` from the repository root, so it sees the **main module only**. `tools/` and `tools/serve` are separate modules with their own `go.sum`, and they went unscanned from the day they were created -- which is how `GO-2026-5970` (`x/text` infinite loop) came to be fixed in the main module for 0.21.1 while staying reachable in both tool binaries, and how a goldmark XSS sat in the documentation generator unnoticed. **`make deps-vulncheck-tools` covers them; `make deps-vulncheck-all` runs both.** Both scans are steps in the `Vulncheck` CI job.
+
+Three things about that target are non-obvious enough to write down:
+
+- **It scans binaries, not source, and that is not a workaround.** A tools module's only Go file is a build-tagged stub whose blank import keeps the tool's version pinned in `go.mod` -- delete the import and `go mod tidy` drops the tool entirely. That import names a `package main`, which source-mode analysis refuses, so every source-mode invocation fails: `./...` matches no packages, `-tags generate` reports "is a program, not an importable package", and `-scan module` reports "build constraints exclude all Go files". Do not retry these. Binary mode also scans exactly what ships in the tool, since only linked code is present.
+- **Reachability is the bar, matching the main-module scan.** A finding whose first trace frame names a function is called; anything else is present in the graph but not invoked, and is printed without failing. Keeping both targets to one definition of "vulnerable" is what makes their results comparable.
+- **The accepted-forever list is a named constant, not a filter buried in a pipeline.** `PERMANENT_OSV` in `scripts/vulncheck-tools.sh` holds advisories with no fix in any release, each with a reason and the condition that would remove it -- today only `GO-2026-5932` (`x/crypto/openpgp`, unmaintained by design, reached by `tfupdate`). Without it the check would be permanently red, and a permanently red check is one nobody reads.
+
+**Bumps do not propagate between modules.** Fixing a dependency in the main module leaves the tool modules untouched, and `make deps-outdated`/`deps-update` act on the main module only. Fix a tool module from inside it: `cd tools && go get golang.org/x/text@latest && go mod tidy`.
+
+**Do not assume Dependabot will raise any of this.** Neither `GO-2026-5970` nor the goldmark XSS has a GitHub advisory entry, and `golang.org/x/mod` has none at all -- verified against the GitHub advisories API (`/advisories?ecosystem=go&affects=<module>`). Dependabot cannot raise what its database does not hold, which is the whole reason this scan exists; the two tools answer different questions and neither subsumes the other.
+
 ## Tool version maintenance
 
 Dependabot has no `mise` ecosystem support — tool versions pinned in `mise.toml` are a blind spot not covered by any automated process.
