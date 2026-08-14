@@ -100,7 +100,7 @@ That is consistent with `structuredProperties` being a `dynamic: true` mapping: 
 
 Recovery, in preference order:
 
-1. **Avoid the situation.** For a schema change, bump the property's `version` rather than destroying and recreating it. Same URN and `qualifiedName`; search moves to a new versioned field, and the old field name is never burned. (DataHub derives a different ES field name entirely once `version` is set, which is what makes this work.)
+1. **Avoid the situation.** For a schema change, bump the property's `version` rather than destroying and recreating it. Same URN and `qualifiedName`; search moves to a new versioned field, and the old field name is never burned. (DataHub derives a different ES field name entirely once `version` is set, which is what makes this work.) **Not yet available through this provider** -- `datahub_structured_property` does not expose `version` as of 0.21.1, so today this route needs the DataHub API or CLI directly. Support is in flight.
 2. **Reclaim the mapping** on the next system-update (Helm upgrade/install, or Quickstart start) with both `ELASTICSEARCH_INDEX_BUILDER_MAPPINGS_REINDEX=true` and `ENABLE_STRUCTURED_PROPERTIES_SYSTEM_UPDATE=true`. That rebuilds entity indices from current definitions so orphaned fields drop. Expect a full index recreate. `RestoreIndices` alone is **not** enough, and any remaining assignment value on an index blocks removal for that index.
 3. **Pick a different `property_id`** -- but only as a last resort, and knowing it buys one more cycle rather than a fix: assign the new name and it burns too.
 

@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-08-14
+
 ### Security
 
 - **The provider is now built with Go 1.26.6, which fixes six standard-library advisories reachable from this code**: `net/url` (GO-2026-6218), `html/template` (GO-2026-6091), `crypto/tls` (GO-2026-6090), `net/http` (GO-2026-6089), `encoding/asn1` (GO-2026-5972) and one further finding. A Terraform provider spends its life making HTTPS calls and parsing what comes back, so `crypto/tls` and `net/http` are squarely on the path rather than incidental. Nothing in the provider's own code changed; a released binary built from 1.26.5 carries the vulnerable standard library, and one built from 1.26.6 does not.
+
+  **Affected versions: 0.21.0 and every earlier release**, all of which were built with Go 1.26.5 or older and therefore ship the vulnerable standard library. Releases built with older Go carry these findings and potentially others. **There is nothing to rotate or reconfigure -- upgrading the provider is the whole fix**, unlike the credential-logging issue in 0.19.1. If you pin the provider version, this is the release to move to.
 
   Selected via a `toolchain go1.26.6` directive rather than by moving the pinned toolchain, because the version manager used for development withholds very recent releases by design and had not yet offered 1.26.6. Go downloads the named toolchain itself, so this applies to CI and to anyone who clones the repository. The `go` directive is unchanged at 1.26.5: it declares the minimum language version, not the compiler, and nothing here needs newer language features.
 
@@ -405,7 +409,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.0...v0.19.1
