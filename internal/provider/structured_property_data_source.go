@@ -41,6 +41,7 @@ type structuredPropertyDataSourceModel struct {
 	PropertyID         types.String `tfsdk:"property_id"`
 	URN                types.String `tfsdk:"urn"`
 	QualifiedName      types.String `tfsdk:"qualified_name"`
+	Version            types.String `tfsdk:"version"`
 	ValueType          types.String `tfsdk:"value_type"`
 	Cardinality        types.String `tfsdk:"cardinality"`
 	EntityTypes        types.Set    `tfsdk:"entity_types"`
@@ -80,6 +81,12 @@ func (d *structuredPropertyDataSource) Schema(_ context.Context, _ datasource.Sc
 			"qualified_name": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "The qualified name of the property.",
+			},
+			"version": schema.StringAttribute{
+				Computed: true,
+				MarkdownDescription: "The definition version (14 digits, `yyyyMMddHHmmss`), or null when the property is " +
+					"un-versioned. Read this before bumping the version on a managed copy: each new value must be " +
+					"greater than the current one.",
 			},
 			"value_type": schema.StringAttribute{
 				Computed:            true,
@@ -224,6 +231,7 @@ func spToDataSourceModel(ctx context.Context, sp *datahub.StructuredProperty) (s
 		PropertyID:    types.StringValue(sp.ID),
 		URN:           types.StringValue(sp.URN),
 		QualifiedName: types.StringValue(sp.QualifiedName),
+		Version:       nullIfEmpty(sp.Version),
 		ValueType:     types.StringValue(sp.ValueType),
 		Cardinality:   types.StringValue(sp.Cardinality),
 		DisplayName:   types.StringValue(sp.DisplayName),

@@ -4256,6 +4256,147 @@ func StructuredPropertyCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// StructuredPropertyVersionSteps exercises the optional definition version:
+// un-versioned create, adding a version to a live property, bumping it, and
+// importing while it is set.
+//
+// The point of the attribute is that a versioned definition derives a different
+// Elasticsearch field name, which is the only way to re-create a property whose
+// id has already been assigned to an asset (the delete does not release the old
+// field). These steps cannot observe that -- it needs a real search index -- so
+// they check the part that is checkable everywhere: that the value reaches the
+// server, survives the read-back, and moves in place rather than by
+// replacement. The mock rejects any version that is not 14 digits, so a step
+// that creates without one also proves the field is omitted rather than sent
+// empty.
+func StructuredPropertyVersionSteps(propertyID string) []resource.TestStep {
+	const addr = "datahub_structured_property.test"
+
+	config := func(version string) string {
+		versionLine := ""
+		if version != "" {
+			versionLine = fmt.Sprintf("\n  version = %q\n", version)
+		}
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["dataset"]
+  display_name = "Retention Class"
+%s}
+`, propertyID, versionLine)
+	}
+
+	return []resource.TestStep{
+		{
+			// Un-versioned create. `version` must read back as null, not "".
+			Config: config(""),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("version"), knownvalue.Null()),
+			},
+		},
+		{
+			// Add a version to an existing property. Upstream's whole point is
+			// that this happens on the same URN, so it must not replace.
+			Config: config("20240610120000"),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("version"), knownvalue.StringExact("20240610120000")),
+			},
+		},
+		{
+			// Bump it. Also in place, and the new value must be the one stored.
+			Config: config("20240611130000"),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("version"), knownvalue.StringExact("20240611130000")),
+			},
+		},
+		{
+			// Import while versioned: the version has to come back off the
+			// aspect, or the first plan after an import shows a spurious change.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateId:     propertyID,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// StructuredPropertyVersionedCreateSteps creates a property that is versioned
+// from the outset -- a distinct path from adding a version later, since it is
+// the one a user takes when re-creating an id whose un-versioned field name is
+// already burned.
+func StructuredPropertyVersionedCreateSteps(propertyID string) []resource.TestStep {
+	const addr = "datahub_structured_property.test"
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "number"
+  entity_types = ["dataset"]
+  version      = "20240612140000"
+}
+`, propertyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("version"), knownvalue.StringExact("20240612140000")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"),
+					knownvalue.StringExact("urn:li:structuredProperty:"+propertyID)),
+			},
+		},
+	}
+}
+
+// StructuredPropertyInvalidVersionSteps asserts the version format is rejected
+// at plan time. Without the validator these configs reach the server and come
+// back as an HTTP 400 carrying a ValidationExceptionCollection dump of the
+// whole aspect, which does not tell the reader that the field wants 14 digits.
+// Both rejected forms are the ones the upstream PDL comment suggests.
+func StructuredPropertyInvalidVersionSteps(propertyID string) []resource.TestStep {
+	config := func(version string) string {
+		return providerBlock + fmt.Sprintf(`
+resource "datahub_structured_property" "test" {
+  property_id  = %q
+  value_type   = "string"
+  entity_types = ["dataset"]
+  version      = %q
+}
+`, propertyID, version)
+	}
+
+	return []resource.TestStep{
+		{
+			// "v1" -- the PDL's first suggestion.
+			Config:      config("v1"),
+			ExpectError: regexp.MustCompile(`(?s)Invalid version.*exactly 14\s+digits`),
+			PlanOnly:    true,
+		},
+		{
+			// A date without a time component: 8 digits, also the PDL's suggestion.
+			Config:      config("20240610"),
+			ExpectError: regexp.MustCompile(`(?s)Invalid version.*exactly 14\s+digits`),
+			PlanOnly:    true,
+		},
+		{
+			// A dotted version. The server has a separate no-dots rule; the
+			// digit check subsumes it.
+			Config:      config("2024.06.10"),
+			ExpectError: regexp.MustCompile(`(?s)Invalid version.*exactly 14\s+digits`),
+			PlanOnly:    true,
+		},
+	}
+}
+
 // OwnershipTypeLifecycleSteps exercises the full resource lifecycle for
 // datahub_ownership_type: create with description, in-place update, and import
 // by both bare type_id and full URN.

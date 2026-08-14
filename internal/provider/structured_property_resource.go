@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -53,6 +54,47 @@ func (v valueTypeValidator) ValidateString(_ context.Context, req validator.Stri
 			req.Path,
 			"Invalid value_type",
 			fmt.Sprintf("%q is not a valid value_type. Must be one of: string, number, date, urn, rich_text.", val),
+		)
+	}
+}
+
+// structuredPropertyVersionRegex is the version format DataHub's
+// PropertyDefinitionValidator enforces on every structuredPropertyDefinition
+// upsert: exactly 14 digits, i.e. a yyyyMMddHHmmss timestamp.
+//
+// The PDL field comment suggests "v1, v2" and "20240610", but the server has
+// rejected both of those since the versioning feature shipped, so the comment
+// cannot be taken as the contract. Verified against Quickstart v1.7.0: `v1`
+// and `20240610` both return HTTP 400 "Invalid version specified. Must match
+// [0-9]{14}", wrapped in a ValidationExceptionCollection dump that names the
+// whole aspect. Rejecting at plan time is what turns that into a readable
+// error, and it also subsumes the separate no-dots rule the server applies
+// when a version is used to permit a breaking change.
+var structuredPropertyVersionRegex = regexp.MustCompile(`^[0-9]{14}$`)
+
+// structuredPropertyVersionValidator enforces the 14-digit version format.
+type structuredPropertyVersionValidator struct{}
+
+func (v structuredPropertyVersionValidator) Description(_ context.Context) string {
+	return "must be exactly 14 digits, a yyyyMMddHHmmss timestamp (e.g. 20240610120000)"
+}
+
+func (v structuredPropertyVersionValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v structuredPropertyVersionValidator) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	val := req.ConfigValue.ValueString()
+	if !structuredPropertyVersionRegex.MatchString(val) {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid version",
+			fmt.Sprintf("%q is not a valid structured property version. DataHub requires exactly 14 digits, "+
+				"a yyyyMMddHHmmss timestamp such as \"20240610120000\". Short forms like \"v1\" or \"20240610\" "+
+				"are rejected by the server.", val),
 		)
 	}
 }
@@ -190,6 +232,7 @@ type structuredPropertyResourceModel struct {
 	URN                types.String                     `tfsdk:"urn"`
 	QualifiedName      types.String                     `tfsdk:"qualified_name"`
 	PropertyID         types.String                     `tfsdk:"property_id"`
+	Version            types.String                     `tfsdk:"version"`
 	ValueType          types.String                     `tfsdk:"value_type"`
 	Cardinality        types.String                     `tfsdk:"cardinality"`
 	EntityTypes        types.Set                        `tfsdk:"entity_types"`
@@ -249,6 +292,15 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 			"narrow cardinality from `MULTIPLE` to `SINGLE`, Terraform will destroy and recreate the " +
 			"property. **Destroying a property hard-deletes it and removes all applied values from " +
 			"every asset.**\n\n" +
+			"## Deleting an assigned property burns its `property_id`\n\n" +
+			"Once a value for this property has been applied to any asset, DataHub creates an " +
+			"Elasticsearch field for it, and deleting the property does not release that field name. " +
+			"A later apply that re-creates the same `qualified_name` -- including the destroy-then-create " +
+			"Terraform performs for the list-shrink changes above -- is rejected with " +
+			"`Elasticsearch field '...' collides with existing property mapping`, and reclaiming the name " +
+			"otherwise needs an operator-run reindex. Set `version` to sidestep this: a versioned " +
+			"definition derives a different field name, so re-creating the same `property_id` succeeds. " +
+			"See [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974).\n\n" +
 			"## Value types\n\n" +
 			"Specify `value_type` as a short name: `string`, `number`, `date`, `urn`, or `rich_text`. " +
 			"When `value_type = \"urn\"`, use `allowed_entity_types` to restrict which entity types " +
@@ -281,6 +333,30 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 					"(e.g. `io.acme.privacy.classification`). Changing this forces a new resource.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"version": schema.StringAttribute{
+				Optional: true,
+				MarkdownDescription: "Optional definition version, as exactly 14 digits (a `yyyyMMddHHmmss` timestamp, e.g. " +
+					"`20240610120000`). Short forms like `v1` or `20240610` are rejected by DataHub even though the " +
+					"underlying field documentation suggests them.\n\n" +
+					"Set this when you need to re-create a property whose `property_id` has already been used and " +
+					"assigned. Deleting a structured property that was applied to an asset does not release the " +
+					"Elasticsearch field DataHub derived for it, so re-creating the same `qualified_name` afterwards " +
+					"fails with `Elasticsearch field '...' collides with existing property mapping` until an operator " +
+					"reindexes. A versioned definition derives a different field name, so it is not the same field and " +
+					"does not collide. This is intended upstream behaviour, not a bug: see " +
+					"[datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), where " +
+					"versioning is the recommended alternative to hard-deleting a property you need to change.\n\n" +
+					"Changing this value is applied in-place on the same URN; it never replaces the resource. Each new " +
+					"value must be greater than the previous one (compared case-insensitively), which a " +
+					"`yyyyMMddHHmmss` timestamp gives you for free.\n\n" +
+					"**Never reuse a version you have used before on the same `property_id`.** A versioned field is " +
+					"burned by an assignment exactly like the un-versioned one, so re-creating a deleted property at " +
+					"an earlier version collides all over again. Take a fresh timestamp each time; the format is what " +
+					"makes that natural.",
+				Validators: []validator.String{
+					structuredPropertyVersionValidator{},
 				},
 			},
 			"value_type": schema.StringAttribute{
@@ -590,6 +666,7 @@ func createInputFromModel(ctx context.Context, m *structuredPropertyResourceMode
 	var diags diag.Diagnostics
 	in := datahub.CreateStructuredPropertyInput{
 		ID:          m.PropertyID.ValueString(),
+		Version:     strVal(m.Version),
 		DisplayName: strVal(m.DisplayName),
 		Description: strVal(m.Description),
 		ValueType:   m.ValueType.ValueString(),
@@ -669,6 +746,7 @@ func applyStructuredPropertyToModel(ctx context.Context, sp *datahub.StructuredP
 	m.ValueType = types.StringValue(sp.ValueType)
 	m.Cardinality = types.StringValue(sp.Cardinality)
 	m.Immutable = types.BoolValue(sp.Immutable)
+	m.Version = nullIfEmpty(sp.Version)
 	m.DisplayName = nullIfEmpty(sp.DisplayName)
 	m.Description = nullIfEmpty(sp.Description)
 

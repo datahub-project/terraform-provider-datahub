@@ -16,6 +16,59 @@ import (
 	"time"
 )
 
+// TestStructuredPropertyPayloadVersion pins the difference between an unset
+// version and an empty one. The server rejects any present version that is not
+// 14 digits, so writing "version": "" would fail every un-versioned create; and
+// toElasticsearchFieldName picks the versioned field-name form based on the
+// field being present at all, so an empty string would also change which
+// Elasticsearch field the property's values land in.
+func TestStructuredPropertyPayloadVersion(t *testing.T) {
+	base := CreateStructuredPropertyInput{
+		ID:          "io.acme.retention",
+		ValueType:   "string",
+		EntityTypes: []string{"dataset"},
+	}
+
+	t.Run("omitted_when_empty", func(t *testing.T) {
+		def := payloadDefinition(t, base)
+		if _, present := def["version"]; present {
+			t.Errorf("version key present for an un-versioned property: %#v", def["version"])
+		}
+	})
+
+	t.Run("sent_when_set", func(t *testing.T) {
+		in := base
+		in.Version = "20240610120000"
+		def := payloadDefinition(t, in)
+		if got := def["version"]; got != "20240610120000" {
+			t.Errorf("version = %#v, want %q", got, "20240610120000")
+		}
+	})
+}
+
+// payloadDefinition extracts the propertyDefinition aspect value from the write
+// payload, round-tripped through JSON so the assertion sees what the server
+// would.
+func payloadDefinition(t *testing.T, in CreateStructuredPropertyInput) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(structuredPropertyEntityPayload(structuredPropertyURNPrefix+in.ID, in))
+	if err != nil {
+		t.Fatalf("marshalling payload: %v", err)
+	}
+	var entities []struct {
+		PropertyDefinition struct {
+			Value map[string]any `json:"value"`
+		} `json:"propertyDefinition"`
+	}
+	if err := json.Unmarshal(raw, &entities); err != nil {
+		t.Fatalf("unmarshalling payload: %v", err)
+	}
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity in the payload, got %d", len(entities))
+	}
+	return entities[0].PropertyDefinition.Value
+}
+
 func TestStructuredPropertySearchField(t *testing.T) {
 	cases := []struct {
 		name          string
