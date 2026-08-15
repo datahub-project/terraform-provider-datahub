@@ -59,11 +59,8 @@ type mockForm struct {
 	Assignment [][]mockFilterCriterion
 }
 
-func graphQLError(w http.ResponseWriter, msg string) {
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"errors": []map[string]any{{"message": msg}},
-	})
-}
+// graphQLError lives in metadata_tests.go: both mocks need the same
+// GraphQL-shaped error envelope, and the package holds one copy.
 
 func stringSlice(v any) []string {
 	list, ok := v.([]any)
