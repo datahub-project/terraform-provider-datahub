@@ -32,7 +32,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-vulncheck-tools deps-vulncheck-all deps-outdated deps-outdated-all deps-update deps-update-all test test-examples test-examples-live testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
+.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-vulncheck-tools deps-vulncheck-all deps-outdated deps-outdated-all deps-update deps-update-all test test-examples test-examples-live test-examples-live-local test-examples-live-quickstart testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -58,6 +58,10 @@ help:
 	@echo "                (needs terraform on PATH; no DataHub instance and no network)"
 	@echo "  test-examples-live Apply and destroy the runnable examples against a live DataHub"
 	@echo "                     instance; needs DATAHUB_GMS_URL/TOKEN. EXAMPLES=\"a b\" narrows it"
+	@echo "  test-examples-live-local     Same, against a Quickstart already running at localhost:8080;"
+	@echo "                               mints the PAT itself, so no env vars to set"
+	@echo "  test-examples-live-quickstart Boot a fresh Quickstart, run the above, then nuke;"
+	@echo "                               KEEP_QUICKSTART=1 to skip the nuke"
 	@echo "  testacc            Run acceptance tests against the in-memory mock (no live DataHub needed; env vars cleared)"
 	@echo "  testacc-local      Run acceptance tests against a DataHub instance already running at localhost:8080 (BYO);"
 	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
@@ -260,12 +264,49 @@ test-examples: install
 test-examples-live: install
 	@if [ -z "$$DATAHUB_GMS_URL" ] || [ -z "$$DATAHUB_GMS_TOKEN" ]; then \
 		echo "DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN must be set."; \
-		echo "For a local Quickstart: make quickstart-up && eval \"\$$(make quickstart-token)\""; \
+		echo ""; \
+		echo "Against a local Quickstart, prefer the wrapper targets, which mint the"; \
+		echo "token for you -- there is no env to export:"; \
+		echo "  make test-examples-live-quickstart   # boot, run, tear down"; \
+		echo "  make test-examples-live-local        # run against a Quickstart already up"; \
+		echo ""; \
+		echo "This target itself takes explicit values, so it can also target a remote"; \
+		echo "instance:"; \
+		echo "  DATAHUB_GMS_URL=... DATAHUB_GMS_TOKEN=... make test-examples-live"; \
 		exit 1; \
 	fi
 	TF_EXAMPLE_LIVE=1 $(GO) test -v -timeout 70m -count=1 \
 		-run 'TestLiveExamples' \
 		./internal/provider/
+
+# The two wrappers below mirror testacc-local and testacc-quickstart exactly.
+# Stage C landed as its own slice and did not pick up the conveniences the older
+# live targets already had, which left test-examples-live as the only live target
+# demanding hand-plumbed environment variables.
+#
+# Minting the token here rather than telling the reader to export it is what
+# removes the trap: scripts/quickstart-token.sh prints a bare token, so the
+# 'eval "$(make quickstart-token)"' form this target used to suggest ran the
+# token as a command, set nothing, and never set DATAHUB_GMS_URL at all.
+test-examples-live-local: install
+	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
+	DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) DATAHUB_GMS_TOKEN="$$TOKEN" TF_EXAMPLE_LIVE=1 \
+		$(GO) test -v -timeout 70m -count=1 \
+		-run 'TestLiveExamples' \
+		./internal/provider/
+
+# KEEP_QUICKSTART=1 holds the instance open for inspection after a failure. Note
+# a successful run leaves debris behind by design in one case: an example that
+# assigns a structured property burns an Elasticsearch field name that destroy
+# cannot reclaim, so re-running against a kept instance can fail where a fresh
+# one succeeds. That is the behaviour under test, not a harness defect.
+test-examples-live-quickstart:
+	@if [ "$$KEEP_QUICKSTART" != "1" ]; then \
+		trap 'echo "Tearing down Quickstart"; datahub docker nuke >/dev/null 2>&1 || true' EXIT; \
+	fi; \
+	set -e; \
+	$(MAKE) quickstart-up; \
+	$(MAKE) test-examples-live-local
 
 testacc-local: install
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \

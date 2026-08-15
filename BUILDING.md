@@ -8,8 +8,8 @@
 | Terraform CLI | yes | >= 1.11 required for `WriteOnly` attribute support. |
 | `golangci-lint` | no | Only needed for `make lint`. Install via `mise` or see https://golangci-lint.run. |
 | `tfplugindocs` | no | Only needed for `make generate`. Managed by the `tools/` sub-module. |
-| Docker | no | Required for `make testacc-quickstart` only. |
-| `jq` | no | Required for `make testacc-local` and `make testacc-quickstart` (PAT minting). Installed automatically by `mise install`. |
+| Docker | no | Required for `make testacc-quickstart` and `make test-examples-live-quickstart` only. |
+| `jq` | no | Required by any target that mints a PAT: `testacc-local`, `testacc-quickstart`, `test-examples-live-local`, `test-examples-live-quickstart`. Installed automatically by `mise install`. |
 
 If you use [mise](https://mise.jdx.dev), run `mise install` in the repo root to get all pinned tools (Go, Terraform, golangci-lint, Python, uv).
 
@@ -142,6 +142,26 @@ make quickstart-down
 - If a previous `datahub init` left a stale `~/.datahubenv`, the provider falls back to it when the env vars are empty. Either keep the env vars exported per session or remove `~/.datahubenv`.
 - A test that crashes between Create and Destroy can leak resources. Re-running is safe (names are randomized), but stale entities accumulate in DataHub until `datahub docker nuke`.
 - Live tests run in CI on release tag pushes (as a gate before GoReleaser), on a nightly schedule, and on PRs labeled `run-live-ci`.
+
+### Live execution of the runnable examples
+
+A separate suite applies and destroys each example under `examples/runnable/` against a live instance, which is the only thing that catches a `Create` writing an aspect the `Read` cannot parse back, a `Delete` that leaves the entity in place, or a value the server normalises into a permanent diff. Validation (`make test-examples`) proves only that an example parses.
+
+```bash
+make test-examples-live-quickstart   # boot, run, nuke on exit -- no env vars needed
+```
+
+It takes the same `FRESH=1` and `KEEP_QUICKSTART=1` knobs as `testacc-quickstart`, and the same three targets in the same shapes:
+
+| Target | Instance | Token |
+|---|---|---|
+| `make test-examples-live-quickstart` | boots a fresh Quickstart, nukes on exit | minted for you |
+| `make test-examples-live-local` | a Quickstart already up at `localhost:8080` | minted for you |
+| `make test-examples-live` | whatever `DATAHUB_GMS_URL` names, including remote | you supply `DATAHUB_GMS_TOKEN` |
+
+`EXAMPLES="tag-simple domain-simple"` narrows any of them to named directories, which is how to iterate on one example without paying for the whole run.
+
+One caveat specific to this suite, and it is the behaviour under test rather than a defect: a successful run of an example that *assigns* a structured property burns an Elasticsearch field name that `terraform destroy` cannot reclaim. Under `KEEP_QUICKSTART=1` a second run against the kept instance can therefore fail where a fresh one succeeds. Reach for `FRESH=1`, or the default ephemeral target, when a re-run reports a field collision.
 
 ### Live tests against a remote tenant
 

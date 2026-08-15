@@ -94,6 +94,14 @@ For changes that touch provider-DataHub API interaction, also run against a loca
 make testacc-quickstart   # boots Quickstart, runs tests, nukes on exit
 ```
 
+If you added or changed a runnable example under `examples/runnable/`, the equivalent is:
+
+```bash
+make test-examples-live-quickstart   # boots Quickstart, applies and destroys the examples, nukes on exit
+```
+
+`make test-examples` only proves an example parses. Applying it is what catches a `Create` writing an aspect the `Read` cannot parse back, a `Delete` that leaves the entity in place, or a value the server normalises into a permanent diff. This is slow (a boot plus a serial run) and is not required for every PR -- CI runs it nightly, and on a PR labelled `run-live-ci`.
+
 See [BUILDING.md](BUILDING.md) for the full testing matrix and knobs.
 
 ## Pull requests
