@@ -1,5 +1,5 @@
 [tools]
-go = "1.26.5"
+go = "1.26.6"
 terraform = "1.15.8"
 golangci-lint = "2.12.2"
 jq = "1.8.2"
