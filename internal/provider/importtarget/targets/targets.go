@@ -395,6 +395,25 @@ func init() {
 		OSSCompatible: false,
 	})
 
+	// Metadata tests (the `test` entity) exist on OSS and Cloud and are
+	// enumerable via listTests. The import ID is the bare test_id (URN
+	// suffix); ImportState also accepts the full URN. Enumeration is the
+	// natural adoption path for Cloud UI-created tests, whose ids are random
+	// UUIDs.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_metadata_test",
+		DataSourceTypeName: "datahub_metadata_tests",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListMetadataTestURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing metadata test URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:test:") },
+		OSSCompatible: true,
+	})
+
 	// Remote executor pools are Cloud-only with no list API reachable via OSS
 	// GraphQL; users supply pool IDs manually when importing.
 	importtarget.Register(importtarget.Target{
