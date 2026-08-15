@@ -95,6 +95,7 @@ type mockServer struct {
 	actionPipelines map[string]mockActionPipeline
 	assignmentRules map[string]mockAssignmentRule
 	dataContracts   map[string]mockDataContract
+	metadataTests   map[string]mockMetadataTest
 	// orgDisplayPreferences is the globalSettings singleton's visual section.
 	// A zero value means "nothing set", which is how a fresh instance reads.
 	orgDisplayPreferences mockOrgDisplayPreferences
@@ -102,6 +103,11 @@ type mockServer struct {
 	inviteToken           string
 	resetTokens           map[string]string
 	ossSignUpMode         bool
+	// reformatTestDefinitions makes metadata test reads return the stored
+	// definition re-marshalled (key-sorted, compact) instead of verbatim,
+	// simulating a server that normalizes stored JSON. Toggled via the
+	// /test-control endpoint.
+	reformatTestDefinitions bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -135,6 +141,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		actionPipelines:       make(map[string]mockActionPipeline),
 		assignmentRules:       make(map[string]mockAssignmentRule),
 		dataContracts:         make(map[string]mockDataContract),
+		metadataTests:         make(map[string]mockMetadataTest),
 		inviteToken:           "mock-invite-token-001",
 		resetTokens:           make(map[string]string),
 		failDeleteFor:         make(map[string]struct{}),
@@ -171,6 +178,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/assertion/", s.handleAssertionItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubaction/", s.handleActionPipelineItem)
 	mux.HandleFunc("/openapi/v3/entity/datacontract/", s.handleDataContractItem)
+	mux.HandleFunc("/openapi/v3/entity/test/", s.handleMetadataTestItem)
 	mux.HandleFunc("/openapi/v3/entity/assertionassignmentrule/", s.handleAssignmentRuleItem)
 	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
@@ -182,6 +190,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
+	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
@@ -330,6 +339,16 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeleteActionPipeline(w, req.Variables)
 	case strings.Contains(q, "listActionPipelines"):
 		s.handleListActionPipelines(w, req.Variables)
+	case strings.Contains(q, "createTest("):
+		s.handleCreateTest(w, req.Variables)
+	case strings.Contains(q, "updateTest("):
+		s.handleUpdateTest(w, req.Variables)
+	case strings.Contains(q, "deleteTest("):
+		s.handleDeleteTest(w, req.Variables)
+	case strings.Contains(q, "listTests("):
+		s.handleListTests(w, req.Variables)
+	case strings.Contains(q, "validateTest("):
+		s.handleValidateTest(w, req.Variables)
 	case strings.Contains(q, "getAssertionMonitor"):
 		s.handleGetAssertionMonitor(w, req.Variables)
 	case strings.Contains(q, "createAssertionAssignmentRule"):

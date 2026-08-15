@@ -347,6 +347,7 @@ See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_f
 | `datahub_field_assertion` | Yes (Cloud only; NATIVE, FIELD_VALUES/FIELD_METRIC) | `datahub_assertions` |
 | `datahub_schema_assertion` | Yes (Cloud only; NATIVE) | `datahub_assertions` |
 | `datahub_action_pipeline` | Yes (Cloud only; experimental) | `datahub_action_pipelines` |
+| `datahub_metadata_test` | Yes | `datahub_metadata_tests` |
 | `datahub_corp_group_member` | No (relationship; import by composite ID) | -- |
 | `datahub_role_assignment` | No (relationship; import by composite ID) | -- |
 | `datahub_local_user_login` | No (import by user URN) | -- |

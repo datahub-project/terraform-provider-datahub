@@ -326,6 +326,17 @@ var liveExamples = []liveExample{
 	// arrive -- the poll waits for it and fails if it never does.
 	{dir: "ingestion-source-lookup", waitForURN: "urn:li:dataHubIngestionSource:datahub-gc"},
 
+	// Two metadata tests and the listTests-backed plural data source. On OSS the
+	// definitions are stored verbatim and nothing evaluates them, but the whole
+	// CRUD surface is OSS -- which is exactly what a live run covers. No flags:
+	// createTest's already-exists guard reads the entity store rather than the
+	// search index, and deleteTest is a synchronous hard delete with no async
+	// side effect, so the default re-apply-after-destroy check is expected to
+	// pass and left on. The plural data source output is index-lagged
+	// (listTests), the same false-failure class tag-simple documents, which the
+	// plan assertion already tolerates.
+	{dir: "metadata-test-simple"},
+
 	// New with #116. Two modules and a template nothing points at, no variables:
 	// the boring case, which is what makes it a useful control.
 	{dir: "page-template-simple"},
