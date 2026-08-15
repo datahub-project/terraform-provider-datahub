@@ -38,6 +38,17 @@ type Client struct {
 	// term URN (same non-atomic server-side read-modify-write shape as
 	// CAT-2568; see lockTermRelatedTerms). Zero value ready to use.
 	relatedTermLocks keyedMutex
+	// globalSettingsLocks serializes operations that read-modify-write the
+	// globalSettingsInfo aspect on the globalSettings singleton, keyed on
+	// GlobalSettingsURN. The server performs these writes unlocked (its own
+	// comments defer proper locking), so two concurrent mutations can silently
+	// lose one caller's section; Terraform's default parallelism of 10 makes
+	// that a real trigger. See docs/design/provider-org-settings.md ("How the
+	// family shares one aspect"). Currently held by
+	// DeleteOAuthAuthorizationServer (whose cascade rewrites referencing AI
+	// plugins in the singleton); future AI-plugin and settings writes must
+	// take the same lock.
+	globalSettingsLocks keyedMutex
 }
 
 // NewClient creates a new Datahub API client.

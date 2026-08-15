@@ -97,6 +97,11 @@ type mockServer struct {
 	dataContracts   map[string]mockDataContract
 	metadataTests   map[string]mockMetadataTest
 	forms           map[string]mockForm
+	// oauthServers holds OAuth authorization servers keyed by id;
+	// oauthSecretCounter mints a fresh dataHubSecret URN per non-empty
+	// clientSecret write, modelling the server's rotation orphan trail.
+	oauthServers       map[string]mockOAuthServer
+	oauthSecretCounter int
 	// orgDisplayPreferences is the globalSettings singleton's visual section.
 	// A zero value means "nothing set", which is how a fresh instance reads.
 	orgDisplayPreferences mockOrgDisplayPreferences
@@ -144,6 +149,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		dataContracts:         make(map[string]mockDataContract),
 		metadataTests:         make(map[string]mockMetadataTest),
 		forms:                 make(map[string]mockForm),
+		oauthServers:          make(map[string]mockOAuthServer),
 		inviteToken:           "mock-invite-token-001",
 		resetTokens:           make(map[string]string),
 		failDeleteFor:         make(map[string]struct{}),
@@ -184,6 +190,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/assertionassignmentrule/", s.handleAssignmentRuleItem)
 	mux.HandleFunc("/openapi/v3/entity/form/", s.handleFormItem)
 	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
+	mux.HandleFunc("/openapi/v3/entity/oauthauthorizationserver/", s.handleOAuthAuthorizationServerItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
 	mux.HandleFunc("/openapi/v3/entity/corpuser/", s.handleCorpUserItem)
@@ -371,6 +378,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleListAssignmentRules(w)
 	case strings.Contains(q, "deleteAssertion"):
 		s.handleDeleteAssertion(w, req.Variables)
+	case strings.Contains(q, "upsertOAuthAuthorizationServer"):
+		s.handleUpsertOAuthAuthorizationServer(w, req.Variables)
+	case strings.Contains(q, "deleteOAuthAuthorizationServer"):
+		s.handleDeleteOAuthAuthorizationServer(w, req.Variables)
+	case strings.Contains(q, "listOAuthAuthorizationServers"):
+		s.handleListOAuthAuthorizationServers(w, req.Variables)
 	case strings.Contains(q, "createRemoteExecutorPool"):
 		s.handleCreateExecutorPool(w, req.Variables)
 	case strings.Contains(q, "updateDefaultRemoteExecutorPool"):

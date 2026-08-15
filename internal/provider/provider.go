@@ -442,6 +442,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewFreshnessAssertionResource,
 		NewLocalUserLoginResource,
 		NewMetadataTestResource,
+		NewOAuthAuthorizationServerResource,
 		NewOrganizationDisplayPreferencesResource,
 		NewOwnershipTypeResource,
 		NewPageModuleResource,

@@ -430,6 +430,26 @@ func init() {
 		OSSCompatible: true,
 	})
 
+	// OAuth authorization servers are Cloud-only, enumerable via
+	// listOAuthAuthorizationServers (OpenSearch-backed, so recently created
+	// entities may lag). The import ID is the bare server_id (URN suffix);
+	// ImportState also accepts the full URN. client_secret_wo is Optional (not
+	// Required) WriteOnly, so this target does not extend the generate-config-out
+	// ordering constraint that pins datahub_secret last.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_oauth_authorization_server",
+		DataSourceTypeName: "",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListOAuthAuthorizationServerURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing OAuth authorization server URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:oauthAuthorizationServer:") },
+		OSSCompatible: false,
+	})
+
 	// Remote executor pools are Cloud-only with no list API reachable via OSS
 	// GraphQL; users supply pool IDs manually when importing.
 	importtarget.Register(importtarget.Target{

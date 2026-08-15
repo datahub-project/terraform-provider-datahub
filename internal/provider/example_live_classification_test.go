@@ -433,6 +433,10 @@ var liveExampleExclusions = map[string]liveExclusion{
 		reason:    "datahub_remote_executor_pool is Cloud-only; the dataHubRemoteExecutorPool entity type does not exist in OSS",
 		permanent: true,
 	},
+	"oauth-authorization-server-simple": {
+		reason:    "datahub_oauth_authorization_server is Cloud-only; the oauthAuthorizationServer entity type does not exist in OSS",
+		permanent: true,
+	},
 
 	// Permanent: cost and wall-clock. Both would also be excluded as Cloud-only.
 	"financial-services": {
