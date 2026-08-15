@@ -165,6 +165,132 @@ resource "datahub_glossary_term_relationship" "test" {
 	}
 }
 
+// GlossaryTermRelationshipImportErrorSteps verifies ImportState rejects every
+// malformed composite-ID shape with a specific diagnostic, and rejects a
+// well-formed ID naming an edge that does not exist. Import IDs are hand-typed
+// by users, and a parse regression here is state corruption: fields imported
+// under the wrong attribute poison the next plan silently. The final step
+// re-applies the config so cleanup destroy succeeds.
+func GlossaryTermRelationshipImportErrorSteps(sourceID, relatedID string) []resource.TestStep {
+	const addr = "datahub_glossary_term_relationship.inherits"
+	sourceURN := "urn:li:glossaryTerm:" + sourceID
+	relatedURN := "urn:li:glossaryTerm:" + relatedID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_term" "source" {
+  term_id = %q
+  name    = "Import Error Source"
+}
+
+resource "datahub_glossary_term" "related" {
+  term_id = %q
+  name    = "Import Error Related"
+}
+
+resource "datahub_glossary_term_relationship" "inherits" {
+  term_urn          = datahub_glossary_term.source.urn
+  relationship_type = "isA"
+  related_term_urn  = datahub_glossary_term.related.urn
+}
+`, sourceID, relatedID)
+	importID := func(id string) resource.ImportStateIdFunc {
+		return func(_ *terraform.State) (string, error) { return id, nil }
+	}
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			// A bare URN: only one part, not a composite ID.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateIdFunc: importID(sourceURN),
+			ExpectError:       regexp.MustCompile(`Invalid import ID`),
+		},
+		{
+			// Right shape, but the source is not a glossaryTerm URN.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateIdFunc: importID("urn:li:tag:pii|isA|" + relatedURN),
+			ExpectError:       regexp.MustCompile(`Both\s+term\s+URNs\s+must\s+start`),
+		},
+		{
+			// "contains" is the UI label, not the enum value "hasA".
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateIdFunc: importID(sourceURN + "|contains|" + relatedURN),
+			ExpectError:       regexp.MustCompile(`not valid`),
+		},
+		{
+			// Well-formed, but only the isA edge exists. Importing a
+			// nonexistent edge must fail loudly rather than land a phantom
+			// resource whose next plan is inexplicable.
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateIdFunc: importID(sourceURN + "|hasA|" + relatedURN),
+			ExpectError:       regexp.MustCompile(`Glossary term relationship not found`),
+		},
+		{Config: cfg}, // Re-apply so cleanup destroy succeeds.
+	}
+}
+
+// GlossaryTermRelationshipNonexistentTargetSteps applies an edge whose related
+// term does not exist. Related terms are validated referentially at write time
+// (this resource's signature server behaviour), so the apply must fail with
+// the server's rejection surfaced -- a provider that swallowed it would report
+// a created resource backed by no edge.
+func GlossaryTermRelationshipNonexistentTargetSteps(sourceID string) []resource.TestStep {
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_glossary_term" "source" {
+  term_id = %q
+  name    = "Missing Target Source"
+}
+
+resource "datahub_glossary_term_relationship" "test" {
+  term_urn          = datahub_glossary_term.source.urn
+  relationship_type = "isA"
+  related_term_urn  = "urn:li:glossaryTerm:%s-no-such-target"
+}
+`, sourceID, sourceID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			// \s+ between words: Terraform hard-wraps diagnostic text at
+			// terminal width, so any inter-word space may be a newline.
+			ExpectError: regexp.MustCompile(`does\s+not\s+exist`),
+		},
+	}
+}
+
+// GlossaryTermRelationshipInvalidURNSteps verifies the plan-time URN validator.
+// The bare-prefix case is the load-bearing one: "urn:li:glossaryTerm:" passes
+// every HasPrefix check including the client's, so the schema validator is the
+// only guard -- and an empty string interpolation in a URN expression produces
+// exactly that value. Both steps fail at validate, before any API call.
+func GlossaryTermRelationshipInvalidURNSteps() []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: providerBlock + `
+resource "datahub_glossary_term_relationship" "test" {
+  term_urn          = "urn:li:tag:pii"
+  relationship_type = "isA"
+  related_term_urn  = "urn:li:glossaryTerm:revenue"
+}
+`,
+			ExpectError: regexp.MustCompile(`Invalid glossary term URN`),
+		},
+		{
+			Config: providerBlock + `
+resource "datahub_glossary_term_relationship" "test" {
+  term_urn          = "urn:li:glossaryTerm:pii"
+  relationship_type = "isA"
+  related_term_urn  = "urn:li:glossaryTerm:"
+}
+`,
+			ExpectError: regexp.MustCompile(`Invalid glossary term URN`),
+		},
+	}
+}
+
 // GlossaryTermRelationshipCheckDestroy verifies every
 // datahub_glossary_term_relationship in the post-destroy state no longer
 // exists as an edge in DataHub.

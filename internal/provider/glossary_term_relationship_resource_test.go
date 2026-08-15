@@ -52,3 +52,43 @@ func TestAcc_GlossaryTermRelationship_SelfRejected(t *testing.T) {
 		Steps:                    datahubtesting.GlossaryTermRelationshipSelfSteps(termID),
 	})
 }
+
+// TestAcc_GlossaryTermRelationship_ImportErrors asserts every malformed
+// composite import ID, and a well-formed ID for a nonexistent edge, surfaces a
+// specific diagnostic instead of importing a corrupt or phantom resource.
+func TestAcc_GlossaryTermRelationship_ImportErrors(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	sourceID := tg.Name("tfprovider-relimperr-source")
+	relatedID := tg.Name("tfprovider-relimperr-related")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.GlossaryTermRelationshipCheckDestroy,
+		Steps:                    datahubtesting.GlossaryTermRelationshipImportErrorSteps(sourceID, relatedID),
+	})
+}
+
+// TestAcc_GlossaryTermRelationship_NonexistentTarget asserts the server's
+// referential rejection of an edge to a missing term is surfaced as an apply
+// error rather than swallowed.
+func TestAcc_GlossaryTermRelationship_NonexistentTarget(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	sourceID := tg.Name("tfprovider-relmisstgt-source")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.GlossaryTermRelationshipNonexistentTargetSteps(sourceID),
+	})
+}
+
+// TestAcc_GlossaryTermRelationship_InvalidURNRejected asserts the plan-time URN
+// validator rejects a non-term URN and the bare "urn:li:glossaryTerm:" prefix
+// (the shape an empty string interpolation produces), before any API call.
+func TestAcc_GlossaryTermRelationship_InvalidURNRejected(t *testing.T) {
+	datahubtesting.SetupTarget(t)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.GlossaryTermRelationshipInvalidURNSteps(),
+	})
+}
