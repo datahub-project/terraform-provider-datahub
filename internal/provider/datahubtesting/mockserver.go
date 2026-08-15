@@ -96,6 +96,7 @@ type mockServer struct {
 	assignmentRules map[string]mockAssignmentRule
 	dataContracts   map[string]mockDataContract
 	metadataTests   map[string]mockMetadataTest
+	forms           map[string]mockForm
 	// orgDisplayPreferences is the globalSettings singleton's visual section.
 	// A zero value means "nothing set", which is how a fresh instance reads.
 	orgDisplayPreferences mockOrgDisplayPreferences
@@ -142,6 +143,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		assignmentRules:       make(map[string]mockAssignmentRule),
 		dataContracts:         make(map[string]mockDataContract),
 		metadataTests:         make(map[string]mockMetadataTest),
+		forms:                 make(map[string]mockForm),
 		inviteToken:           "mock-invite-token-001",
 		resetTokens:           make(map[string]string),
 		failDeleteFor:         make(map[string]struct{}),
@@ -180,6 +182,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/datacontract/", s.handleDataContractItem)
 	mux.HandleFunc("/openapi/v3/entity/test/", s.handleMetadataTestItem)
 	mux.HandleFunc("/openapi/v3/entity/assertionassignmentrule/", s.handleAssignmentRuleItem)
+	mux.HandleFunc("/openapi/v3/entity/form/", s.handleFormItem)
 	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)
@@ -192,6 +195,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
+	mux.HandleFunc("/test-control/seed-form", s.handleSeedForm)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
 	srv := httptest.NewServer(mux)
@@ -333,6 +337,12 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleUpsertFieldAssertion(w, req.Variables)
 	case strings.Contains(q, "upsertDataContract"):
 		s.handleUpsertDataContract(w, req.Variables)
+	case strings.Contains(q, "createDynamicFormAssignment"):
+		s.handleCreateDynamicFormAssignment(w, req.Variables)
+	case strings.Contains(q, "createForm"):
+		s.handleCreateForm(w, req.Variables)
+	case strings.Contains(q, "deleteForm"):
+		s.handleDeleteForm(w, req.Variables)
 	case strings.Contains(q, "upsertActionPipeline"):
 		s.handleUpsertActionPipeline(w, req.Variables)
 	case strings.Contains(q, "deleteActionPipeline"):
@@ -584,6 +594,14 @@ func (s *mockServer) handleSearchAcrossEntities(w http.ResponseWriter, variables
 				results = append(results, map[string]any{
 					"entity": map[string]any{
 						"urn": mockDataContractURNPrefix + id,
+					},
+				})
+			}
+		case "FORM":
+			for id := range s.forms {
+				results = append(results, map[string]any{
+					"entity": map[string]any{
+						"urn": mockFormURNPrefix + id,
 					},
 				})
 			}

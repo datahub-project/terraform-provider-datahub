@@ -68,6 +68,7 @@ var urnKeyedResources = map[string]urnKey{
 	"datahub_corp_user":            {"username", "urn:li:corpuser:"},
 	"datahub_data_product":         {"data_product_id", "urn:li:dataProduct:"},
 	"datahub_domain":               {"domain_id", "urn:li:domain:"},
+	"datahub_form":                 {"form_id", "urn:li:form:"},
 	"datahub_glossary_node":        {"node_id", "urn:li:glossaryNode:"},
 	"datahub_glossary_term":        {"term_id", "urn:li:glossaryTerm:"},
 	"datahub_ingestion_source":     {"source_id", "urn:li:dataHubIngestionSource:"},

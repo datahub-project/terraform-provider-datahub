@@ -222,6 +222,21 @@ var liveExamples = []liveExample{
 	// there is nothing here to burn.
 	{dir: "structured-property-simple"},
 
+	// Two forms (one COMPLETION, one VERIFICATION), the two structured
+	// properties their prompts collect, and a stewardship group. The example
+	// DEFINES structured properties and assigns them to nothing -- a form
+	// prompt references a property by URN without writing a value to any
+	// entity -- so no Elasticsearch field is burned and the re-apply check
+	// stays on, per the defining-vs-assigning rule in the design doc.
+	//
+	// settleAfterDestroy is false for the same reason it is false on
+	// structured-property-simple: the CAT-2583 resurrection needs entities
+	// CARRYING the property, and there are none. The forms' own dynamic
+	// assignment matches postgres and mysql datasets, of which a Quickstart
+	// has zero, so the async assignment hook has nothing to assign and the
+	// destroy has nothing to retract.
+	{dir: "form-simple"},
+
 	// The only phased example, and the only one whose provider block is part of
 	// what is under test. main.tf puts the marker tag and structured-property URNs
 	// inside provider "datahub" { defaults = ... }, and provider configuration is
