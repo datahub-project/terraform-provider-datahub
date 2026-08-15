@@ -1,0 +1,39 @@
+# Local quickstart version mapping, used via FORCE_LOCAL_QUICKSTART_MAPPING.
+#
+# Without this file the datahub CLI fetches its mapping from
+# https://raw.githubusercontent.com/datahub-project/datahub/master/docker/quickstart/quickstart_version_mapping.yaml
+# on every `datahub docker quickstart` invocation, then resolves the requested
+# --version through whatever that file says at that moment.
+#
+# Two reasons that is the wrong default for CI, neither of them hypothetical:
+#
+# 1. It is a network call on every boot, with a 5 second timeout and a SILENT
+#    fallback to ~/.datahub/quickstart/quickstart_version_mapping.yaml -- a
+#    cache written by earlier runs. An offline or rate-limited runner therefore
+#    boots from whatever some previous run happened to leave behind, with no
+#    error and nothing in the log to say so.
+#
+# 2. Upstream uses that mapping as a hotfix channel, remapping a released
+#    version to a later patch so every user picks up the repair without
+#    changing their pin. The file's own comments record several: v0.9.6 images
+#    contain security vulnerabilities, v1.4.0 must resolve to v1.4.0.3 so
+#    datahub-upgrade runs SqlSetup, and -- added in August 2026 -- v1.6.0 now
+#    resolves to v1.6.0.1. That is exactly right for someone trying DataHub for
+#    the first time, and exactly wrong for a test suite, where a boot that
+#    silently changes what it booted is a reproducibility bug.
+#
+# The trade-off this file accepts: we no longer receive those repairs
+# automatically. Taking one becomes a deliberate edit here, which is the
+# behaviour we want given we pin an exact version and verify it after boot.
+#
+# Note QUICKSTART_VERSION is deliberately NOT a key below. A three-component
+# version that is absent from the map is a "passthrough": the CLI uses it
+# verbatim as both the compose git ref and the image tag, so the compose file
+# comes from an immutable release tag rather than from master. Adding a key for
+# it would replace that immutability with whatever the key says. The `default`
+# entry exists only so the map is never empty; nothing here requests it.
+quickstart_version_map:
+  default:
+    composefile_git_ref: v1.7.0
+    docker_tag: v1.7.0
+    mysql_tag: "8.2"

@@ -20,11 +20,23 @@ DATAHUB_GMS_URL ?= http://localhost:8080
 TFPLUGINDOCS_SERVE_BIN := $(BIN_DIR)/tfplugindocs-serve
 QUICKSTART_GMS_URL := http://localhost:8080
 TOKEN_ACTOR ?= urn:li:corpuser:datahub
-# Must be a version the datahub CLI's quickstart version map still recognises.
-# When it is not, the CLI substitutes its default (currently v1.7.0 images
-# against a master compose file) rather than failing -- see the version-drift
-# guard in quickstart-up for why that has to be checked rather than trusted.
+# Must be exactly three numeric components, e.g. v1.7.0. The CLI treats such a
+# version as a "passthrough" and uses it verbatim as both the compose git ref
+# and the image tag, so the compose file comes from an immutable release tag.
+# Anything else -- including a four-component patch tag like v1.6.0.1 -- fails
+# the CLI's own version regex, falls into its "not recognized" branch, and is
+# silently replaced by its default. That is not hypothetical: the pin read
+# v1.5.0.6 for months while every run actually booted the default. The guard in
+# quickstart-up rejects the wrong shape before a boot is paid for, and the
+# version-drift check after boot verifies what actually started.
 QUICKSTART_VERSION ?= v1.7.0
+
+# Pins the CLI's quickstart version mapping to a checked-in file instead of
+# letting it fetch one from datahub master on every invocation. See the header
+# of that file for why. Unset it to take upstream's mapping, including any
+# release remap it currently carries.
+FORCE_LOCAL_QUICKSTART_MAPPING ?= $(CURDIR)/scripts/quickstart-version-mapping.yaml
+export FORCE_LOCAL_QUICKSTART_MAPPING
 QUICKSTART_HEALTH_TIMEOUT ?= 600
 QUICKSTART_HEALTH_INTERVAL ?= 5
 
@@ -91,6 +103,25 @@ dev-deps:
 	UV_INDEX= uv pip install -r requirements-dev.txt
 
 quickstart-up:
+	@case "$(QUICKSTART_VERSION)" in \
+		default|head|quickstart|stable) ;; \
+		v[0-9]*.[0-9]*.[0-9]*.[0-9]*) \
+			echo "QUICKSTART_VERSION=$(QUICKSTART_VERSION) has four components."; \
+			echo "The datahub CLI's version regex accepts at most three, so it would not"; \
+			echo "recognise this as a version at all and would silently boot its default"; \
+			echo "instead. Use the three-component form (e.g. v1.6.0, which upstream's"; \
+			echo "mapping resolves to the latest patch on that line) and let the mapping"; \
+			echo "or the release tag do the rest."; \
+			exit 1 ;; \
+		v[0-9]*.[0-9]*.[0-9]*) ;; \
+		v[0-9]*.[0-9]*) ;; \
+		*) echo "QUICKSTART_VERSION=$(QUICKSTART_VERSION) is not a version or a known alias; continuing, but the CLI may substitute its default" ;; \
+	esac
+	@if [ ! -f "$(FORCE_LOCAL_QUICKSTART_MAPPING)" ]; then \
+		echo "FORCE_LOCAL_QUICKSTART_MAPPING points at $(FORCE_LOCAL_QUICKSTART_MAPPING), which does not exist."; \
+		echo "The CLI would fail rather than fall back, so this is checked here."; \
+		exit 1; \
+	fi
 	@if [ "$$FRESH" = "1" ]; then \
 		echo "FRESH=1: nuking existing Quickstart"; \
 		datahub docker nuke >/dev/null 2>&1 || true; \

@@ -61,3 +61,18 @@ updates:
       github-actions:
         patterns:
           - "*"
+
+  # requirements-dev.txt pins the datahub CLI, which boots and tears down every
+  # Quickstart the live suites run against. It had no ecosystem block at all, so
+  # it received neither version updates nor security alerts and drifted a minor
+  # line behind the server it drives without anything noticing.
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      python-dev-dependencies:
+        patterns:
+          - "*"

@@ -120,6 +120,14 @@ This target:
 |---|---|---|
 | `FRESH=1` | off | Nuke any existing Quickstart before booting a fresh one. |
 | `KEEP_QUICKSTART=1` | off | Skip the automatic nuke on exit (for post-mortem inspection). |
+| `QUICKSTART_VERSION` | `v1.7.0` | DataHub server version to boot. **Must be three numeric components** -- see below. |
+| `FORCE_LOCAL_QUICKSTART_MAPPING` | `scripts/quickstart-version-mapping.yaml` | Pins the CLI's version mapping to a checked-in file. Unset it to use upstream's. |
+
+**Two things about `QUICKSTART_VERSION` that are not guessable.**
+
+The datahub CLI decides what to boot by resolving your `--version` through a mapping file it fetches from datahub `master` at runtime. A version of exactly three numeric components that is absent from that mapping is used verbatim, so `v1.7.0` gets its compose file from an immutable release tag. **A four-component tag like `v1.6.0.1` fails the CLI's version regex entirely**, is treated as unrecognised, and is silently replaced by the mapping's default -- which builds from `master`. The pin read `v1.5.0.6` for months on exactly this bug. `make quickstart-up` now rejects the four-component shape up front, and verifies the running image tag after boot.
+
+The mapping is also upstream's hotfix channel: it remaps broken releases to fixed ones (`v1.6.0` currently resolves to `v1.6.0.1`). Good for a first-time user, wrong for a reproducible test run, so we pin it to a checked-in copy. The trade-off is that upstream repairs no longer arrive automatically; unset `FORCE_LOCAL_QUICKSTART_MAPPING` to take them.
 
 ```bash
 # Always start fresh:
