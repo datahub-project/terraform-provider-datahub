@@ -452,6 +452,17 @@ func init() {
 		OSSCompatible:      true,
 	})
 
+	// datahub_glossary_term_relationship identifies a (term, type, related term)
+	// edge, not a single URN, so IDFromURN does not apply and there is no
+	// enumeration data source. OSS-compatible (add/removeRelatedTerms).
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_glossary_term_relationship",
+		DataSourceTypeName: "",
+		Enumerate:          nil,
+		IDFromURN:          nil,
+		OSSCompatible:      true,
+	})
+
 	// datahub_local_user_login manages native credentials for a corp user; it
 	// has no list API of its own and imports by the user's URN.
 	importtarget.Register(importtarget.Target{

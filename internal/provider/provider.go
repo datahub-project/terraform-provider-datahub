@@ -433,6 +433,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewDomainResource,
 		NewGlossaryNodeResource,
 		NewGlossaryTermResource,
+		NewGlossaryTermRelationshipResource,
 		NewFieldAssertionResource,
 		NewFreshnessAssertionResource,
 		NewLocalUserLoginResource,
