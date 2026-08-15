@@ -8,6 +8,29 @@ output "assertion_urn" {
   value       = datahub_custom_assertion.freshness.urn
 }
 
+# The contract will read "not yet validated" until something reports a result,
+# and nothing ever will on its own. A custom assertion is externally evaluated:
+# DataHub stores the definition and never runs it, because the whole point of
+# the type is that some other system does the checking and reports back. Only
+# the typed assertion resources -- freshness, volume, sql, field, schema, all
+# Cloud-only -- are evaluated by DataHub itself.
+#
+# So this is the missing half of the demonstration. Run it and the contract
+# turns green, which is what makes the example show a complete story rather
+# than a structure with nothing flowing through it.
+output "report_passing_result_command" {
+  description = "Reports a SUCCESS result against the assertion, so the contract shows as validated. Run with: eval \"$(terraform output -raw report_passing_result_command)\""
+  value = format(
+    "curl -sS -X POST \"$DATAHUB_GMS_URL/api/graphql\" -H \"Authorization: Bearer $DATAHUB_GMS_TOKEN\" -H 'Content-Type: application/json' -d '%s'",
+    jsonencode({
+      query = format(
+        "mutation { reportAssertionResult(urn: \\\"%s\\\", result: { type: SUCCESS }) }",
+        datahub_custom_assertion.freshness.urn,
+      )
+    })
+  )
+}
+
 output "dataset_urn" {
   description = "URN of the ingested dataset the contract attaches to. NOT managed by Terraform -- see cleanup outputs."
   value       = local.dataset_urn
@@ -63,7 +86,13 @@ output "summary" {
 
   Verify in the DataHub UI:
     Open the dataset, then the Quality tab. The contract and its assertion
-    appear there.
+    appear there, and the contract reads "not yet validated".
+
+    That is expected and permanent. A custom assertion is evaluated by an
+    external system, not by DataHub, so nothing will ever report a result
+    on its own. Supply one and the contract turns green:
+
+      eval "$(terraform output -raw report_passing_result_command)"
 
   Clean up the dataset after destroying. Copy the command NOW: destroy
   empties the state, and terraform output reads from state, so it will

@@ -50,6 +50,22 @@ terraform output summary
 
 Then open the dataset in the DataHub UI and select the **Quality** tab, where the contract and its assertion appear.
 
+### "This contract has not yet been validated" is expected
+
+The contract shows as unvalidated with *"No contract assertions have been run yet"*, and it will stay that way indefinitely. This is not a delay and not a defect.
+
+A **custom assertion is externally evaluated**. DataHub stores the definition and never runs it, because the entire point of the type is that some other system does the checking and reports the outcome back. Only the typed assertion resources — freshness, volume, SQL, field and schema — are evaluated by DataHub itself, and all five are Cloud-only.
+
+This example uses a custom assertion so that it works on open-source DataHub as well as Cloud. The cost is that nothing reports a result unless you do:
+
+```bash
+eval "$(terraform output -raw report_passing_result_command)"
+```
+
+Refresh the Quality tab and the contract shows as passing. That is the complete loop a real deployment runs on a schedule from its own data-quality tooling — this command stands in for that system.
+
+Report a failure instead by editing the command and changing `type: SUCCESS` to `type: FAILURE`, which is worth doing once to see the contract go red.
+
 ## Cleanup, and the part that needs you
 
 `terraform destroy` removes the contract, the assertion and the ingestion source. It does **not** remove the dataset, because Terraform never created it — the ingestion run did.
