@@ -216,16 +216,160 @@ func TestListMetadataTestURNs(t *testing.T) {
 	}
 }
 
+// TestIsMetadataTestValidationCloudOnlyError pins the OSS detector against
+// realistic graphql-java message shapes. The matcher gates whether an OSS user
+// sees "requires DataHub Cloud" or a raw API error, and it was written from
+// graphql-java's documented format rather than observed live -- so both match
+// directions need locking: the true cases catch a tightening that misses the
+// real message, and the near-misses catch a loosening that would misreport an
+// unrelated failure (bad definition, missing privilege) as "you need Cloud",
+// hiding the actual problem from a Cloud user.
+func TestIsMetadataTestValidationCloudOnlyError(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		{
+			// graphql-java >= 17 (current OSS DataHub) validation format.
+			name: "modern graphql-java FieldUndefined",
+			msg:  "Validation error (FieldUndefined@[validateTest]) : Field 'validateTest' in type 'Query' is undefined",
+			want: true,
+		},
+		{
+			// graphql-java < 17 format, in case the target runs an older server.
+			name: "legacy graphql-java FieldUndefined",
+			msg:  "Validation error of type FieldUndefined: Field 'validateTest' in type 'Query' is undefined @ 'validateTest'",
+			want: true,
+		},
+		{
+			// FieldUndefined for some other query must not read as Cloud-only.
+			name: "FieldUndefined for unrelated field",
+			msg:  "Validation error (FieldUndefined@[globalSettings]) : Field 'globalSettings' in type 'Query' is undefined",
+			want: false,
+		},
+		{
+			// A resolver failure mentioning the field name is not a schema gap.
+			name: "resolver error naming validateTest",
+			msg:  "An unknown error occurred while resolving field validateTest",
+			want: false,
+		},
+		{
+			// The most common real-world failure on Cloud: missing privilege.
+			name: "authorization error",
+			msg:  "Unauthorized to perform this action. Please contact your DataHub administrator.",
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isMetadataTestValidationCloudOnlyError(tc.msg); got != tc.want {
+				t.Errorf("isMetadataTestValidationCloudOnlyError(%q) = %v, want %v", tc.msg, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCreateMetadataTest_URNFallback verifies that when the createTest
+// response carries an empty URN, the client falls back to constructing the
+// deterministic urn:li:test:<id>. Without the fallback an empty URN would be
+// written to state silently, breaking every downstream reference to .urn.
+func TestCreateMetadataTest_URNFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"createTest":""}}`))
+	}))
+	defer server.Close()
+
+	urn, err := newTestClient(t, server).CreateMetadataTest(t.Context(), MetadataTestInput{
+		TestID: "fallback", Name: "n", Category: "c", DefinitionJSON: "{}",
+	})
+	if err != nil {
+		t.Fatalf("CreateMetadataTest() error = %v", err)
+	}
+	if urn != "urn:li:test:fallback" {
+		t.Errorf("urn = %q, want constructed fallback urn:li:test:fallback", urn)
+	}
+}
+
+// TestDeleteMetadataTest_Tolerance verifies both directions of the
+// already-absent tolerance: a not-found style error is treated as success (so
+// destroying a test deleted out-of-band cannot wedge terraform destroy), and
+// any other error still surfaces (so the tolerance cannot swallow a real
+// failure, e.g. missing MANAGE_TESTS, and drop state while the entity lives).
+func TestDeleteMetadataTest_Tolerance(t *testing.T) {
+	cases := []struct {
+		name    string
+		message string
+		wantErr bool
+	}{
+		{name: "not found tolerated", message: "Failed to perform delete against Test with urn urn:li:test:x: not found", wantErr: false},
+		{name: "does not exist tolerated", message: "Entity urn:li:test:x does not exist", wantErr: false},
+		{name: "authorization error surfaces", message: "Unauthorized to perform this action. Please contact your DataHub administrator.", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				resp, _ := json.Marshal(map[string]any{
+					"errors": []map[string]string{{"message": tc.message}},
+				})
+				_, _ = w.Write(resp)
+			}))
+			defer server.Close()
+
+			err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+			if tc.wantErr && (err == nil || !strings.Contains(err.Error(), tc.message)) {
+				t.Errorf("expected error containing %q, got %v", tc.message, err)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("expected tolerated delete, got error %v", err)
+			}
+		})
+	}
+}
+
+// TestGetMetadataTestByID_HTTPErrors verifies the diagnostics on the two
+// error classes a user actually hits on the read path: a 403 must name the
+// MANAGE_TESTS privilege (the fix), and any other failure must carry the
+// response body rather than discarding it.
+func TestGetMetadataTestByID_HTTPErrors(t *testing.T) {
+	cases := []struct {
+		name       string
+		status     int
+		body       string
+		wantSubstr string
+	}{
+		{name: "forbidden names privilege", status: http.StatusForbidden, body: `{}`, wantSubstr: "MANAGE_TESTS"},
+		{name: "server error carries body", status: http.StatusInternalServerError, body: `upstream exploded`, wantSubstr: "upstream exploded"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			_, err := newTestClient(t, server).GetMetadataTestByID(t.Context(), "x")
+			if err == nil || !strings.Contains(err.Error(), tc.wantSubstr) {
+				t.Errorf("error = %v, want it to contain %q", err, tc.wantSubstr)
+			}
+		})
+	}
+}
+
 // TestValidateMetadataTestDefinition covers the three validateTest outcomes:
 // valid, invalid-with-messages, and the OSS FieldUndefined error mapping to
 // ErrMetadataTestValidationCloudOnly.
 func TestValidateMetadataTestDefinition(t *testing.T) {
 	cases := []struct {
-		name      string
-		response  string
-		wantValid bool
-		wantMsgs  int
-		wantErr   error
+		name          string
+		response      string
+		wantValid     bool
+		wantMsgs      int
+		wantErr       error
+		wantErrSubstr string
 	}{
 		{
 			name:      "valid",
@@ -243,6 +387,13 @@ func TestValidateMetadataTestDefinition(t *testing.T) {
 				`Field 'validateTest' in type 'Query' is undefined"}]}`,
 			wantErr: ErrMetadataTestValidationCloudOnly,
 		},
+		{
+			// An unrelated GraphQL error (here: missing privilege) must surface
+			// as a plain API error, not be misread as "requires DataHub Cloud".
+			name:          "unrelated graphql error not mapped to cloud-only",
+			response:      `{"errors":[{"message":"Unauthorized to perform this action. Please contact your DataHub administrator."}]}`,
+			wantErrSubstr: "Unauthorized to perform this action",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -256,6 +407,15 @@ func TestValidateMetadataTestDefinition(t *testing.T) {
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
 					t.Fatalf("error = %v, want %v", err, tc.wantErr)
+				}
+				return
+			}
+			if tc.wantErrSubstr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErrSubstr) {
+					t.Fatalf("error = %v, want it to contain %q", err, tc.wantErrSubstr)
+				}
+				if errors.Is(err, ErrMetadataTestValidationCloudOnly) {
+					t.Fatalf("error = %v was wrongly mapped to ErrMetadataTestValidationCloudOnly", err)
 				}
 				return
 			}

@@ -103,6 +103,11 @@ type mockServer struct {
 	inviteToken           string
 	resetTokens           map[string]string
 	ossSignUpMode         bool
+	// reformatTestDefinitions makes metadata test reads return the stored
+	// definition re-marshalled (key-sorted, compact) instead of verbatim,
+	// simulating a server that normalizes stored JSON. Toggled via the
+	// /test-control endpoint.
+	reformatTestDefinitions bool
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
@@ -185,6 +190,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
+	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)

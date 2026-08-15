@@ -191,6 +191,28 @@ func (s *mockServer) handleValidateTest(w http.ResponseWriter, variables map[str
 	})
 }
 
+// handleReformatTestDefinitions toggles reformat-on-read for metadata test
+// definitions (see the field comment on mockServer). Called from test
+// PreConfig:
+//
+//	POST /test-control/reformat-test-definitions    (enables reformatting)
+//	DELETE /test-control/reformat-test-definitions  (reverts to verbatim)
+func (s *mockServer) handleReformatTestDefinitions(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	switch r.Method {
+	case http.MethodPost:
+		s.reformatTestDefinitions = true
+	case http.MethodDelete:
+		s.reformatTestDefinitions = false
+	default:
+		s.mu.Unlock()
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleMetadataTestItem handles GET /openapi/v3/entity/test/{urn}. The
 // response mimics the Cloud read shape, including the server-computed
 // definition.md5 the provider must tolerate and ignore.
@@ -204,10 +226,23 @@ func (s *mockServer) handleMetadataTestItem(w http.ResponseWriter, r *http.Reque
 
 	s.mu.Lock()
 	mt, ok := s.metadataTests[id]
+	reformat := s.reformatTestDefinitions
 	s.mu.Unlock()
 	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+
+	definitionJSON := mt.DefinitionJSON
+	if reformat {
+		// Re-marshal through a map: keys come out sorted and whitespace
+		// compacted, i.e. equivalent JSON in a different shape.
+		var doc any
+		if err := json.Unmarshal([]byte(definitionJSON), &doc); err == nil {
+			if b, err := json.Marshal(doc); err == nil {
+				definitionJSON = string(b)
+			}
+		}
 	}
 
 	infoValue := map[string]any{
@@ -215,7 +250,7 @@ func (s *mockServer) handleMetadataTestItem(w http.ResponseWriter, r *http.Reque
 		"category": mt.Category,
 		"definition": map[string]any{
 			"type": "JSON",
-			"json": mt.DefinitionJSON,
+			"json": definitionJSON,
 			"md5":  "mock-md5-of-definition",
 		},
 	}
