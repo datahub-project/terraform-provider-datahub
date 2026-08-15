@@ -108,6 +108,26 @@ Three things about that target are non-obvious enough to write down:
 
 **Do not assume Dependabot will raise any of this.** Neither `GO-2026-5970` nor the goldmark XSS has a GitHub advisory entry, and `golang.org/x/mod` has none at all -- verified against the GitHub advisories API (`/advisories?ecosystem=go&affects=<module>`). Dependabot cannot raise what its database does not hold, which is the whole reason this scan exists; the two tools answer different questions and neither subsumes the other.
 
+## How `datahub docker quickstart` resolves a version
+
+This has confused everyone who has looked at it, twice, so here it is once. `datahub docker quickstart --version X` draws on **three separate inputs**, and conflating them is the whole difficulty:
+
+1. **The version mapping.** `quickstart_version_mapping.yaml`, fetched from **datahub master over the network on every invocation**, which resolves `X` into a plan of `{composefile_git_ref, docker_tag, mysql_tag}`.
+2. **The compose file**, downloaded from `raw.githubusercontent.com/datahub-project/datahub/<composefile_git_ref>/...`.
+3. **The images**, from `docker_tag` substituted into that compose file.
+
+**Only three-component versions pass through untouched.** The CLI's test is `^v?\d+\.\d+(\.\d+)?$`. A version matching it that is *absent* from the mapping is used verbatim as both the compose ref and the image tag -- so `v1.7.0` gets its compose from an immutable release tag, not from master. Anything else is "not recognized" and is replaced by the mapping's `default`, which uses **master** as its compose ref. This is why a four-component pin is a trap: `v1.5.0.6`, `v1.6.0.1` and `v1.4.0.3` all fail the regex. The pin read `v1.5.0.6` for months while every run booted the default, and it was found only by reading image tags off stopped containers. `quickstart-up` now rejects the four-component shape before paying for a boot.
+
+**The mapping is upstream's hotfix channel, not a version list.** Its own comments record `v0.9.6 images contain security vulnerabilities`, `v1.4.0` remapped so `datahub-upgrade` runs `SqlSetup`, and `v1.6.0` remapped to `v1.6.0.1`. Upstream repairs a broken release for every user without anyone changing their pin -- right for someone trying DataHub for the first time, wrong for a test suite that must boot the same thing twice.
+
+**So the mapping is pinned to a checked-in file** via `FORCE_LOCAL_QUICKSTART_MAPPING` (`scripts/quickstart-version-mapping.yaml`, exported by the Makefile). That removes a network call with a 5 second timeout and a **silent** fallback to `~/.datahub/quickstart/quickstart_version_mapping.yaml` -- a cache left by earlier runs, so an offline runner would otherwise boot from whatever some previous run happened to leave there. The accepted cost: upstream's repairs no longer arrive automatically, and taking one is a deliberate edit to that file.
+
+**What is not lockable:** `docker_tag` is a tag, not a digest, and the CLI has no digest option. Release tags are immutable by convention only. Locking that too would mean not using `datahub docker quickstart` at all.
+
+**CLI and server versions are separate streams that share a numbering scheme.** The CLI ships to PyPI as `acryl-datahub` (pinned in `requirements-dev.txt`); the server ships as Docker tags and GitHub releases (pinned as `QUICKSTART_VERSION`). They are not released together -- server `v1.6.0.1` appeared nine days *after* `v1.7.0` -- so any staleness check must compare versions, never dates, and "aligned" means the CLI is at or above the server line it drives, not that the numbers match. The CLI only refuses a server below `MINIMUM_SUPPORTED_VERSION` (`v1.1.0`), so a mismatched pair fails silently by working.
+
+**The CLI pin bypasses mise's release-age guard, so bump it deliberately.** `requirements-dev.txt` is installed by `uv` straight from PyPI, which means none of the `minimum_release_age` protection described under "Tool version maintenance" applies to it -- a version published an hour ago is installable here while `mise upgrade` still withholds it. Expect a developer's global `pipx:acryl-datahub` and this pin to disagree for a day after each release, and prefer a release that has been up for more than a day rather than the newest one PyPI reports. That is the same judgement mise makes automatically for everything else.
+
 ## Tool version maintenance
 
 Dependabot has no `mise` ecosystem support — tool versions pinned in `mise.toml` are a blind spot not covered by any automated process.
