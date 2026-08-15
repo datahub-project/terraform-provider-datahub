@@ -177,39 +177,57 @@ resource "datahub_data_contract" "test" {
 }
 `, datasetURN, datasetURN)
 
-	resource.Test(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		CheckDestroy:             datahubtesting.DataContractCheckDestroy,
-		Steps: []resource.TestStep{
-			{
-				Config: cfg,
-				ConfigStateChecks: []statecheck.StateCheck{
-					statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(wantURN)),
-					statecheck.ExpectKnownValue(addr, tfjsonpath.New("state"), knownvalue.StringExact("ACTIVE")),
-				},
+	steps := []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(wantURN)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("state"), knownvalue.StringExact("ACTIVE")),
 			},
-			{
-				ResourceName:      addr,
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-			{
-				// Plural data source, against the same target. This is the only
-				// live execution of the searchAcrossEntities-backed list query;
-				// the mock test below checks exact contents, which a live target
-				// with pre-existing contracts cannot promise. The backing index
-				// is eventually consistent, so poll until the contract is
-				// indexed before asserting membership -- without the wait this
-				// step would flake for reasons that are not defects.
-				PreConfig: func() { waitForDataContractIndexed(t, wantURN) },
-				Config: cfg + `
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+
+	// The plural data source cannot work on OSS, and this is not a lag or a
+	// defect in the provider. datahub_data_contracts is backed by
+	// searchAcrossEntities, and DataContractType -- the loadable GraphQL type
+	// that hydrates a search hit into an Entity -- is registered only by the
+	// Cloud plugin, not by the OSS engine. The dataContract entity is indexed
+	// on both (searchGroup: primary in the entity registry), so on OSS the
+	// search finds the document, has nothing to hydrate it with, and returns
+	// null for a non-null Entity field. Every call errors; no poll budget can
+	// help. Upstream marks the type "will be moved to OSS", so this skip has a
+	// removal condition: delete it once DataContractType is registered in the
+	// OSS GmsGraphQLEngine.
+	//
+	// The mock simulates Cloud, so this step still runs there and in Cloud
+	// acceptance -- only a live OSS target skips it.
+	if tg.IsCloud() {
+		steps = append(steps, resource.TestStep{
+			// The only live execution of the searchAcrossEntities-backed list
+			// query. The mock test below checks exact contents, which a live
+			// target carrying pre-existing contracts cannot promise. The index
+			// is eventually consistent, so poll before asserting membership --
+			// without the wait this would flake for reasons that are not
+			// defects.
+			PreConfig: func() { waitForDataContractIndexed(t, wantURN) },
+			Config: cfg + `
 data "datahub_data_contracts" "all" {
   depends_on = [datahub_data_contract.test]
 }
 `,
-				Check: contractURNInList("data.datahub_data_contracts.all", wantURN),
-			},
-		},
+			Check: contractURNInList("data.datahub_data_contracts.all", wantURN),
+		})
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.DataContractCheckDestroy,
+		Steps:                    steps,
 	})
 }
 
@@ -224,14 +242,30 @@ func waitForDataContractIndexed(t *testing.T, wantURN string) {
 	if err != nil {
 		t.Fatalf("waitForDataContractIndexed: building client: %v", err)
 	}
+	// A query that errors every time is not the same as one that has not
+	// caught up, and reporting the first as the second sends the reader after
+	// indexing lag that was never the cause. Track whether any probe has
+	// succeeded: if none has by the deadline, the list call is broken and the
+	// message says so.
 	deadline := time.Now().Add(60 * time.Second)
+	var anySucceeded bool
+	var lastErr error
 	for {
 		urns, listErr := client.ListDataContractURNs(t.Context())
-		if listErr == nil && slices.Contains(urns, wantURN) {
-			return
+		if listErr == nil {
+			anySucceeded = true
+			if slices.Contains(urns, wantURN) {
+				return
+			}
+		} else {
+			lastErr = listErr
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("data contract %s not indexed after 60s (last list error: %v)", wantURN, listErr)
+			if !anySucceeded {
+				t.Fatalf("listing data contracts failed on every probe for 60s, so %s was never searched for "+
+					"-- this is a failing query, not indexing lag: %v", wantURN, lastErr)
+			}
+			t.Fatalf("data contract %s did not appear in the list within 60s, though the query itself succeeded", wantURN)
 		}
 		time.Sleep(2 * time.Second)
 	}
