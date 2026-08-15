@@ -122,6 +122,17 @@ PRs are squash-merged. The squash commit message is taken from the PR title, so 
 - [ ] `make generate` run and `docs/` output committed (if schema changed)
 - [ ] New files have the correct license header
 - [ ] README / BUILDING.md updated if user-facing behaviour changed
+- [ ] `CHANGELOG.md` updated under `[Unreleased]` if the change is user-facing, **or fixes a vulnerability of any kind** (see below)
+
+### Security fixes always get a CHANGELOG entry
+
+**Every security fix gets an entry under `[Unreleased]`, and the entry says how far it reaches** -- whether it changes the provider binary users install, or only the development tooling in this repository. Use the `### Security` heading.
+
+This holds even when no provider code changed. A dependency bump, a Go toolchain bump, or a fix confined to `tools/` all qualify, because "did this reach me?" is the reader's first question and only the entry can answer it. State it plainly, the way the 0.21.1 and 0.22.0 entries do.
+
+The rule exists because the opposite happened. Three *reachable* advisories in the shipped binary -- `GO-2026-5970` (`x/text`), `GO-2026-5026` (`x/net/idna`) and `GO-2026-6061` -- were fixed and released in 0.21.1 with no entry naming them, because the pull request read as CI tooling and tooling changes conventionally get none. The cost is concrete rather than cosmetic: someone who scans their provider binary can find those advisories and has no release note anywhere telling them which version fixed them, and neither advisory has a GitHub entry to fall back on.
+
+Where a fix matters to someone pinning a version, say so outright: which releases are affected, which release to move to, and whether anything needs rotating or reconfiguring beyond upgrading.
 
 ## Adding a new resource or data source
 
