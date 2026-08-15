@@ -187,6 +187,22 @@ func init() {
 		OSSCompatible: true,
 	})
 
+	// Forms (form) are OSS+Cloud, enumerated via searchAcrossEntities. The
+	// import ID is the bare form id, with the full URN also accepted.
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_form",
+		DataSourceTypeName: "datahub_forms",
+		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
+			urns, err := c.ListFormURNs(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("listing form URNs: %w", err)
+			}
+			return urns, nil
+		},
+		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:form:") },
+		OSSCompatible: true,
+	})
+
 	importtarget.Register(importtarget.Target{
 		ResourceTypeName:   "datahub_ownership_type",
 		DataSourceTypeName: "datahub_ownership_types",
