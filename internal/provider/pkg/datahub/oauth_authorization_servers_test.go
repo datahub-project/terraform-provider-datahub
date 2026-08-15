@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -262,6 +263,134 @@ func TestGetOAuthAuthorizationServerByURN(t *testing.T) {
 	husk, err := c.GetOAuthAuthorizationServerByURN(context.Background(), "urn:li:oauthAuthorizationServer:husk")
 	if err != nil || husk != nil {
 		t.Errorf("an entity without its properties aspect should read as gone, got (%v, %v)", husk, err)
+	}
+}
+
+// TestDeleteOAuthAuthorizationServer_RealErrorIsNotSwallowed is the strict
+// counterpart of the not-found tolerance below: a delete that fails for any
+// other reason (here a privilege denial) MUST surface an error. If the
+// tolerance ever broadened to swallow it, terraform destroy would report
+// success and remove the resource from state while the entity survives
+// server-side - a silently orphaned OAuth server nobody manages anymore.
+func TestDeleteOAuthAuthorizationServer_RealErrorIsNotSwallowed(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"Unauthorized to delete OAuth authorization servers."}]}`))
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "token")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	err = c.DeleteOAuthAuthorizationServer(context.Background(), "urn:li:oauthAuthorizationServer:svr")
+	if err == nil {
+		t.Fatal("a non-not-found delete error was swallowed; destroy would orphan the entity while claiming success")
+	}
+	if !strings.Contains(err.Error(), "Unauthorized") {
+		t.Errorf("delete error should carry the server message, got %v", err)
+	}
+}
+
+// TestGetOAuthAuthorizationServerByURN_ForbiddenIsErrorNotAbsent pins that an
+// HTTP 401/403 on the read path is an error, never (nil, nil). The nil return
+// means "gone" to the resource's Read, which responds with RemoveResource - so
+// misclassifying a privilege lapse as absence would silently drop the resource
+// from state and make the next apply recreate it.
+func TestGetOAuthAuthorizationServerByURN_ForbiddenIsErrorNotAbsent(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "denied", status)
+		}))
+
+		c, err := NewClient(srv.URL, "token")
+		if err != nil {
+			srv.Close()
+			t.Fatalf("NewClient: %v", err)
+		}
+		got, err := c.GetOAuthAuthorizationServerByURN(context.Background(), "urn:li:oauthAuthorizationServer:svr")
+		srv.Close()
+		if err == nil {
+			t.Fatalf("HTTP %d must be an error, not absence (got=%v); Read would RemoveResource on a privilege lapse", status, got)
+		}
+		if got != nil {
+			t.Errorf("HTTP %d returned a non-nil server: %+v", status, got)
+		}
+		if !strings.Contains(err.Error(), "MANAGE_CONNECTIONS") {
+			t.Errorf("HTTP %d error should name the missing privilege, got %v", status, err)
+		}
+	}
+}
+
+// TestGetOAuthAuthorizationServerByURN_ServerErrorCarriesBody pins that a
+// non-auth HTTP failure surfaces the response body. Cloud deployments sit
+// behind gateways whose 5xx pages are the only clue to what broke; dropping
+// the body (or feeding it to the JSON decoder) turns an outage into an
+// undiagnosable "parsing response" error.
+func TestGetOAuthAuthorizationServerByURN_ServerErrorCarriesBody(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "upstream connect error", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "token")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_, err = c.GetOAuthAuthorizationServerByURN(context.Background(), "urn:li:oauthAuthorizationServer:svr")
+	if err == nil {
+		t.Fatal("HTTP 502 must be an error")
+	}
+	if !strings.Contains(err.Error(), "502") || !strings.Contains(err.Error(), "upstream connect error") {
+		t.Errorf("error should carry the HTTP status and body, got %v", err)
+	}
+}
+
+// TestUpsertOAuthAuthorizationServer_HTTPErrors pins the GraphQL transport's
+// HTTP error mapping: 401/403 name the MANAGE_CONNECTIONS privilege (the first
+// thing a user with an under-privileged token hits), and other >=400 responses
+// carry the body rather than being fed to the JSON decoder.
+func TestUpsertOAuthAuthorizationServer_HTTPErrors(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"forbidden names the privilege", http.StatusForbidden, "denied", "MANAGE_CONNECTIONS"},
+		{"gateway error carries the body", http.StatusServiceUnavailable, "upstream unavailable", "upstream unavailable"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, tc.body, tc.status)
+			}))
+			defer srv.Close()
+
+			c, err := NewClient(srv.URL, "token")
+			if err != nil {
+				t.Fatalf("NewClient: %v", err)
+			}
+			_, err = c.UpsertOAuthAuthorizationServer(context.Background(), UpsertOAuthAuthorizationServerInput{
+				ID:          "svr",
+				DisplayName: "Server",
+			})
+			if err == nil {
+				t.Fatalf("HTTP %d must be an error", tc.status)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("HTTP %d error should contain %q, got %v", tc.status, tc.want, err)
+			}
+		})
 	}
 }
 

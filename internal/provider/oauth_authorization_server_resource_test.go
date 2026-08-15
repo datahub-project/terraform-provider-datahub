@@ -44,6 +44,23 @@ func TestAcc_OAuthAuthorizationServer_SecretRotation(t *testing.T) {
 	})
 }
 
+// TestAcc_OAuthAuthorizationServer_CascadeDeletion proves Read tolerates the
+// server being hard-deleted underneath Terraform (deleteAiPlugin's cascade
+// removes an unshared server when the last referencing plugin goes): refresh
+// must drop it from state and the next apply must be a clean re-create, not a
+// wedged plan or a silent no-op against stale state.
+func TestAcc_OAuthAuthorizationServer_CascadeDeletion(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.IsLive() {
+		tg.RequireCloud(t)
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.OAuthAuthorizationServerCascadeDeletionSteps(tg.Name("tf-acc-oauth-cascade")),
+	})
+}
+
 // TestAcc_OAuthAuthorizationServer_Defaults proves a minimal config resolves
 // the schema defaults (mirroring the server's own: POST_BODY, HEADER,
 // Authorization, Bearer) and stays plan-clean.

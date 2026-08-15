@@ -4,13 +4,18 @@
 package datahubtesting
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"regexp"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
+
+	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 // Scenario builders for datahub_oauth_authorization_server.
@@ -102,6 +107,25 @@ resource "datahub_oauth_authorization_server" "test" {
 			ImportStateVerifyIgnore: []string{"client_secret_wo_version"},
 		},
 		{
+			// Import by bare server_id: the documented alternative to the full
+			// URN. The provider must prefix it; if that broke, this import
+			// would fail with "not found" and only a user would notice.
+			ResourceName:            oauthServerAddr,
+			ImportState:             true,
+			ImportStateId:           serverID,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"client_secret_wo_version"},
+		},
+		{
+			// Importing a nonexistent server must fail with the provider's
+			// clear not-found diagnostic, not a nil-dereference or an empty
+			// state entry.
+			ResourceName:  oauthServerAddr,
+			ImportState:   true,
+			ImportStateId: serverID + "-does-not-exist",
+			ExpectError:   regexp.MustCompile(`No OAuth authorization server`),
+		},
+		{
 			// Dropping optional fields clears them server-side: the provider
 			// owns the complete state of what it declares, so omission is a
 			// clear, not a leave-alone. The secret stays: its version is
@@ -123,6 +147,110 @@ resource "datahub_oauth_authorization_server" "test" {
 				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("scopes"), knownvalue.Null()),
 				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("additional_token_params"), knownvalue.Null()),
 				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("has_client_secret"), knownvalue.Bool(true)),
+			},
+		},
+		{
+			// Raw-token injection via query parameter (the X-API-Key style
+			// documented on auth_scheme): auth_scheme = "" is a meaningful
+			// stored value, distinct from absent. Every neighbouring string
+			// attribute maps "" to null on read, so the plausible refactor
+			// (folding auth_scheme into optionalString like the rest) would
+			// turn this config into a permanent diff - which the PlanOnly
+			// re-apply below observes. This step also exercises the
+			// clear-on-null trio nothing else sets: auth_query_param and
+			// additional_auth_params round-tripping, plus non-default
+			// token_auth_method/auth_location (whose omission from the
+			// mutation variables would let the SDL inject defaults the plan
+			// did not choose, failing the post-apply consistency check).
+			Config: rawTokenConfig(serverID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("auth_scheme"), knownvalue.StringExact("")),
+				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("auth_location"), knownvalue.StringExact("QUERY_PARAM")),
+				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("auth_query_param"), knownvalue.StringExact("access_token")),
+				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("token_auth_method"), knownvalue.StringExact("NONE")),
+				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("additional_auth_params"), knownvalue.MapExact(map[string]knownvalue.Check{
+					"prompt": knownvalue.StringExact("consent"),
+				})),
+			},
+		},
+		{
+			// The permanent-diff guard for the step above: if "" read back as
+			// null (or the SDL default "Bearer"), this plan would not be empty.
+			Config:   rawTokenConfig(serverID),
+			PlanOnly: true,
+		},
+	}
+}
+
+// rawTokenConfig is the QUERY_PARAM / raw-token configuration used by the last
+// two lifecycle steps: identical in both so the second can assert an empty
+// plan.
+func rawTokenConfig(serverID string) string {
+	return providerBlock + fmt.Sprintf(`
+resource "datahub_oauth_authorization_server" "test" {
+  server_id    = %q
+  display_name = "TF Test OAuth Server Renamed"
+
+  client_secret_wo_version = 1
+
+  token_url         = "https://idp.example.com/oauth/token"
+  token_auth_method = "NONE"
+  auth_location     = "QUERY_PARAM"
+  auth_query_param  = "access_token"
+  auth_scheme       = ""
+
+  additional_auth_params = {
+    prompt = "consent"
+  }
+}
+`, serverID)
+}
+
+// OAuthAuthorizationServerCascadeDeletionSteps proves Read tolerates the
+// server disappearing underneath it. deleteAiPlugin's cascade hard-deletes an
+// unshared server when the last referencing AI plugin is deleted, so a
+// Terraform-managed server can vanish without terraform destroy being
+// involved. Read must respond with RemoveResource so the next apply recreates
+// it cleanly - erroring would wedge every plan, and silently keeping the stale
+// state would leave the config unapplied while reporting no changes. The
+// ExpectResourceAction(Create) check is what distinguishes the correct path
+// from the silent one.
+func OAuthAuthorizationServerCascadeDeletionSteps(serverID string) []resource.TestStep {
+	urn := "urn:li:oauthAuthorizationServer:" + serverID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_oauth_authorization_server" "test" {
+  server_id    = %q
+  display_name = "TF Cascade Tolerance"
+
+  token_url = "https://idp.example.com/oauth/token"
+}
+`, serverID)
+
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			// Delete the server out-of-band (standing in for the cascade),
+			// then re-apply the same config. Refresh must drop it from state
+			// and the plan must be a fresh create.
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("OAuthAuthorizationServerCascadeDeletionSteps PreConfig: %v", err))
+				}
+				// DeleteOAuthAuthorizationServer already treats not-found as
+				// success, so any error here is real.
+				if delErr := client.DeleteOAuthAuthorizationServer(context.Background(), urn); delErr != nil {
+					panic(fmt.Sprintf("OAuthAuthorizationServerCascadeDeletionSteps PreConfig: delete failed: %v", delErr))
+				}
+			},
+			Config: cfg,
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(oauthServerAddr, plancheck.ResourceActionCreate),
+				},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(oauthServerAddr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
 			},
 		},
 	}

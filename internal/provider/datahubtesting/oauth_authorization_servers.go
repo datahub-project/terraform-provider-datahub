@@ -256,12 +256,21 @@ func (s *mockServer) handleListOAuthAuthorizationServers(w http.ResponseWriter, 
 // not serialised as null.
 func (s *mockServer) handleOAuthAuthorizationServerItem(w http.ResponseWriter, r *http.Request) {
 	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/oauthauthorizationserver/")
-	id := strings.TrimPrefix(urn, "urn:li:oauthAuthorizationServer:")
 
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	// The real endpoint keys on a full URN and rejects anything else (URN
+	// parsing fails before the entity lookup). Accepting a bare id here would
+	// let a client that forgot to prefix an import ID pass against the mock
+	// while failing against every real server.
+	if !strings.HasPrefix(urn, "urn:li:oauthAuthorizationServer:") {
+		http.Error(w, fmt.Sprintf("Invalid urn: %s", urn), http.StatusBadRequest)
+		return
+	}
+	id := strings.TrimPrefix(urn, "urn:li:oauthAuthorizationServer:")
 
 	s.mu.Lock()
 	srv, ok := s.oauthServers[id]
