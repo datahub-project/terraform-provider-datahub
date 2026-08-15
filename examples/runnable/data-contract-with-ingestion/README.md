@@ -54,15 +54,27 @@ Then open the dataset in the DataHub UI and select the **Quality** tab, where th
 
 `terraform destroy` removes the contract, the assertion and the ingestion source. It does **not** remove the dataset, because Terraform never created it — the ingestion run did.
 
+**`terraform output` stops working the moment you destroy.** Outputs are read from state, and destroy empties it — this is true even here, where the cleanup commands are built from a hardcoded URN and depend on no resource at all. So either capture them first:
+
+```bash
+terraform output -raw cleanup_dataset_cli   # capture BEFORE destroying
+terraform destroy
+```
+
+or skip the outputs and use the literal commands, which work at any time because the dataset URN is fixed in `main.tf` rather than computed:
+
 ```bash
 terraform destroy
 
-# then remove the dataset the contract pointed at:
-eval "$(terraform output -raw cleanup_dataset_cli)"     # DataHub CLI
-eval "$(terraform output -raw cleanup_dataset_curl)"    # or curl
+# DataHub CLI
+datahub delete --urn 'urn:li:dataset:(urn:li:dataPlatform:hive,SampleHiveDataset,PROD)' --hard
+
+# or curl, if the CLI is not installed
+curl -sS -X DELETE -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
+  "$DATAHUB_GMS_URL/openapi/v3/entity/dataset/urn%3Ali%3Adataset%3A%28urn%3Ali%3AdataPlatform%3Ahive%2CSampleHiveDataset%2CPROD%29"
 ```
 
-Both commands are emitted complete, with the URN already substituted.
+The outputs still exist and are worth reading before you destroy, but nothing in this section depends on them.
 
 **The demo pack contains nine datasets, not one.** The outputs clean up only the one the contract used. To sweep the rest, list them and delete each:
 
