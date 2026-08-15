@@ -477,9 +477,9 @@ Ranked by leverage-to-effort. Each item is explicitly marked as a **TF resource*
 - `datahub_post` (announcements) — niche
 - ~~`datahub_corp_user` (data source only)~~ — **shipped as resource + data source** in v0.4.0, not the data-source-only shape assumed here
 
-### Already open
+### Already scoped
 
-- `datahub_ingestion_executor` (data source, Cloud-only) — Vikunja #404841, backed by `getRemoteExecutor`
+- `datahub_ingestion_executor` (data source, Cloud-only) — backed by `getRemoteExecutor`
 
 ---
 
