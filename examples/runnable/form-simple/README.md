@@ -30,7 +30,12 @@ terraform init
 terraform apply
 ```
 
-After apply, verify the forms in the DataHub UI under **Govern → Forms**. Once a PostgreSQL or MySQL dataset exists in the catalog, the background hook assigns the matching form to it and the prompts appear on the dataset page.
+After apply, verify the forms. Where depends on the deployment, and this catches people out:
+
+- **DataHub Cloud**: **Govern → Compliance Forms** (the entry is itself behind a feature flag, so it can be hidden even there).
+- **OSS, including the Quickstart**: there is no forms page. The nav entry exists only in the Cloud build, so the forms are created, readable through the API, and invisible in the browser. Use `terraform output -raw verify_command`, which reads the form back through the strongly consistent OpenAPI v3 entity endpoint.
+
+Once a PostgreSQL or MySQL dataset exists in the catalog, the background hook assigns the matching form to it and the prompts appear on the dataset page.
 
 ## Outputs
 

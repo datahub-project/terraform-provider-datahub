@@ -55,7 +55,10 @@ output "summary" {
     Stewardship group                       ${datahub_corp_group.stewards.urn}
 
   Verify in the DataHub UI:
-    Govern -> Forms. Both forms appear immediately.
+    DataHub Cloud only: Govern -> Compliance Forms.
+    OSS has no forms page at all -- the nav entry exists only in Cloud --
+    so on a Quickstart the forms are real, readable through the API, and
+    invisible in the browser. Use verify_command below.
 
   Two things that will NOT be true yet, and neither is a failure:
 
