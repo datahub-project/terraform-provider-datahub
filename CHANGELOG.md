@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **New resource `datahub_glossary_term_relationship`** manages a single typed relationship edge between two glossary terms, backed by the `addRelatedTerms`/`removeRelatedTerms` GraphQL mutations: `term_urn` inherits from (`isA`, "Inherits" in the UI) or contains (`hasA`, "Contains" in the UI) `related_term_urn`. One resource per edge, following `datahub_corp_group_member`, so relationships added outside Terraform on the same terms are left untouched -- the alternative, a list on `datahub_glossary_term`, would have made Terraform silently delete every edge a steward added through the UI. The edge is stored one-sided on the source term's `glossaryRelatedTerms` aspect (DataHub writes no inverse edge; the UI's "Inherited by"/"Contained by" views are reverse graph lookups), which is what makes exactly one Terraform resource the owner of each edge. Import by composite ID: `<term_urn>|<relationship_type>|<related_term_urn>`.
+
+  Two server behaviours shaped the implementation. The mutations perform a non-atomic read-modify-write of the aspect, so the provider serializes writes per source term -- without that, two edges on one term applied at Terraform's default parallelism could silently lose one (the CAT-2568 shape). And `removeRelatedTerms` errors when the aspect or list is already gone, so delete reads first and treats an absent edge as success, letting `terraform destroy` survive a term removed out-of-band. The aspect's other two lists (`values`, `relatedTerms`) have no GraphQL write path and are not exposed.
+
 ## [0.22.0] - 2026-08-15
 
 ### Added

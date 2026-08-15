@@ -89,6 +89,7 @@ var urnKeyedResources = map[string]urnKey{
 // fails when a type appears in an example and is in neither map.
 var urnlessResources = map[string]string{
 	"datahub_corp_group_member":              "relationship edge, not an entity: destroy removes a membership from an aspect",
+	"datahub_glossary_term_relationship":     "relationship edge, not an entity: destroy removes an edge from a term's glossaryRelatedTerms aspect",
 	"datahub_role_assignment":                "relationship edge, not an entity: destroy removes a role from an actor",
 	"datahub_structured_property_assignment": "relationship edge, not an entity: destroy removes a property value from an entity",
 	"datahub_assertion_assignment_rule":      "server assigns the assertion URNs the rule creates",

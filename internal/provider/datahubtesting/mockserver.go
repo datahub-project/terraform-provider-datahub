@@ -244,6 +244,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleCreateGlossaryTerm(w, req.Variables)
 	case strings.Contains(q, "updateParentNode"):
 		s.handleUpdateParentNode(w, req.Variables)
+	case strings.Contains(q, "addRelatedTerms"):
+		s.handleAddRelatedTerms(w, req.Variables)
+	case strings.Contains(q, "removeRelatedTerms"):
+		s.handleRemoveRelatedTerms(w, req.Variables)
 	case strings.Contains(q, "deleteGlossaryEntity"):
 		s.handleDeleteGlossaryEntity(w, req.Variables)
 	case strings.Contains(q, "upsertStructuredProperties"):

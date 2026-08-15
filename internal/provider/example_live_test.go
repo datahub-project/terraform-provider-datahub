@@ -104,6 +104,7 @@ var urnTemplate = map[string]string{
 // asserting the wrong thing -- these are correctly skipped, not overlooked.
 var urnlessLiveResources = map[string]bool{
 	"datahub_corp_group_member":              true,
+	"datahub_glossary_term_relationship":     true,
 	"datahub_role_assignment":                true,
 	"datahub_structured_property_assignment": true,
 }

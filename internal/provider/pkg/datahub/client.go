@@ -33,6 +33,11 @@ type Client struct {
 	// target entity URN (CAT-2568 workaround; see lockEntityStructuredProps).
 	// The zero value is ready to use, so NewClient needs no explicit init.
 	structuredPropLocks keyedMutex
+
+	// relatedTermLocks serializes glossaryRelatedTerms-aspect writes per source
+	// term URN (same non-atomic server-side read-modify-write shape as
+	// CAT-2568; see lockTermRelatedTerms). Zero value ready to use.
+	relatedTermLocks keyedMutex
 }
 
 // NewClient creates a new Datahub API client.

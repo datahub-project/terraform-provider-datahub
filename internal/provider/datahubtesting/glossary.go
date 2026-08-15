@@ -29,6 +29,11 @@ type mockGlossaryTerm struct {
 	ParentNode       string // full glossaryNode URN or ""
 	Domain           string // full domain URN or ""
 	CustomProperties map[string]string
+	// glossaryRelatedTerms aspect lists (add/removeRelatedTerms). A nil slice
+	// means the list has never been written, which removeRelatedTerms treats
+	// differently from an emptied one -- mirroring the real resolver.
+	IsRelatedTerms  []string
+	HasRelatedTerms []string
 }
 
 // handleCreateGlossaryNode handles the createGlossaryNode mutation.
@@ -355,6 +360,16 @@ func (s *mockServer) handleGlossaryTermItem(w http.ResponseWriter, r *http.Reque
 		entity["domains"] = map[string]any{
 			"value": map[string]any{"domains": []string{t.Domain}},
 		}
+	}
+	if t.IsRelatedTerms != nil || t.HasRelatedTerms != nil {
+		relatedValue := map[string]any{}
+		if t.IsRelatedTerms != nil {
+			relatedValue["isRelatedTerms"] = t.IsRelatedTerms
+		}
+		if t.HasRelatedTerms != nil {
+			relatedValue["hasRelatedTerms"] = t.HasRelatedTerms
+		}
+		entity["glossaryRelatedTerms"] = map[string]any{"value": relatedValue}
 	}
 	if aspect := s.structuredPropertiesAspect(t.URN); aspect != nil {
 		entity["structuredProperties"] = aspect
