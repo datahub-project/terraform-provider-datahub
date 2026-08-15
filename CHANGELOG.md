@@ -17,6 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   One thing it does not do yet: make a breaking change *in place*. DataHub will accept a narrowed cardinality, a changed `value_type` or a removed allowed value when the version increases, but the provider still plans a destroy-and-create for those, which hard-deletes the property and takes every assigned value with it. Bumping `version` in the same apply does keep the re-create from colliding, so the change lands -- the assigned values just do not survive it.
 
+### Security
+
+- **The two tool modules were never being scanned for vulnerabilities, and had accumulated three reachable findings.** Nothing in this affects the published provider binary: `tools/` and `tools/serve` pin the documentation generator and the example version bumper, which run at development time on our own inputs. What matters is why nobody knew. `make deps-vulncheck` is `govulncheck ./...` from the repository root, so it covers the main module and stops there, and this repository has three Go modules -- a fact no scan, alert or update cadence was accounting for. The clearest evidence of the gap: `GO-2026-5970`, an infinite loop in `x/text`, was found and fixed in the main module for 0.21.1 and remained reachable in *both* tool binaries the whole time, because the scan that found it could not see them and nothing carried the bump across. Alongside it, `GO-2026-5320`, a cross-site-scripting flaw in goldmark, reachable in the documentation generator that renders our Markdown.
+
+  Neither advisory has a GitHub entry, so waiting was not a strategy: Dependabot cannot raise what its database does not hold, and both live only in the Go vulnerability database. `x/text`, goldmark, `x/mod` and `x/net` are updated in both modules, which clears everything with a fix available. `GO-2026-5932` (`x/crypto/openpgp`, unmaintained and unsafe by design) remains reachable from the version bumper and has no fix in any release, so it is accepted explicitly rather than silently.
+
+  A new `make deps-vulncheck-tools` scans both modules in CI so the next skew is caught rather than discovered. It builds each pinned command and scans the binary, because a build-tagged tools stub cannot be scanned from source at all -- the blank import that keeps the tool's version pinned is a `package main`, which source-mode analysis refuses. Binary mode also scans exactly what runs, since only linked code is present. Findings the tools do not call are printed and do not fail the run, matching what the main-module scan already means by "vulnerable", and the accepted-forever list is a named constant with a reason and a removal condition per entry -- an unfiltered scan would be permanently red and would stop being read.
+
 ## [0.21.1] - 2026-08-14
 
 ### Security

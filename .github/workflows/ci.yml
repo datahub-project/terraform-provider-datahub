@@ -114,6 +114,11 @@ jobs:
       # so an advisory published upstream can turn this red without any change
       # to the branch -- that is the intent, not a flake.
       - run: make deps-vulncheck
+      # The step above is 'govulncheck ./...', which covers the main module and
+      # no other. Scanning the tool modules found GO-2026-5970 still reachable
+      # there long after the same advisory was fixed in the main module, so this
+      # step exists to make a per-module skew visible rather than inferable.
+      - run: make deps-vulncheck-tools
 
   check:
     name: Check

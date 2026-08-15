@@ -32,7 +32,7 @@ QUICKSTART_HEALTH_INTERVAL ?= 5
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS ?= -X main.version=$(VERSION)
 
-.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-outdated deps-outdated-all deps-update deps-update-all test test-examples test-examples-live testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
+.PHONY: all help build install clean fmt lint generate bump-examples deps-vulncheck deps-vulncheck-tools deps-vulncheck-all deps-outdated deps-outdated-all deps-update deps-update-all test test-examples test-examples-live testacc testacc-local testacc-remote testacc-quickstart quickstart-up quickstart-down quickstart-token coverage coverage-html dev-override dev-deps build-serve-docs serve-docs
 
 all: install
 
@@ -47,6 +47,8 @@ help:
 	@echo "  generate      Run go generate in tools/"
 	@echo "  bump-examples Bump the datahub provider version pin across examples/runnable; VERSION=x.y.z required"
 	@echo "  deps-vulncheck     Report vulnerabilities this module actually calls (govulncheck; also run in CI)"
+	@echo "  deps-vulncheck-tools Same for tools/ and tools/serve, which deps-vulncheck does not reach (also in CI)"
+	@echo "  deps-vulncheck-all Both of the above; all three Go modules in this repository"
 	@echo "  deps-outdated      List direct dependencies (go.mod requires) with newer versions available"
 	@echo "  deps-outdated-all  List all dependencies (direct + indirect) with newer versions available"
 	@echo "  deps-update        Update direct dependencies to latest + go mod tidy; review 'git diff' before commit"
@@ -194,7 +196,9 @@ endif
 	  docs/guides/import-existing.md
 	$(MAKE) generate
 
-# Dependency maintenance (main module only; the tools/ module is maintained separately).
+# Dependency maintenance. The outdated/update targets act on the main module only;
+# the tool modules are maintained separately (bump inside tools/ or tools/serve).
+# The vulnerability scan, by contrast, covers all three -- see deps-vulncheck-tools.
 # The check targets query the Go module proxy for newer versions but change nothing.
 # The update targets mutate go.mod/go.sum -- review 'git diff' before committing.
 # Run through mise in your shell so the pinned Go is used, e.g. 'mise exec -- make deps-outdated'.
@@ -204,6 +208,15 @@ endif
 # database does not. Neither this nor Dependabot subsumes the other.
 deps-vulncheck:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+
+# The target above is './...' from here, so it covers the main module and nothing
+# else -- and this repository has three Go modules. The other two are scanned by
+# building the commands they exist to pin and scanning those binaries, which is
+# the only mode that works on a build-tagged tools stub. See the script header.
+deps-vulncheck-tools:
+	@GO="$(GO)" GOVULNCHECK_VERSION="$(GOVULNCHECK_VERSION)" ./scripts/vulncheck-tools.sh
+
+deps-vulncheck-all: deps-vulncheck deps-vulncheck-tools
 
 deps-outdated:
 	@echo "Direct dependencies with newer versions available:"
