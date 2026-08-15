@@ -126,6 +126,8 @@ This has confused everyone who has looked at it, twice, so here it is once. `dat
 
 **CLI and server versions are separate streams that share a numbering scheme.** The CLI ships to PyPI as `acryl-datahub` (pinned in `requirements-dev.txt`); the server ships as Docker tags and GitHub releases (pinned as `QUICKSTART_VERSION`). They are not released together -- server `v1.6.0.1` appeared nine days *after* `v1.7.0` -- so any staleness check must compare versions, never dates, and "aligned" means the CLI is at or above the server line it drives, not that the numbers match. The CLI only refuses a server below `MINIMUM_SUPPORTED_VERSION` (`v1.1.0`), so a mismatched pair fails silently by working.
 
+**The CLI pin bypasses mise's release-age guard, so bump it deliberately.** `requirements-dev.txt` is installed by `uv` straight from PyPI, which means none of the `minimum_release_age` protection described under "Tool version maintenance" applies to it -- a version published an hour ago is installable here while `mise upgrade` still withholds it. Expect a developer's global `pipx:acryl-datahub` and this pin to disagree for a day after each release, and prefer a release that has been up for more than a day rather than the newest one PyPI reports. That is the same judgement mise makes automatically for everything else.
+
 ## Tool version maintenance
 
 Dependabot has no `mise` ecosystem support — tool versions pinned in `mise.toml` are a blind spot not covered by any automated process.
