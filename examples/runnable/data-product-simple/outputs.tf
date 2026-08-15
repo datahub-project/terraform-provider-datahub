@@ -37,9 +37,9 @@ output "all_data_product_urns" {
   value       = data.datahub_data_products.all.urns
 }
 
-output "ui_url" {
-  description = "DataHub UI path to verify the created data products."
-  value       = "Navigate to Govern -> Data Products in the DataHub UI, or open $DATAHUB_GMS_URL/datahub/govern/dataProducts"
+output "ui_navigation" {
+  description = "How to find the created data products in the DataHub UI. There is no dedicated Data Products page or direct URL to link to -- both OSS and Cloud surface it as a pre-filtered search from the home page."
+  value       = "From the DataHub home page, open the Discovery tab and look under Data Products, or search with the entity type filter set to Data Product."
 }
 
 output "orders_tags_all" {

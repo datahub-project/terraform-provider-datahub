@@ -40,12 +40,12 @@ Terraform creates the domain and both data products. After apply, `orders_urn`, 
 
 ### 3. Verify in the DataHub UI
 
-Navigate to **Govern -> Data Products** in the DataHub UI. You should see `TF Example DP - Orders` and `TF Example DP - Customer 360` listed under the `TF Example DP - Sales` domain.
+Data Products has no dedicated page in either OSS or Cloud -- it surfaces as a section on the DataHub home page's Discovery tab, which links to a search pre-filtered to the Data Product entity type. From the home page, open the Discovery tab and look under Data Products, or search with the entity type filter set to Data Product. You should see `TF Example DP - Orders` and `TF Example DP - Customer 360` listed under the `TF Example DP - Sales` domain.
 
-Or check the `ui_url` output for a direct link:
+The `ui_navigation` output repeats these instructions:
 
 ```bash
-terraform output -raw ui_url
+terraform output -raw ui_navigation
 ```
 
 ### 4. Import an existing data product
@@ -104,7 +104,7 @@ terraform apply -var enable_defaults=false
 
 ### 6. Asset membership
 
-This example creates the data product definition only. To add datasets, charts, or other assets to a data product, use the DataHub UI (**Govern -> Data Products -> Add Assets**) or the Python SDK:
+This example creates the data product definition only. To add datasets, charts, or other assets to a data product, open the data product's own page (see step 3 for how to find it) and use **Add Assets**, or use the Python SDK:
 
 ```bash
 datahub dataproduct upsert --urn urn:li:dataProduct:tf-example-dp-orders \
