@@ -6,8 +6,9 @@ Sets up end-to-end DataHub IAM for a team, covering user provisioning, group man
 - a new **login user** (`datahub_local_user_login`) provisioned with native credentials and added to the group,
 - a **catalog-only user** (`datahub_corp_user`) representing a pipeline bot or ingestion-discovered owner -- the same kind of entity DataHub creates when a source like dbt or BigQuery finds a dataset owner. Appears in the Users UI as inactive (no credentials, by design), and added to the group,
 - a lookup of an existing user (`datahub_corp_user` data source) also added to the group,
-- a role assignment (`datahub_role_assignment`) granting the group the built-in `Editor` role, and
-- an access policy (`datahub_policy`) granting the group specific platform privileges.
+- a role assignment (`datahub_role_assignment`) granting the group the built-in `Editor` role,
+- an access policy (`datahub_policy`) granting the group specific platform privileges, and
+- an enumeration of all policies (`datahub_policies` data source), filtered down to the ones this configuration owns by id prefix -- the allowlist shape to feed a bulk-import `import {}` block.
 
 ## Username format: OSS vs Cloud
 
@@ -28,7 +29,7 @@ The link is single-use and expires in 24 hours.
 
 - A running DataHub instance (OSS or DataHub Cloud)
 - `DATAHUB_GMS_URL` and `DATAHUB_GMS_TOKEN` set in the shell
-- The token must belong to a principal with the `MANAGE_USERS_AND_GROUPS` and `MANAGE_USER_CREDENTIALS` privileges
+- The token must belong to a principal with the `MANAGE_USERS_AND_GROUPS` and `MANAGE_USER_CREDENTIALS` privileges, plus `MANAGE_POLICIES` for the access policy it creates and the policy enumeration it reads
 
 ## Configure
 
@@ -58,6 +59,12 @@ terraform output -raw team_member_reset_url
 
 ```bash
 terraform output next_steps
+```
+
+The policy enumeration is also worth a look. `all_policy_urns` lists every policy the token can see, including DataHub's built-in defaults; `managed_policy_urns` filters that down to the ones this configuration created. A just-created policy can be missing from the first read -- the backing query is eventually consistent -- so re-run `terraform refresh` if it has not appeared yet:
+
+```bash
+terraform output managed_policy_urns
 ```
 
 Then open the DataHub UI:

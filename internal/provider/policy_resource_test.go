@@ -134,6 +134,26 @@ func TestAcc_Policy_RoleGuardAllowsRoleFree(t *testing.T) {
 	})
 }
 
+// TestAcc_Policies_List verifies a created policy's URN appears in the
+// datahub_policies enumeration data source. This is the data source's only
+// executable coverage against the mock: its handler (handleListPolicies)
+// existed with nothing exercising it, so a defect in the Read path would have
+// been caught by nobody. Live coverage comes from examples/runnable/local-iam,
+// which reads the same data source through the live-example harness.
+func TestAcc_Policies_List(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.IsLive() {
+		t.Skip("list data source is OpenSearch-backed and eventually consistent; a just-created policy may not be indexed at read time")
+	}
+	policyID := tg.Name("tfprovider-policies-list")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PoliciesListSteps(policyID),
+	})
+}
+
 // TestAcc_Policy_Drift verifies out-of-band deletion is detected and re-created.
 func TestAcc_Policy_Drift(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)

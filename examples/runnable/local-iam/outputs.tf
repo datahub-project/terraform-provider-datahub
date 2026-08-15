@@ -39,6 +39,19 @@ output "policy_urn" {
   value       = datahub_policy.data_platform_admins.urn
 }
 
+output "all_policy_urns" {
+  description = "URNs of every policy visible to the token, from the datahub_policies data source. Includes DataHub's built-in default policies. The policy created by this example may be missing on the first read: the backing index is eventually consistent."
+  value       = data.datahub_policies.all.urns
+}
+
+output "managed_policy_urns" {
+  description = "The subset of policy URNs this configuration owns, selected by id prefix. This allowlist shape is the safe input for a bulk-import import {} block: it stays correct when a DataHub upgrade adds a default policy."
+  value = [
+    for urn in data.datahub_policies.all.urns :
+    urn if startswith(urn, "urn:li:dataHubPolicy:tf-example-iam-")
+  ]
+}
+
 output "next_steps" {
   description = "Post-apply summary with onboarding instructions."
   value       = <<-EOT

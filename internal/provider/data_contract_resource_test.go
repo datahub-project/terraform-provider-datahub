@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
@@ -128,17 +132,30 @@ resource "datahub_data_contract" "test" {
 	})
 }
 
+// contractTestDataset is the dataset the lifecycle test provisions for itself
+// (via EnsureDatasetEntity) when DATAHUB_TEST_DATASET_URN is not set. Named
+// distinctly from the assertion tests' tf_assertion_test dataset so a parallel
+// test's cleanup cannot delete it out from under the contract.
+const contractTestDataset = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_contract_test.orders,PROD)"
+
 // TestAcc_DataContract_Lifecycle validates the resource end-to-end against a
-// live DataHub (OSS or Cloud). A data contract requires a pre-existing dataset,
-// so the test is gated on DATAHUB_TEST_DATASET_URN (an existing dataset on the
-// target instance). It creates an OSS-compatible custom assertion on that
-// dataset and bundles it into a contract, then imports and destroys.
+// live DataHub (OSS or Cloud). A data contract requires the referenced dataset
+// to exist server-side: set DATAHUB_TEST_DATASET_URN to use a dataset already
+// on the target instance, otherwise the test provisions a minimal dataset
+// entity itself and hard-deletes it on cleanup -- which is what lets the test
+// run un-gated in the nightly live-acceptance workflow instead of being
+// skipped forever (nothing in the repository ever set that variable). It
+// creates an OSS-compatible custom assertion on the dataset, bundles it into a
+// contract, imports it, enumerates it through the plural data source, and
+// destroys.
 func TestAcc_DataContract_Lifecycle(t *testing.T) {
-	datahubtesting.SetupTarget(t) // configures the live target or skips
+	tg := datahubtesting.SetupTarget(t)
 
 	datasetURN := os.Getenv("DATAHUB_TEST_DATASET_URN")
 	if datasetURN == "" {
-		t.Skip("set DATAHUB_TEST_DATASET_URN to an existing dataset URN to run this test")
+		datasetURN = contractTestDataset
+		// No-op on the mock, which does not validate entity existence.
+		tg.EnsureDatasetEntity(t, datasetURN)
 	}
 
 	const addr = "datahub_data_contract.test"
@@ -176,8 +193,66 @@ resource "datahub_data_contract" "test" {
 				ImportState:       true,
 				ImportStateVerify: true,
 			},
+			{
+				// Plural data source, against the same target. This is the only
+				// live execution of the searchAcrossEntities-backed list query;
+				// the mock test below checks exact contents, which a live target
+				// with pre-existing contracts cannot promise. The backing index
+				// is eventually consistent, so poll until the contract is
+				// indexed before asserting membership -- without the wait this
+				// step would flake for reasons that are not defects.
+				PreConfig: func() { waitForDataContractIndexed(t, wantURN) },
+				Config: cfg + `
+data "datahub_data_contracts" "all" {
+  depends_on = [datahub_data_contract.test]
+}
+`,
+				Check: contractURNInList("data.datahub_data_contracts.all", wantURN),
+			},
 		},
 	})
+}
+
+// waitForDataContractIndexed polls ListDataContractURNs until wantURN appears
+// or the budget is exhausted. The mock's list is strongly consistent, so this
+// returns on the first probe there; on a live target it absorbs the OpenSearch
+// indexing lag between the contract's create and its first appearance in
+// search results.
+func waitForDataContractIndexed(t *testing.T, wantURN string) {
+	t.Helper()
+	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+	if err != nil {
+		t.Fatalf("waitForDataContractIndexed: building client: %v", err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		urns, listErr := client.ListDataContractURNs(t.Context())
+		if listErr == nil && slices.Contains(urns, wantURN) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("data contract %s not indexed after 60s (last list error: %v)", wantURN, listErr)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// contractURNInList asserts urn appears somewhere in the urns list attribute of
+// the data source at addr. A containment check rather than exact-match: a live
+// target may hold contracts this test did not create.
+func contractURNInList(addr, urn string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[addr]
+		if !ok {
+			return fmt.Errorf("data source %s not found in state", addr)
+		}
+		for k, v := range rs.Primary.Attributes {
+			if strings.HasPrefix(k, "urns.") && v == urn {
+				return nil
+			}
+		}
+		return fmt.Errorf("URN %q not found in %s.urns", urn, addr)
+	}
 }
 
 // TestDataContractsDataSource_mock exercises the plural data source.
