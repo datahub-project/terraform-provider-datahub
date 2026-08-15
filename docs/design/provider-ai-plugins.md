@@ -2,7 +2,7 @@
 
 Maintainer-facing design notes for the two coupled Cloud-only resources that let Terraform register an Ask DataHub AI plugin (today: an MCP server) and the outbound OAuth authorization server it authenticates through.
 
-Status: design. Nothing implemented. Prerequisite reading: [datahub-model-and-resource-design.md](datahub-model-and-resource-design.md) (read in full), [provider-org-settings.md](provider-org-settings.md) (granularity rule), `CLAUDE.md` (new-resource checklist, Cloud-only rules, provider-defaults checklist item).
+Status: PR 1 (`datahub_oauth_authorization_server`) implemented; PR 2 (`datahub_ai_plugin`) not started. Prerequisite reading: [datahub-model-and-resource-design.md](datahub-model-and-resource-design.md) (read in full), [provider-org-settings.md](provider-org-settings.md) (granularity rule), `CLAUDE.md` (new-resource checklist, Cloud-only rules, provider-defaults checklist item).
 
 **Nothing in this document was verified against a live DataHub instance.** Every claim about server behaviour is read from the OSS repo and the closed Cloud fork at the revisions noted in "Sources". The "Open questions" section lists what must be probed before implementation, and says what a different answer would change.
 
@@ -137,7 +137,9 @@ But the per-field null semantics of `upsertOAuthAuthorizationServer` are **not u
 | `displayName` | required, cannot be null |
 | `tokenAuthMethod`, `authLocation`, `authHeaderName` | fall back to a hard-coded server default (`POST_BODY`, `HEADER`, `Authorization`) |
 
-Consequence: the provider must send **every** field it exposes explicitly on every write. Omitting a preserve-on-null field silently keeps a stale value (looks like the provider lost the write); omitting a clear-on-null field silently wipes it. Sending everything makes both behaviours correct and matches the provider's full-ownership convention. Worth an explicit unit test per field.
+One correction found at implementation time (PR 1): the table above describes the *resolver's* null handling, but four input fields also carry **SDL literal defaults** (`tokenAuthMethod = POST_BODY`, `authLocation = HEADER`, `authHeaderName = "Authorization"`, `authScheme = "Bearer"`) that graphql-java injects when the field is *omitted from the variables* - an explicit null suppresses them. So for `authScheme`, omission writes `"Bearer"` while explicit null clears; "clear on null" was right, "clear when not sent" would have been wrong.
+
+Consequence: the provider must send **every** field it exposes explicitly on every write. Omitting a preserve-on-null field silently keeps a stale value (looks like the provider lost the write); omitting a clear-on-null field silently wipes it; omitting an SDL-defaulted field silently writes the default. Sending everything makes all three behaviours correct and matches the provider's full-ownership convention. Worth an explicit unit test per field (implemented: `TestUpsertOAuthAuthorizationServerVariables_*` in `oauth_authorization_servers_test.go`).
 
 For `upsertAiPlugin`, the per-field semantics are similar, with one field that **cannot be cleared**: `requiredScopes` is only overwritten when the input list is non-null *and* non-empty; otherwise the existing value is preserved. So `required_scopes = []` is likely a no-op, not a clear. This is the one place full-list ownership is not achievable. See Open question 3 - and note the asymmetry with the OAuth server's own `scopes`, which *is* clearable.
 
@@ -363,7 +365,7 @@ There is real evidence for that note being warranted rather than boilerplate: th
 | `docs/index.md` | regenerated (picks up the `provider.go` change) |
 | `docs/resources/ai_plugin.md`, `docs/resources/oauth_authorization_server.md` | generated |
 | `templates/resources/ai_plugin.md.tmpl` | recommended - the cascade-delete and singleton-race guidance is long-form prose, the same reason `connection`/`secret`/`ingestion_source`/`remote_executor_pool` have templates |
-| `CHANGELOG.md` | one `## [0.18.0]` Added entry covering both, inline links only, per the goreleaser awk constraints |
+| `CHANGELOG.md` | one Added entry in `## [Unreleased]` covering both, inline links only, per the goreleaser awk constraints (the version number is assigned at release time) |
 
 ## Open questions requiring live probing
 
@@ -512,7 +514,7 @@ Two PRs on `feat/ai-plugin`, released together.
 | `internal/provider/ai_plugin_data_source.go`, `ai_plugins_data_source.go` | data sources |
 | `internal/provider/datahubtesting/ai_plugins.go`, `ai_plugin_scenarios.go` | mock handlers + step builders |
 | `examples/resources/datahub_ai_plugin/resource.tf`, `import.sh` | snippets |
-| `examples/runnable/ai-plugin-mcp-oauth/` | `main.tf`, `variables.tf`, `outputs.tf`, `README.md` - both resources wired together, `required_version = ">= 1.11"`, `tf-example-` ids, `TF Example - ` display names, secret via a sensitive variable, outputs exposing both URNs plus a copy-pasteable verification command and the `$DATAHUB_GMS_URL/settings/ai` navigation path |
+| `examples/runnable/ai-plugin-mcp-oauth/` | `main.tf`, `variables.tf`, `outputs.tf`, `README.md` - both resources wired together, `required_version = ">= 1.11"`, `tf-example-` ids with a per-directory slug (e.g. `tf-example-aiplugin-*`; `example_identifier_test.go` fails on any identifier two directories share, and the new resource types must be classified in its `urnKeyedResources`), `TF Example - ` display names, secret via a sensitive variable, outputs exposing both URNs plus a copy-pasteable verification command and the `$DATAHUB_GMS_URL/settings/ai` navigation path. **Post-design obligation (stage C, PR #128, 2026-08-12):** the directory must also be classified in `internal/provider/example_live_classification_test.go` - as a `permanent: true` entry in `liveExampleExclusions` (both resources are Cloud-only; the live harness targets an OSS Quickstart) - or `TestEveryRunnableExampleIsClassified` fails the build. |
 | `templates/resources/ai_plugin.md.tmpl` | long-form cascade/singleton-race guidance |
 
 **Modified**
@@ -529,6 +531,8 @@ Two PRs on `feat/ai-plugin`, released together.
 **Schema sketch.** `id` (Required, RequiresReplace, validated), `urn`/`id`, `display_name` (Required), `description`, `enabled` (Optional Bool, default true), `instructions` (Optional String), `mcp_server` single-nested block (`url` Required, `transport` Optional `HTTP`/`SSE`/`WEBSOCKET` default `HTTP`, `timeout` Optional Float64, `custom_headers` Optional map), `auth_type` (Optional, `enumString("NONE","USER_OAUTH")` in phase 1), `oauth` single-nested block (`server_urn` Required, `required_scopes` Optional list), `tags_all` (Computed).
 
 Plan-time validators: `oauth` required iff `auth_type = USER_OAUTH` and forbidden otherwise; `mcp_server` required (the only subtype today); `required_scopes = []` rejected pending Open question 3.
+
+The two single-nested blocks put this resource squarely under the "Nested attributes and unknown values" rules in `CLAUDE.md` (this class of bug has now shipped three times): model `mcp_server` and `oauth` as `types.Object`, never `*fooModel`; check `IsUnknown()` explicitly in every `ValidateConfig`/`ModifyPlan` presence test; and add at least one non-literal test (`ConfigVariables` on the `TestStep`, or feed `oauth.server_urn` from `datahub_oauth_authorization_server.x.urn` - the natural wiring already exercises it, but only if the test config actually uses the reference rather than a literal URN string).
 
 **Cross-resource guards.** OAuth server `Read` treats 404 as gone and `RemoveResource`; `Delete` treats not-found as success. Both behaviours are needed because of the plugin's cascade and both need mock coverage.
 
@@ -578,7 +582,7 @@ The per-user "Connect" OAuth handshake (a human clicks it, Snowflake redirects, 
 
 ## Roadmap edits
 
-Nine edits, not yet applied. Summary: promote `upsertAiPlugin`/`deleteAiPlugin` out of Category 11's IRRELEVANT bucket into a new Tier 3 item; record the hard dependency on item 15 in both directions; correct the Cloud-experimental claim about `aiPlugin` (the `service` entity is in OSS; the mutations are not); add both URN rows and both read-path entries; record the `datahub_ai_settings` constraint; note the per-field null-semantics caveat in the aspect-list-ownership section.
+Nine edits, applied to `docs/roadmap.md` alongside this document. Summary: promote `upsertAiPlugin`/`deleteAiPlugin` out of Category 11's IRRELEVANT bucket into a new Tier 3 item; record the hard dependency on item 15 in both directions; correct the Cloud-experimental claim about `aiPlugin` (the `service` entity is in OSS; the mutations are not); add both URN rows and both read-path entries; record the `datahub_ai_settings` constraint; note the per-field null-semantics caveat in the aspect-list-ownership section.
 
 The substantive one is the Category 11 promotion. Category 11's justification is "all Cloud-only, runtime/per-user, or experimental". The AI plugin registry is none of those three: it is tenant-level, admin-owned, slow-moving configuration gated by a single privilege - the same profile as `datahub_connection`, which the roadmap rates HIGH. The genuinely per-user siblings (`updateUserAiPluginSettings`, the Connect flow) do belong in that bucket and stay there. `upsertAiPlugin` was grouped with them by adjacency: it lives in the same fork schema neighbourhood as the AI-assistant runtime, not because it shares their shape.
 

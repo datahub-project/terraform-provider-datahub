@@ -37,7 +37,7 @@ DataHub entity types support different label aspects, so coverage varies by reso
 | `datahub_data_product` | yes | yes | yes |
 | `datahub_data_contract` | no | yes | no |
 | assertion resources (`datahub_custom_assertion`, `datahub_field_assertion`, ...) | no | no | yes |
-| everything else (`datahub_ingestion_source`, `datahub_secret`, `datahub_policy`, `datahub_connection`, ...) | none - the DataHub entity model does not register label aspects on these types today, so defaults are a documented no-op there |
+| everything else (`datahub_ingestion_source`, `datahub_secret`, `datahub_policy`, `datahub_connection`, `datahub_oauth_authorization_server`, ...) | none - the DataHub entity model does not register label aspects on these types today, so defaults are a documented no-op there |
 
 A resource that supports several mechanisms receives **all** the configured ones simultaneously - the mechanisms are independent, not a fallback chain.
 
