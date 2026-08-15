@@ -2,7 +2,9 @@
 
 Maintainer-facing design for running the runnable examples for real -- `terraform apply` then `terraform destroy` against a live DataHub Quickstart -- rather than only type-checking them.
 
-**Status: the first slice is implemented.** `internal/provider/example_live_test.go` holds the harness, `internal/provider/example_live_classification_test.go` the run list and the completeness check, `.github/workflows/live-examples.yml` the CI job, and `make test-examples-live` runs it locally. Six of the twenty-one runnable examples are applied live; the other fifteen are classified as excluded, ten of them only until the expansion slice. Sections below that describe a decision still read as a design; where implementation changed one, the section says so.
+**Status: fully implemented.** `internal/provider/example_live_test.go` holds the harness, `internal/provider/example_live_classification_test.go` the run list and the completeness check, `.github/workflows/live-examples.yml` the CI job, and `make test-examples-live` runs it locally. **Sixteen of the twenty-one runnable examples are applied live -- every one that can run against an OSS Quickstart.** The remaining five are excluded permanently (three Cloud-only, two on cost); no deferred exclusion remains. Sections below that describe a decision still read as a design; where implementation changed one, the section says so.
+
+The expansion from six to sixteen landed on 2026-08-15, and the measured cost of the ten added examples was **38.4 seconds locally**. Two of them account for 29.6 s of that: `data-product-simple` at 20.2 s, 15 s of which is its deliberate `settleAfterDestroy` pause, and `structured-property-simple` at 9.4 s, nearly all of it the provider's own pre-delete settle for structured properties. **The other eight together cost 8.8 s.** The first slice's conclusion that "the maintenance cost of the run list, not wall-clock, is the real argument for staging" held up exactly: nothing about the expansion was expensive except deciding what each example needed.
 
 ## Where this sits
 
@@ -39,9 +41,9 @@ Every directory under `examples/runnable/` falls into exactly one primary bucket
 | `page-template-simple` | Runs on Quickstart | Two modules and a template nothing points at, all OSS-capable | None -- no variables, and it changes nothing users see |
 | `glossary-node-term-simple` | Runs on Quickstart | Four glossary nodes, four terms, all OSS-capable | Owns `urn:li:glossaryTerm:tf-example-revenue`, shared with `structured-and-custom-properties` |
 | `ingestion-source-csv-enricher` | Runs on Quickstart | One `datahub_ingestion_source` (`main.tf:19`). The CSV URL at `main.tf:30` is fetched by the executor at ingestion time, not by Terraform, so apply needs no network | None |
-| `ingestion-source-lookup` | Runs on Quickstart (conditional) | Read-only: one `data "datahub_ingestion_source"` (`main.tf:20`) | Depends on `datahub-gc` existing. `main.tf:16` asserts it is "present on every DataHub instance"; **I did not verify that a freshly booted Quickstart has finished creating it.** Gate on a preflight probe, or hold this example back until the claim is confirmed |
-| `local-iam` | Runs on Quickstart | Group, native login, catalog user, three memberships, a role assignment and a policy, all `ossAndCloudBadge` | The heaviest risk profile of any in-scope example -- see "Flakiness" items 3 and 4 |
-| `ownership-type-simple` | Runs on Quickstart | Two ownership types plus two lookups | Plural lookup is `listOwnershipTypes` (`ownership_types_list.go:38-44`), a GraphQL `list*` and therefore index-lagged |
+| `ingestion-source-lookup` | Runs on Quickstart | Read-only: one `data "datahub_ingestion_source"` (`main.tf:20`) | Depends on `datahub-gc` existing, which is now a `waitForURN` preflight rather than an unverified premise -- see "Flakiness" item 6 for what was found |
+| `local-iam` | Runs on Quickstart | Group, native login, catalog user, three memberships, a role assignment and a policy, all `ossAndCloudBadge` | Needs a per-run unique `new_member_email` for the OSS signUp guard. The `member_username` hazard turned out not to be one -- see "Flakiness" item 4 |
+| `ownership-type-simple` | Runs on Quickstart | Two ownership types plus two lookups | Plural lookup is `listOwnershipTypes` (`ownership_types_list.go:38-44`), a GraphQL `list*` and therefore index-lagged. The lag is real and measured; the failure it was expected to cause is not -- see "Flakiness" item 9 |
 | `provider-install-verification` | Runs on Quickstart | One `data "datahub_me"` (`main.tf:16`). Creates nothing | Overlaps the A1.5 registry smoke test, which already runs `validate` here. Useful in stage C as a credential preflight, not as coverage |
 | `remote-executor-azure` | Too expensive or slow | README quotes roughly USD 280/month for two `Standard_D4s_v5` AKS nodes with billing starting at apply, and 10-15 minutes of provisioning. Already exempt from stage B (`example_validate_test.go:50-52`) | Also Cloud-only (`datahub_remote_executor_pool`, `datahub.tf:4`). Also needs three separate credentials (`variables.tf:1,11,17`) plus `az login` and a Cloudsmith entitlement |
 | `secret-basic` | Runs on Quickstart | `datahub_secret` plus a referencing ingestion source | `value` is `Required` (`secret_resource.go:112`), and `var.secret_value` defaults to `null` (`variables.tf:5`), so the harness must pass `TF_VAR_secret_value` |
@@ -51,7 +53,7 @@ Every directory under `examples/runnable/` falls into exactly one primary bucket
 
 Totals: **16 run on Quickstart**, **3 are Cloud-only**, **2 are too expensive or slow**.
 
-**Of the 16, the first slice runs 6**: `provider-install-verification` (preflight), `tag-simple` (index-lagged plural data source), `domain-simple` (child-delete race), `structured-and-custom-properties` (worst CAT-2583 shape), `page-template-simple` (the boring control) and `home-page-layout` (restore-on-destroy). The other ten are marked `deferred` rather than permanently excluded, so the expansion slice does not have to re-derive which is which. The slice was chosen to cover both known flake classes and the assertion inversion rather than to maximise example count -- the point of stopping at six is that every wall-clock figure below is still an estimate.
+**All 16 now run.** The first slice ran 6 -- `provider-install-verification` (preflight), `tag-simple` (index-lagged plural data source), `domain-simple` (child-delete race), `structured-and-custom-properties` (worst CAT-2583 shape), `page-template-simple` (the boring control) and `home-page-layout` (restore-on-destroy) -- chosen to cover both known flake classes and the assertion inversion rather than to maximise count, because until it ran every wall-clock figure below was an estimate. The other ten were marked `deferred` rather than permanently excluded so the expansion would not have to re-derive which was which, and that is exactly how the expansion proceeded. `liveExampleExclusions` now holds five permanent entries and nothing else.
 
 The fourth bucket, **needs-external-credentials, is empty as a primary verdict**, and that is a finding rather than an oversight. Every example that needs a real third-party credential is already excluded by a stronger reason: `remote-executor-azure` on cost, `action-pipeline-dataplex-sync` on Cloud-only, `financial-services` on cost and Cloud-only. The two Snowflake examples look like members of the bucket but are not: DataHub stores the connection blob without ever dialling Snowflake, so synthetic values apply and destroy exactly like real ones.
 
@@ -162,7 +164,7 @@ Proposed order, and why. Note how little of this survives its own reasoning: ent
 11. `connection-snowflake` -- first owner of `prod-snowflake`.
 12. `connection-snowflake-ingestion-source` -- second owner; must not overlap with 11.
 13. `ingestion-source-lookup` -- read-only, and gated on the `datahub-gc` preflight.
-14. `local-iam` -- **last**, but only until the harness overrides `member_username` (see "Flakiness" item 4). The hazard is not intrinsic to the example. It exists because the example's default names `datahub`, which is also the account `make quickstart-token` authenticates as -- two independently reasonable defaults that happen to pick the same user. The table already carries a per-example `vars` map (`secret-basic` uses it for `secret_value`), so one entry retires this constraint.
+14. `local-iam` -- **last**. Proposed here as a containment measure for the `member_username` hazard, to be retired by a `vars` override. **Neither happened, and the reason is that the hazard was not real** (see "Flakiness" item 4). It still runs last, but as the cheapest available ordering rather than as a constraint anything depends on: it is the only example that touches the identity the harness authenticates as, and putting it at the end costs nothing.
 
 Serial execution solves the collisions but does *not* by itself solve the asynchronous side effect described in "Flakiness" item 1: a structured-property delete in example 6 can land after example 7 has started. That is why the design adds an end-of-run sweep rather than relying on per-example checks alone.
 
@@ -226,7 +228,7 @@ The opt-out is `noReapplyReason string`, not a bool. A bool records that somebod
 
 **Examples that manage no entity are skipped by derivation, not by table entry.** `provider-install-verification` and `ingestion-source-lookup` read data sources and create nothing, so they have no URN whose re-creation could be blocked; the harness derives the skip from `len(harvested) == 0`. Tabling it would be a second opt-out list restating what the harness can already see, and it would go stale in the one direction that matters -- the entry would keep suppressing the check after the example grew a managed resource and the check became meaningful.
 
-The current opt-out list is one entry long: `structured-and-custom-properties`, for the burned-field mechanism in flakiness item 8, citing [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974).
+The opt-out list is two entries long, both for the burned-field mechanism in flakiness item 8 and both citing [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974): `structured-and-custom-properties`, and `data-product-simple` since the expansion. Nothing else in the run list assigns a structured property, and the eight other examples added in the expansion all keep the check -- including the two connection examples and the two ingestion-source ones, where "vacuous, because these writes are upserts" was available as an argument and rejected on the grounds above.
 
 #### What the end-of-run sweep can now conclude
 
@@ -296,6 +298,38 @@ Wall-clock, **measured 2026-08-11 both locally and in CI**. The original estimat
 
 So **the whole change costs about two seconds locally** -- roughly 0.6 s per newly-covered example, for a full extra apply, an extra state harvest and an extra destroy each. Against a 178-second boot that is 1% of the job. Extrapolating at the observed CI-to-local ratio of about 3x, the expansion to all sixteen Quickstart-capable examples remains a couple of minutes in CI, and the maintenance cost of the run list is still the real argument for staging it.
 
+**Measured with all sixteen examples, 2026-08-15**, locally against a fresh v1.7.0 Quickstart, Apple Silicon, warm image cache. Two consecutive whole-job runs; the second column is the timed one and the two agreed to within 0.1 s on every example, which is worth more than either figure on its own -- these numbers are stable enough to notice a regression against. **Estimates are gone from this table**: every value below was observed.
+
+| Example | New with the expansion | Run 1 | Run 2 (timed) |
+|---|---|---|---|
+| `provider-install-verification` | | 1.40 s | 1.34 s |
+| `tag-simple` | | 1.38 s | 1.37 s |
+| `ownership-type-simple` | yes | 1.14 s | 1.15 s |
+| `domain-simple` | | 1.63 s | 1.65 s |
+| `glossary-node-term-simple` | yes | 1.73 s | 1.80 s |
+| `structured-and-custom-properties` | | 20.04 s | 20.03 s |
+| `structured-property-simple` | yes | 9.42 s | 9.41 s |
+| `data-product-simple` | yes | 20.18 s | 20.19 s |
+| `secret-basic` | yes | 1.06 s | 1.08 s |
+| `ingestion-source-csv-enricher` | yes | 0.93 s | 0.94 s |
+| `connection-snowflake` | yes | 0.97 s | 0.98 s |
+| `connection-snowflake-ingestion-source` | yes | 1.09 s | 1.08 s |
+| `ingestion-source-lookup` | yes | 0.46 s | 0.49 s |
+| `page-template-simple` | | 1.17 s | 1.17 s |
+| `home-page-layout` | | 1.32 s | 1.36 s |
+| `local-iam` | yes | 1.46 s | 1.48 s |
+| End-of-run sweep (48 URNs) | | 0.06 s | 0.05 s |
+| **Sixteen examples, excluding boot** | | **65.42 s** | **65.55 s** |
+| **Whole job** | | -- | **130 s** |
+
+Three things in that table are worth more than the totals.
+
+**Three examples account for three quarters of the run, and all three of them are waiting on purpose.** `structured-and-custom-properties` (20.0 s) and `data-product-simple` (20.2 s) each spend 15 s in the harness's `settleAfterDestroy` pause; `structured-property-simple` spends most of its 9.4 s inside the provider's own `settleStructuredPropertyAssignments`, waiting for a zero-count streak before issuing a delete. Take those out and the remaining thirteen examples cost **11 s between them**. Anyone who later wants this job faster should be looking at the CAT-2583 settles, not at the example count -- and should read flakiness item 1 first, because those pauses are load-bearing.
+
+**The cheapest example is the data-source-only one**, at 0.46 s including a preflight poll, a plan, a destroy and an output check. That is the floor for a terraform-driven example on this hardware, and it says the per-example overhead the harness adds is negligible against what terraform itself costs.
+
+**The whole job is 130 s wall clock**, of which about 52 s is the Quickstart boot and 66 s the examples. That inverts the ratio recorded for the six-example slice (178 s boot against 75 s of examples), but the boot figure is not comparable: this one had a warm image cache and that one was CI pulling images. The stable claim is the examples column.
+
 `timeout-minutes: 75` stays. It is sized for a cold image pull, not for the examples, and at 4.5 minutes observed there is no reason to tighten it toward a figure that would turn a slow pull into a failure.
 
 **All of the above is against DataHub v1.7.0**, both locally and in CI.
@@ -304,7 +338,7 @@ Worth recording how that was established, because for the first measured run it 
 
 Three conclusions, the third of which was a surprise:
 
-- **Expanding to all 16 Quickstart-capable examples costs almost nothing.** If the ten deferred ones behave like these six, the full slice is a couple of minutes in CI. The maintenance cost of the run list, not wall-clock, is the real argument for staging the expansion.
+- **Expanding to all 16 Quickstart-capable examples costs almost nothing.** If the ten deferred ones behave like these six, the full slice is a couple of minutes in CI. The maintenance cost of the run list, not wall-clock, is the real argument for staging the expansion. **Confirmed, with one correction**: the ten added 38.4 s locally rather than the ~10 s a linear extrapolation from six would have predicted, because two of them sit in deliberate 15-second settles that none of the first six except `structured-and-custom-properties` did. Extrapolated at the same 3x, the whole job is still a few minutes in CI, and the prediction that the run-list maintenance dominates was exactly right -- the expansion's real work was deciding what each example needed, not running them.
 - **The case for excluding `push` is weaker than it looked.** The argument was "booting a second Quickstart doubles the cost of every merge". Still true, but the cost is almost entirely boot. A shared instance would make stage C on every push nearly free -- and is still rejected, because sharing breaks the destroy-leaves-nothing assertion (see "Cleanup guarantees"). Worth re-reading with these numbers rather than the estimates that motivated it. Note the two jobs run in parallel, so adding stage C to the nightly costs runner-minutes, not wall-clock.
 - **In `live-acceptance`, the boot is NOT the dominant cost -- the tests are.** Splitting the step (previously one opaque `make testacc-quickstart` block) showed 193 s of boot against **307 s of acceptance tests**. The expectation before measuring was the opposite, and it matters for triage: if that job slows down, look at the suite first, not at image pulls. Stage C is the reverse shape -- 178 s boot against 75 s of examples -- so the two jobs need different instincts, which is exactly why neither should be a single unattributed step.
 
@@ -344,19 +378,21 @@ There is a second, independent timing hazard: signUp writes aspects through `ing
 
 Mitigations: the ephemeral Quickstart makes the first hazard self-healing, which is most of the argument for the ephemeral target. Additionally pass a per-run unique email via `TF_VAR_new_member_email` so even an accidental run against a persistent instance does not poison it -- the acceptance suite reaches the same conclusion for the same reason (`target.go:126-135`, and the "Emails must be unique per test run" requirement in the design doc). Run `local-iam` last.
 
+**Implemented as designed.** `local-iam` carries `vars: {"new_member_email": ""}` and `liveVars` fills it with `tf-example-live-iam-<random>@example.invalid` per run, alongside the identical treatment `home-page-layout` already had for `test_user_email`. The published default stays `tf-example-iam-member@example.com`, which is right for a reader applying once against their own instance; per-run uniqueness is a harness concern and belongs in the harness. The second hazard -- the signUp propagation poll exhausting its ten-attempt budget -- was not observed in any of the runs, local or full.
+
 ### 4. `local-iam` mutates the identity the harness authenticates as
 
 `make quickstart-token` mints the PAT for `urn:li:corpuser:datahub` (`Makefile:18`, `TOKEN_ACTOR`). `local-iam` then resolves that same user by default (`variables.tf:21`, `member_username = "datahub"`), adds it to a group (`main.tf:93-96`), and grants that group the built-in Editor role (`main.tf:109-112`).
 
 **I did not verify what DataHub does when a user with the Admin role joins a group assigned Editor** -- whether effective privileges are the union, or whether the group assignment can narrow them. If it can narrow them, the harness's own token loses Admin partway through the run and every subsequent operation fails in a way that looks like an unrelated provider bug. Note also that the resource comment at `main.tf:107-108` states DataHub allows only one role per actor, which makes the question sharper rather than settling it.
 
-Mitigations, in preference order.
+**Resolved during the expansion, 2026-08-15: there is no hazard, and the recommended mitigation is withdrawn rather than deferred.** Both halves of it failed on inspection.
 
-**Override `member_username` to a throwaway user via the table's `vars` map.** This removes the hazard rather than containing it, and -- the reason it is first -- it needs no answer to the union-versus-narrowing question above. That question is still open, and answering it costs a Quickstart run to settle something the harness can simply route around. The published default stays `datahub`: a runnable example cannot reference a user that may not exist on the reader's instance, and `datahub` is the only account guaranteed to be there. This is a harness concern, so it belongs in the harness.
+*It was unimplementable.* The proposal was to point `member_username` at "a throwaway user" via the `vars` map. A Quickstart has no throwaway user -- `datahub` is the only account on a fresh instance, which is exactly why the example's published default names it. Naming any other username makes `data.datahub_corp_user.member` fail to resolve, so the override does not route around the hazard; it replaces it with a certain failure.
 
-Failing that, run `local-iam` last so the blast radius is bounded to itself, and add a post-example credential probe (re-read the `data.datahub_me` equivalent) reporting the loss explicitly rather than letting it surface as a cascade of unrelated-looking failures.
+*It was unnecessary.* The question it declined to answer -- whether a group's Editor assignment can NARROW a member's existing Admin -- has an answer, and it is no, for two independent reasons. DataHub authorization is ALLOW-only and additive: a policy grants privileges and there is no deny form, so no assignment can subtract one. And the Quickstart `datahub` account's Admin does not come from role matching at all. `metadata-service/war/src/main/resources/boot/policies.json` names `urn:li:corpuser:datahub` directly in the actors of its platform policies, so those grants are reached by user identity, which nothing about group membership or role assignment can touch. Empirically: every run of `local-iam` during this work -- targeted, and inside the full suite -- adds `datahub` to a group holding Editor, destroys it, re-applies and destroys again, all on the harness's own PAT, and no operation afterwards has ever been refused.
 
-With the override in place `local-iam` has no required position, and the only ordering constraint left in the whole run is `provider-install-verification` first.
+What remains is the ordering, kept for the reason given at entry 14 above: `local-iam` runs last because it is free to do so, not because anything depends on it. The post-example credential probe is not built, and should not be -- it would be a check for a condition now shown to be unreachable.
 
 ### 5. Index-lagged plural data sources
 
@@ -364,7 +400,15 @@ Covered in detail under assertion 1. Four in-scope examples read a GraphQL `list
 
 ### 6. `ingestion-source-lookup` depends on a bootstrap entity
 
-The example asserts `datahub-gc` is "present on every DataHub instance" (`main.tf:16`). Whether a Quickstart that has just passed `datahub docker check` has finished creating its system ingestion sources is **unverified**. If it has not, this example fails intermittently for a reason that has nothing to do with the provider. Mitigation: preflight-poll `GET /openapi/v3/entity/datahubingestionsource/urn:li:dataHubIngestionSource:datahub-gc` with a bounded budget, skip the example with a clear message when it never appears, and record the finding here once observed.
+The example asserts `datahub-gc` is "present on every DataHub instance" (`main.tf:16`). Whether a Quickstart that has just passed `datahub docker check` has finished creating its system ingestion sources was **unverified** when this was written.
+
+**Settled during the expansion, and the mitigation changed shape on one point: it polls, then FAILS. It does not skip.**
+
+The premise is sound but not free. DataHub's bootstrap templates are declared in `metadata-service/configuration/src/main/resources/bootstrap_mcps.yaml`, whose header sets the defaults `blocking: false, async: true, optional: false`. The entities the other examples lean on all override those: `root-user`, `data-platforms`, `data-types`, `ownership-types`, `lifecycle-stages`, `roles`, `page-modules` and `page-templates` are every one of them `blocking: true, async: false`, so a healthy GMS is proof they exist. The ingestion recipes are the exception -- `ingestion-datahub-gc` carries no `blocking` or `async` line at all and therefore takes the file's asynchronous defaults. It is the only entity any in-scope example reads that a healthy Quickstart is not guaranteed to hold.
+
+So `liveExample` gained a `waitForURN` field, polled through `datahubtesting.URNPresent` at 2-second intervals against a 90-second budget, before the first apply. **Exhausting the budget fails the example.** The design said "skip the example with a clear message", and that is wrong for a specific reason: the template is `optional: false` upstream, so its permanent absence is a defect in the server or in the example's premise. A skip converts that finding into a green run with one fewer example in it -- the same class of silent coverage loss `TestEveryRunnableExampleIsClassified` exists to prevent, arriving through a different door.
+
+Measured: on a freshly booted v1.7.0 Quickstart the poll returns on its first probe, so the entity is in fact already there by the time `datahub docker check` passes. That does not make the poll dead code -- it makes it cheap. The observation is one instance on one machine, and the failure it guards against would otherwise present as `datahub_ingestion_source` "not found" with nothing pointing at the bootstrap. The failure path was exercised deliberately by pointing `waitForURN` at a URN that will never exist: the example failed after 90.4 s with the budget, the asynchronous bootstrap and the `optional: false` reasoning all named in the message.
 
 ### 8. Assigning a structured property burns its Elasticsearch field name
 
@@ -410,27 +454,48 @@ qualifiedName='io.example.terraform.dpManagedBy')
 
 Two details in that result are worth more than the verdict. The failure lands in **phase 1**, on `datahub_structured_property.managed_by` -- the *definition* -- even though it was the phase-2 *assignment* that burned the field. That is the mechanism stated exactly: assignment writes the field, and the next attempt to define the same qualifiedName is what gets rejected. And it is why the harness's re-apply failure message names both known causes rather than only the husk: a husk is a bug to escalate, a burned field is confirmed-intended and the answer is a `noReapplyReason` entry.
 
-The example is currently a *deferred* exclusion, so it needs no `noReapplyReason` yet -- an entry there would be unreachable code in a table. **It needs one at the moment it joins the run list**, and the expansion slice must not discover this by watching a red CI run.
+The example was a *deferred* exclusion when that was written, so it needed no `noReapplyReason` yet -- an entry there would have been unreachable code in a table. **It needed one at the moment it joined the run list**, and the note existed so the expansion would not discover this by watching a red CI run. It did not: the entry landed with the promotion, citing #18974 and quoting the field name the server rejects.
 
-Two further examples in the deferred set define structured properties: `structured-property-simple` (assigns nothing -- re-applies cleanly, verified) and nothing else. So the expansion slice inherits exactly one new opt-out.
+The failure path was then exercised deliberately, because an opt-out installed for a reason nobody has watched fail is an opt-out nobody can audit. Commenting the `noReapplyReason` out and running against a fresh v1.7.0 Quickstart reproduces it exactly as described -- `re-apply (phase 1/2) after destroy failed`, on `datahub_structured_property.managed_by`, with the collision message naming `io_example_terraform_dpManagedBy`. The harness's own error text names both known causes and leaves the reader to distinguish them from the server's message, which is what it was written to do.
+
+One further example in the deferred set defines structured properties -- `structured-property-simple`, which assigns nothing. Its re-apply was predicted to succeed and does, across every run. So the expansion inherited exactly one new opt-out, as forecast.
 
 ### 7. Quickstart boot
 
 Image pulls fail, and the first pull takes 5-10 minutes. Already handled by `quickstart-up` polling `datahub docker check` to a 600s budget (`Makefile:87-96`); stage C inherits it by reusing the target.
 
+### 9. A predicted race that does not exist: `ownership-type-simple`
+
+Raised as the main risk of the expansion, investigated, and **not real against v1.7.0**. Recorded because the reasoning was good and only the server's actual behaviour refutes it, so the next person to read the configuration will predict the same thing.
+
+The prediction: `ownership-type-simple/main.tf` feeds `data.datahub_ownership_types.all.urns` -- `listOwnershipTypes`, GraphQL, OpenSearch-backed -- into a `for_each` keying `data.datahub_ownership_type.details`, which reads OpenAPI v3 and **hard-errors on absence** rather than returning nothing. In the window right after a destroy the list should still name the deleted types while the lookup 404s, so the re-apply should fail. Note this would be a defect in the published example, not a harness problem: any user running `terraform destroy && terraform apply` would hit it, and `noReapplyReason` would be inadmissible because the configuration *can* be applied twice.
+
+It did not fire in seven consecutive targeted runs, nor in any full-suite run. Rather than accept that as luck, the two read paths were measured directly through the API, writing and deleting an ownership type exactly the way the provider does (`POST /openapi/v3/entity/ownershiptype?async=false`, then the `deleteOwnershipType` mutation):
+
+| Transition | Observed |
+|---|---|
+| Create -> visible in `listOwnershipTypes` | **2.0 s** |
+| Delete -> gone from `listOwnershipTypes` | **under 0.1 s**, with the v3 entity endpoint 404 at the same instant |
+| Delete issued 1 s after create, before the create's index write lands | no stale entry in 15 s of polling at 4 Hz, three rounds |
+
+**The lag is entirely on the create side.** `deleteOwnershipType` removes the search document synchronously enough that no observable window exists in which the list names a type the singular lookup cannot resolve, and a delete that overtakes a pending create-side index write leaves nothing stranded either. The stale-list-plus-404-lookup shape the prediction depends on does not open.
+
+Two consequences worth keeping. Create-side lag of about 2 s is longer than the example's whole apply-destroy cycle, which is why `data.datahub_ownership_type.details` never covers the types the example itself creates -- the example's own comment says so, and this measures it. And the example keeps the re-apply check with no opt-out: if a future release makes the delete path asynchronous, that check is what reports it, in the one configuration positioned to notice.
+
 ## Open questions
 
-These are unresolved and should be settled empirically before or during implementation, not guessed at:
+These were unresolved when the design was written. Four of the five have since been settled empirically, which was the point of writing them down.
 
-1. Does a group's role assignment narrow the effective privileges of a member who already holds a stronger role? Determines whether `local-iam` is safe anywhere but last (flakiness item 4).
-2. Does a freshly healthy Quickstart always have `datahub-gc`? Determines whether `ingestion-source-lookup` is in scope unconditionally (flakiness item 6).
-3. What is the real wall-clock per example? Every figure in the cost table is an estimate.
-4. Is one whole-configuration destroy retry enough for `domain-simple` in practice, or does the in-provider backoff already cover it and make the harness retry dead code?
+1. ~~Does a group's role assignment narrow the effective privileges of a member who already holds a stronger role?~~ **Answered: no.** DataHub authorization is ALLOW-only and additive, and the Quickstart `datahub` account's Admin comes from `boot/policies.json` naming the user URN directly rather than from role matching, which no group assignment can reach. Flakiness item 4 carries the detail; the mitigation the question was protecting is withdrawn.
+2. ~~Does a freshly healthy Quickstart always have `datahub-gc`?~~ **Answered in practice, guarded anyway.** It is present on the first probe after `datahub docker check` passes, but it is the one bootstrap entity any in-scope example reads that is declared asynchronous, so `waitForURN` polls for it rather than assuming. See flakiness item 6.
+3. ~~What is the real wall-clock per example?~~ **Measured**, for all sixteen, twice, in the cost table above. No figure there is an estimate any more.
+4. Is one whole-configuration destroy retry enough for `domain-simple` in practice, or does the in-provider backoff already cover it and make the harness retry dead code? **Still open**, and now open in a sharper form: across every run in the expansion the harness's retry has never fired for any example, so it remains unexercised rather than proven sufficient. The child-domain race it exists for is real (datahub-project/datahub#17732) and has been seen in the nightly, so removing the retry on the strength of not having needed it locally would be the wrong reading.
+5. **New, opened by the expansion:** is `data.datahub_ownership_type` the only place a GraphQL list feeds a hard-erroring singular lookup? The pattern was investigated for `ownership-type-simple` and found safe against v1.7.0 (flakiness item 9) because the delete side of `listOwnershipTypes` is not lagged. Whether that holds for `searchAcrossEntities`-backed lists -- which is what `tag-simple`, `data-product-simple` and `structured-property-simple` read -- was not tested, because none of those examples feeds its plural result into a singular lookup. An example that did would need this answered first.
 
 ## Follow-up work this design implies
 
 Small, independently useful, and not blocking:
 
-- Export a `datahubtesting.AssertURNAbsent` that composes `AssertEntityAbsent`'s absence semantics with `describeStillExists`'s classification.
-- Add a computed `urn` attribute to `datahub_ingestion_source`, the only entity resource missing one (`ingestion_source_resource.go:106`), which would remove the special case from the harness's URN harvest.
+- ~~Export a `datahubtesting.AssertURNAbsent` that composes `AssertEntityAbsent`'s absence semantics with `describeStillExists`'s classification.~~ Done; `internal/provider/datahubtesting/urn_presence.go` also carries `CheckURNAbsent` and `URNPresent`, the latter now doing double duty for the `waitForURN` preflight.
+- Add a computed `urn` attribute to `datahub_ingestion_source`, the only entity resource missing one (`ingestion_source_resource.go:106`), which would remove the special case from the harness's URN harvest. **Three examples now depend on that special case** (`secret-basic`, `ingestion-source-csv-enricher`, `connection-snowflake-ingestion-source`), where the first slice had none -- so `urnTemplate` is load-bearing rather than theoretical, and corrupting it was confirmed to fail the after-apply presence check with the entity named.
 - `examples/runnable/provider-install-verification/main.tf` has no `required_version` constraint and declares an `output` in `main.tf`, both against the example conventions in `CLAUDE.md`. Unrelated to stage C, but it is the example the registry smoke test runs.
