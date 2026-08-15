@@ -290,8 +290,14 @@ func (s *mockServer) handleFormItem(w http.ResponseWriter, r *http.Request) {
 		}
 		info := map[string]any{
 			"name":    f.Name,
-			"type":    f.Type,
 			"prompts": prompts,
+		}
+		// The stored aspect omits type when it was never set (FormInfo.type has
+		// no PDL default): a form seeded via /test-control/seed-form reads back
+		// without it, the way an SDK-written aspect does. Every mutation path
+		// sets it, so provider-created forms always carry it.
+		if f.Type != "" {
+			info["type"] = f.Type
 		}
 		if f.Description != "" {
 			info["description"] = f.Description
@@ -320,12 +326,18 @@ func (s *mockServer) handleFormItem(w http.ResponseWriter, r *http.Request) {
 			for _, group := range f.Assignment {
 				ands := make([]map[string]any, 0, len(group))
 				for _, crit := range group {
-					ands = append(ands, map[string]any{
-						"field":     crit.Field,
-						"values":    crit.Values,
-						"condition": crit.Condition,
-						"negated":   crit.Negated,
-					})
+					cm := map[string]any{
+						"field":   crit.Field,
+						"values":  crit.Values,
+						"negated": crit.Negated,
+					}
+					// A serialiser that drops defaulted fields omits condition;
+					// seeded criteria reproduce that, mutation-written ones
+					// always carry it.
+					if crit.Condition != "" {
+						cm["condition"] = crit.Condition
+					}
+					ands = append(ands, cm)
 				}
 				orGroups = append(orGroups, map[string]any{"and": ands})
 			}
@@ -339,6 +351,71 @@ func (s *mockServer) handleFormItem(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(entity)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+// handleSeedForm injects a form into the mock store without going through the
+// createForm mutation -- standing in for a form written by the DataHub Python
+// SDK or UI, whose stored aspect can omit `type` and filter `condition`
+// entirely. Import tests need this: importing a form the provider itself wrote
+// cannot exercise the read-path defaults, because the provider's write path
+// always sends those fields.
+//
+//	POST /test-control/seed-form
+//	{"id":"...","name":"...","orFilters":[[{"field":"platform.keyword","values":["..."]}]]}
+func (s *mockServer) handleSeedForm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Type      string `json:"type"`
+		OrFilters [][]struct {
+			Field     string   `json:"field"`
+			Values    []string `json:"values"`
+			Condition string   `json:"condition"`
+			Negated   bool     `json:"negated"`
+		} `json:"orFilters"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" || body.Name == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	f := mockForm{ID: body.ID, Name: body.Name, Type: body.Type}
+	for _, group := range body.OrFilters {
+		var g []mockFilterCriterion
+		for _, c := range group {
+			g = append(g, mockFilterCriterion{
+				Field:     c.Field,
+				Values:    c.Values,
+				Condition: c.Condition,
+				Negated:   c.Negated,
+			})
+		}
+		f.Assignment = append(f.Assignment, g)
+	}
+
+	s.mu.Lock()
+	s.forms[body.ID] = f
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SeedRawForm injects a form into the mock store at baseURL via
+// /test-control/seed-form, bypassing the provider's own write path. Stands in
+// for a form authored by the Python SDK or the DataHub UI, whose stored aspect
+// omits `type` and filter `condition`. Mock-only.
+func SeedRawForm(baseURL, bodyJSON string) {
+	resp, err := http.Post(baseURL+"/test-control/seed-form", "application/json", strings.NewReader(bodyJSON)) //nolint:noctx
+	if err != nil {
+		panic(fmt.Sprintf("SeedRawForm: %v", err))
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		panic(fmt.Sprintf("SeedRawForm: unexpected status %d", resp.StatusCode))
 	}
 }
 

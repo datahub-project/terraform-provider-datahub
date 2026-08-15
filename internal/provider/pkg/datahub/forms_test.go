@@ -185,6 +185,161 @@ func TestUpsertForm_EmptyPromptsClears(t *testing.T) {
 	}
 }
 
+// graphQLErrorServer returns a server that answers every request with an HTTP
+// 200 carrying a GraphQL errors array -- the shape DataHub uses for privilege
+// and validation failures.
+func graphQLErrorServer(t *testing.T, msg string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errors":[{"message":"` + msg + `"}]}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+// TestUpsertForm_GraphQLErrorSurfaced pins the nastiest GraphQL failure shape:
+// HTTP 200 with an errors array (e.g. the caller lacks MANAGE_FORMS). If the
+// errors check were lost, the create would report success while writing
+// nothing, and the next Read would remove the resource from state.
+func TestUpsertForm_GraphQLErrorSurfaced(t *testing.T) {
+	server := graphQLErrorServer(t, "Unauthorized to perform this action")
+
+	_, err := newTestClient(t, server).UpsertForm(t.Context(), FormInput{ID: "x", Name: "X"})
+	if err == nil {
+		t.Fatal("UpsertForm() = nil error on a GraphQL errors response; a failed write would look like success")
+	}
+	if !strings.Contains(err.Error(), "Unauthorized to perform this action") {
+		t.Errorf("error %q does not carry the server message", err)
+	}
+}
+
+// TestUpsertDynamicFormAssignment_GraphQLErrorSurfaced covers the same silent
+// success class for the assignment mutation.
+func TestUpsertDynamicFormAssignment_GraphQLErrorSurfaced(t *testing.T) {
+	server := graphQLErrorServer(t, "Form urn:li:form:x does not exist")
+
+	err := newTestClient(t, server).UpsertDynamicFormAssignment(t.Context(), "urn:li:form:x",
+		[]AndFilter{{And: []FacetFilter{{Field: "platform.keyword", Values: []string{"v"}}}}})
+	if err == nil {
+		t.Fatal("UpsertDynamicFormAssignment() = nil error on a GraphQL errors response")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("error %q does not carry the server message", err)
+	}
+}
+
+// TestDeleteForm_NotFoundTolerated verifies destroying an already-deleted form
+// succeeds. Without the tolerance a user whose form was removed out-of-band
+// could never complete a destroy.
+func TestDeleteForm_NotFoundTolerated(t *testing.T) {
+	for _, msg := range []string{
+		"Failed to delete: entity not found",
+		"Form urn:li:form:x does not exist",
+	} {
+		server := graphQLErrorServer(t, msg)
+		if err := newTestClient(t, server).DeleteForm(t.Context(), "urn:li:form:x"); err != nil {
+			t.Errorf("DeleteForm() with %q = %v, want nil (already gone is success)", msg, err)
+		}
+	}
+}
+
+// TestDeleteForm_OtherErrorSurfaced is the boundary of that tolerance: any
+// other failure must surface, or a destroy would report success while the form
+// keeps assigning itself to entities.
+func TestDeleteForm_OtherErrorSurfaced(t *testing.T) {
+	server := graphQLErrorServer(t, "Unauthorized to perform this action")
+
+	err := newTestClient(t, server).DeleteForm(t.Context(), "urn:li:form:x")
+	if err == nil {
+		t.Fatal("DeleteForm() = nil error; a failed delete would look like success")
+	}
+	if !strings.Contains(err.Error(), "Unauthorized") {
+		t.Errorf("error %q does not carry the server message", err)
+	}
+}
+
+// TestGetFormByURN_ServerErrorIsNotAbsent pins that a 5xx is an error, not
+// (nil, nil): treating a transient failure as "gone" would make Read remove
+// the resource from state and the next apply recreate it.
+func TestGetFormByURN_ServerErrorIsNotAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "opensearch unavailable", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	form, err := newTestClient(t, server).GetFormByURN(t.Context(), "urn:li:form:x")
+	if err == nil {
+		t.Fatal("GetFormByURN() = nil error on HTTP 500; the resource would be dropped from state")
+	}
+	if form != nil {
+		t.Errorf("form = %+v, want nil alongside the error", form)
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error %q does not carry the status code", err)
+	}
+}
+
+// TestGetFormByURN_HuskIsAbsent verifies an entity response carrying neither
+// owned aspect (the CAT-2583 husk shape: a URN with only status/system
+// aspects) is treated as absent. Parsing it as a form would clobber state with
+// empty name and prompts instead of flagging the entity for recreation.
+func TestGetFormByURN_HuskIsAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"urn":"urn:li:form:husk"}`))
+	}))
+	defer server.Close()
+
+	form, err := newTestClient(t, server).GetFormByURN(t.Context(), "urn:li:form:husk")
+	if err != nil {
+		t.Fatalf("GetFormByURN() error = %v", err)
+	}
+	if form != nil {
+		t.Errorf("GetFormByURN(husk) = %+v, want nil", form)
+	}
+}
+
+// TestGetFormByURN_MissingKeyDerivesIDFromURN verifies the id falls back to
+// the URN suffix when the response carries formInfo but no formKey, which the
+// entity endpoint is free to do (the key aspect is reconstructible).
+func TestGetFormByURN_MissingKeyDerivesIDFromURN(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"urn":"urn:li:form:keyless","formInfo":{"value":{"name":"Keyless"}}}`))
+	}))
+	defer server.Close()
+
+	form, err := newTestClient(t, server).GetFormByURN(t.Context(), "urn:li:form:keyless")
+	if err != nil {
+		t.Fatalf("GetFormByURN() error = %v", err)
+	}
+	if form == nil {
+		t.Fatal("GetFormByURN() = nil")
+	}
+	if form.ID != "keyless" {
+		t.Errorf("ID = %q, want %q (derived from the URN)", form.ID, "keyless")
+	}
+}
+
+// TestClearDynamicFormAssignment_ServerErrorSurfaced is the boundary of the
+// 404-is-success tolerance: a 5xx must fail, or "remove the assignment" would
+// silently leave the form assigning itself to every matching entity.
+func TestClearDynamicFormAssignment_ServerErrorSurfaced(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "aspect delete failed", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := newTestClient(t, server).ClearDynamicFormAssignment(t.Context(), "urn:li:form:x")
+	if err == nil {
+		t.Fatal("ClearDynamicFormAssignment() = nil error on HTTP 500; the assignment would silently persist")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error %q does not carry the status code", err)
+	}
+}
+
 // TestClearDynamicFormAssignment_NotFoundOK verifies a 404 on the aspect
 // DELETE is success (aspect already absent).
 func TestClearDynamicFormAssignment_NotFoundOK(t *testing.T) {

@@ -195,6 +195,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
+	mux.HandleFunc("/test-control/seed-form", s.handleSeedForm)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
 	srv := httptest.NewServer(mux)
