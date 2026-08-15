@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-15
+
 ### Added
 
 - **`datahub_structured_property` now takes an optional `version`**, which is the only durable way out of a trap the previous entry documented but could not escape. Once any asset carries a value for a property, deleting the property does not release the Elasticsearch field name DataHub derived from its qualified name, so creating the same `property_id` again is refused with "Elasticsearch field ... collides with existing property mapping". Before this, a Terraform user facing that had two options: ask an operator to reindex every entity index, or burn a fresh `property_id` each cycle -- which buys one more turn rather than fixing anything, since assigning the new name burns that too. A versioned definition derives a different field name, so it is not the same field and cannot collide. Upstream recommends exactly this in [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), as the alternative to hard-deleting a property you need to change. Changing the value updates the property in place on the same URN rather than replacing it, and the `datahub_structured_property` data source now reports the current version so you know what you have to exceed.
@@ -433,7 +435,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.19.1...v0.20.0
