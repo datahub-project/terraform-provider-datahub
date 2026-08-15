@@ -61,6 +61,16 @@ type liveExample struct {
 	// and it is not an exemption: the assertion is that the restore happened.
 	mustSurvive []string
 
+	// waitForURN is an entity the example READS but does not create, polled for
+	// before the first apply. Set only where the entity is written by an
+	// asynchronous bootstrap template, so a Quickstart that has just passed
+	// `datahub docker check` may not hold it yet.
+	//
+	// It is a wait, never a skip. Exhausting the budget fails the example, because
+	// every entity worth naming here is optional: false upstream and its permanent
+	// absence is therefore a defect rather than a reason to run one example fewer.
+	waitForURN string
+
 	// noReapplyReason opts an example out of the re-apply-and-destroy-again cycle,
 	// which otherwise runs for every example. Empty means it runs; a non-empty
 	// value both suppresses it and says why, because an opt-out nobody can audit
@@ -103,9 +113,11 @@ type liveExample struct {
 // Several examples read instance-wide plural data sources and so appear in each
 // other's outputs no matter what their entities are called.
 //
-// This is the first slice, not the intended end state. Ten further examples are
-// classified as deferred below; the slice exists to measure real wall-clock and
-// exercise both known flake classes before committing to that surface.
+// This is now every runnable example that can run against an OSS Quickstart.
+// The first slice ran six and left ten deferred so that real wall-clock could be
+// measured before committing to the surface; the measurement came back at about
+// a second per example against a 178-second boot, which removed the argument for
+// staging. Every remaining entry in the exclusion table below is permanent.
 var liveExamples = []liveExample{
 	// Credential preflight. Creates nothing, and fails in seconds when the PAT
 	// or GMS URL is wrong -- before an hour of Quickstart time is spent.
@@ -116,6 +128,26 @@ var liveExamples = []liveExample{
 	// changes, which is the false-failure class the plan assertion must tolerate.
 	{dir: "tag-simple"},
 
+	// Two ownership types, and the only example that feeds a GraphQL list
+	// straight into a strongly-consistent singular lookup: for_each over
+	// data.datahub_ownership_types.all (listOwnershipTypes, OpenSearch-backed)
+	// keying data.datahub_ownership_type.details (OpenAPI v3, which hard-errors
+	// on absence rather than returning nothing).
+	//
+	// That pairing was expected to break the re-apply: right after a destroy the
+	// list should still name the deleted types while the lookup 404s. It does
+	// not, and the reason is measurable rather than lucky -- against v1.7.0 the
+	// lag is entirely on the CREATE side (about 2s before a new type appears in
+	// the list), while deleteOwnershipType drops the search document in under
+	// 100ms, with the v3 endpoint returning 404 at the same instant. There is no
+	// window in which the two disagree in the direction that hurts. Deleting
+	// before the create's index write lands leaves nothing stranded either.
+	//
+	// So no flags, and deliberately no noReapplyReason: that check is what would
+	// report a future release making the delete path asynchronous, in the one
+	// configuration positioned to notice. See flakiness item 9 in the design.
+	{dir: "ownership-type-simple"},
+
 	// Three-level hierarchy, four children across two parents: hits the
 	// child-domain delete race by construction.
 	//
@@ -125,6 +157,14 @@ var liveExamples = []liveExample{
 	// configuration a second time exercises that repair path rather than merely
 	// hoping not to need it.
 	{dir: "domain-simple", serialDestroy: true},
+
+	// Four glossary nodes and four terms, two levels deep. No flags, and the
+	// absence of serialDestroy is the deliberate half: unlike domains, DataHub
+	// enforces no child guard on glossary node deletion, so there is no
+	// stale-index race for -parallelism=1 to narrow. Ordering here comes from the
+	// parent_node .urn references in the configuration itself, which is exactly
+	// what the example is teaching.
+	{dir: "glossary-node-term-simple"},
 
 	// The worst CAT-2583 shape in the tree: deletes structured properties that
 	// are assigned to entities the same destroy removes. CHANGELOG.md records
@@ -164,6 +204,128 @@ var liveExamples = []liveExample{
 			"issue reports the mapping being reclaimed on delete.",
 	},
 
+	// The other end of the structured-property spectrum: it DEFINES two
+	// properties and assigns them to nothing.
+	//
+	// settleAfterDestroy is deliberately FALSE, and the asymmetry with the entry
+	// above is the point rather than an oversight. The CAT-2583 side effect
+	// scrolls the search index for entities CARRYING the property and JSON-PATCHes
+	// each hit; the resurrection is a patch landing on a concurrently hard-deleted
+	// carrier. With zero carriers there is no scroll result, no patch, and nothing
+	// to race -- so a pause would buy fifteen seconds against a mechanism this
+	// configuration cannot trigger. The end-of-run sweep re-checks every URN
+	// anyway, so if that reasoning is ever wrong the run still says so.
+	//
+	// It also keeps the re-apply check for the same underlying reason: a
+	// definition writes no Elasticsearch field (structuredProperties is a dynamic
+	// mapping, so the field appears only once a document carries a value), so
+	// there is nothing here to burn.
+	{dir: "structured-property-simple"},
+
+	// The only phased example, and the only one whose provider block is part of
+	// what is under test. main.tf puts the marker tag and structured-property URNs
+	// inside provider "datahub" { defaults = ... }, and provider configuration is
+	// evaluated before any resource in the same apply -- so the first apply must
+	// run with defaults OFF to create them, and the second with defaults ON to
+	// exercise them. Replaying only the last phase would apply a configuration
+	// whose precondition was never established.
+	//
+	// The phases are also why assertOutputsUsable can be strict here: several
+	// outputs are documented as null while defaults are off, and that assertion
+	// runs once after the phase loop, so it only ever sees phase-2 values.
+	//
+	// settleAfterDestroy because the marker property is assigned -- through
+	// provider defaults rather than an explicit assignment resource, but assigned
+	// -- to two data products the same destroy removes. That is the CAT-2583
+	// shape, one entity type removed from structured-and-custom-properties.
+	//
+	// The re-apply opt-out is established empirically, not inferred from that
+	// shape: promoted into the run list against a fresh v1.7.0 Quickstart, its
+	// re-apply fails in PHASE 1, on datahub_structured_property.managed_by -- the
+	// definition -- even though it was the phase-2 assignment that burned the
+	// field. Assignment writes the Elasticsearch field; the next attempt to define
+	// the same qualifiedName is what gets rejected.
+	{
+		dir: "data-product-simple",
+		phases: []map[string]string{
+			{"enable_defaults": "false"},
+			{"enable_defaults": "true"},
+		},
+		settleAfterDestroy: true,
+		noReapplyReason: "the provider defaults assign io.example.terraform.dpManagedBy to both " +
+			"data products, which burns that Elasticsearch field name; deleting the property " +
+			"does not release it, so phase 1 of any second apply is rejected with " +
+			"\"Elasticsearch field 'io_example_terraform_dpManagedBy' collides with existing " +
+			"property mapping\". Confirmed as intended behaviour with reclaim deferred to " +
+			"system-update on datahub-project/datahub#18974. Sweep condition: re-enable this " +
+			"check when that issue reports the mapping being reclaimed on delete.",
+	},
+
+	// datahub_secret plus an ingestion source referencing it by name.
+	//
+	// value is Required and WriteOnly on the resource while var.secret_value
+	// defaults to null, so the variable is needed on apply -- and on destroy too,
+	// since terraform still evaluates the configuration there. The harness passes
+	// vars to every invocation, so nothing extra is required for that.
+	//
+	// The value itself is inert: DataHub encrypts it server-side and nothing in
+	// this run ever decrypts it. Naming it so it reads as a harness artefact
+	// matters more than making it look plausible.
+	{
+		dir:  "secret-basic",
+		vars: map[string]string{"secret_value": "tf-example-live-not-a-real-secret"},
+	},
+
+	// One ingestion source and nothing else. Its interest is in the harvest
+	// rather than the configuration: datahub_ingestion_source is the only entity
+	// resource in the provider with no urn attribute, so this is the only example
+	// that exercises urnTemplate. Break that template and the presence check after
+	// apply is the first thing to notice.
+	//
+	// The CSV at main.tf is fetched by the executor when a run is triggered, not
+	// by terraform, so apply needs no network.
+	{dir: "ingestion-source-csv-enricher"},
+
+	// Three variables have no default because they are credentials, and synthetic
+	// values suffice: upsertConnection stores an encrypted JSON blob and DataHub
+	// never dials Snowflake with it (connections.go), so a connection built from
+	// nonsense applies, reads back and destroys exactly like a real one. Delete
+	// goes through OpenAPI v3 rather than GraphQL precisely because the mutation
+	// is absent in OSS, which is a path only a live run covers.
+	{
+		dir: "connection-snowflake",
+		vars: map[string]string{
+			"snowflake_account_id": "tf-example-live.us-east-1",
+			"snowflake_username":   "tf-example-live",
+			"snowflake_password":   "tf-example-live-not-a-real-secret",
+		},
+	},
+
+	// The same connection wired into an ingestion source whose recipe references
+	// it by URN. Same synthetic credentials, same reason they are sufficient.
+	{
+		dir: "connection-snowflake-ingestion-source",
+		vars: map[string]string{
+			"snowflake_account_id": "tf-example-live.us-east-1",
+			"snowflake_username":   "tf-example-live",
+			"snowflake_password":   "tf-example-live-not-a-real-secret",
+		},
+	},
+
+	// Read-only: one data.datahub_ingestion_source. It creates nothing, so the
+	// re-apply check skips itself off the empty harvest -- derived, not tabled,
+	// which is what keeps it from going stale if the example ever grows a resource.
+	//
+	// waitForURN is the one thing it does need. The example asserts datahub-gc is
+	// "present on every DataHub instance", and that is true of a settled instance
+	// but not necessarily of one that has just passed `datahub docker check`:
+	// bootstrap_mcps.yaml declares ingestion-datahub-gc with no blocking/async
+	// overrides, so it takes the file's defaults (blocking: false, async: true),
+	// unlike root-user, roles, ownership-types and page-templates which are all
+	// explicitly blocking and synchronous. It is optional: false, so it does
+	// arrive -- the poll waits for it and fails if it never does.
+	{dir: "ingestion-source-lookup", waitForURN: "urn:li:dataHubIngestionSource:datahub-gc"},
+
 	// New with #116. Two modules and a template nothing points at, no variables:
 	// the boring case, which is what makes it a useful control.
 	{dir: "page-template-simple"},
@@ -189,6 +351,34 @@ var liveExamples = []liveExample{
 			"test_user_password": "", // filled per run; see liveVars
 		},
 		mustSurvive: []string{"datahub_page_template.home"},
+	},
+
+	// The broadest example in the tree: a group, a native login, a catalog-only
+	// user, three memberships, a role assignment and a policy. It is also the only
+	// one that touches the identity the harness authenticates as, which is why it
+	// runs last -- not a constraint the harness depends on, just the cheapest way
+	// to bound the blast radius if that ever turns out to matter.
+	//
+	// It does NOT override member_username, and the design's preferred mitigation
+	// (point it at a throwaway user) is retired rather than deferred. That
+	// mitigation existed to route around an unanswered question -- whether a
+	// group's Editor assignment could NARROW the Admin the harness's own token
+	// relies on -- and the answer is that it cannot. DataHub authorization is
+	// ALLOW-only and additive, and the Quickstart datahub account's Admin does not
+	// come from role matching at all: boot/policies.json names
+	// urn:li:corpuser:datahub directly as an actor on the platform policies, which
+	// no group assignment can reach. The mitigation was also unimplementable as
+	// written, since a Quickstart has no throwaway user to point at.
+	//
+	// new_member_email IS overridden, for the unrelated OSS signUp guard: it
+	// rejects signUp whenever the user entity exists at all, so a fixed address is
+	// poisoned permanently by one failed destroy. Left blank here and randomised
+	// per run; see liveVars.
+	{
+		dir: "local-iam",
+		vars: map[string]string{
+			"new_member_email": "", // filled per run; see liveVars
+		},
 	},
 }
 
@@ -228,38 +418,10 @@ var liveExampleExclusions = map[string]liveExclusion{
 		permanent: true,
 	},
 
-	// Deferred: these run on a Quickstart and are intended for the expansion
-	// slice, once the first slice has measured what a live run actually costs.
-	"connection-snowflake": {
-		reason: "deferred to the expansion slice; runs on Quickstart (DataHub stores the connection blob without ever dialling Snowflake) but needs three synthetic variables",
-	},
-	"connection-snowflake-ingestion-source": {
-		reason: "deferred to the expansion slice; same synthetic variables as connection-snowflake",
-	},
-	"data-product-simple": {
-		reason: "deferred to the expansion slice; needs the two-phase apply (enable_defaults false then true) and carries CAT-2583 exposure",
-	},
-	"glossary-node-term-simple": {
-		reason: "deferred to the expansion slice; no blockers",
-	},
-	"ingestion-source-csv-enricher": {
-		reason: "deferred to the expansion slice; no blockers (the CSV is fetched by the executor at ingestion time, not by terraform)",
-	},
-	"ingestion-source-lookup": {
-		reason: "deferred to the expansion slice; additionally needs a preflight probe for datahub-gc, since whether a freshly healthy Quickstart has finished creating its system ingestion sources is unverified",
-	},
-	"local-iam": {
-		reason: "deferred to the expansion slice; needs a member_username override so the example does not modify the group membership of the account the harness authenticates as, plus a per-run unique email for the OSS signUp guard",
-	},
-	"ownership-type-simple": {
-		reason: "deferred to the expansion slice; no blockers",
-	},
-	"secret-basic": {
-		reason: "deferred to the expansion slice; needs TF_VAR_secret_value, which has no default",
-	},
-	"structured-property-simple": {
-		reason: "deferred to the expansion slice; narrow CAT-2583 exposure (properties assigned to nothing)",
-	},
+	// No deferred entries remain: every Quickstart-capable example is in the run
+	// list. The permanent flag stays load-bearing rather than vestigial -- it is
+	// what a future reader needs to tell "this can never run here" from "not yet",
+	// and the next example that is merely awkward will want it again.
 }
 
 // TestEveryRunnableExampleIsClassified is the point of the whole mechanism: an

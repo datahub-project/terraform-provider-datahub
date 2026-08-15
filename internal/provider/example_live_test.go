@@ -64,6 +64,21 @@ const settleAfterDestroyPause = 15 * time.Second
 // instance clean, but bounded so a hung destroy cannot hold the whole run open.
 const cleanupDestroyTimeout = 15 * time.Minute
 
+// waitForURNBudget and waitForURNInterval bound the preflight poll an example
+// can ask for via waitForURN.
+//
+// The budget is deliberately generous against what it is waiting for. DataHub's
+// asynchronous bootstrap templates are ingested through the same MCP pipeline as
+// any other write, so the wait is one round trip through Kafka and the ingestion
+// consumer rather than a fixed startup step -- and a contended runner stretches
+// that. Ninety seconds is long enough that exhausting it says something real
+// happened, and short enough that a genuinely absent entity does not cost the
+// run its timeout.
+const (
+	waitForURNBudget   = 90 * time.Second
+	waitForURNInterval = 2 * time.Second
+)
+
 // urnAttribute maps a resource type to the state attribute holding its URN,
 // where that is not the conventional "urn".
 //
@@ -225,6 +240,11 @@ func reportLateReappearance(t *testing.T, run liveExampleRun, h harvestedURN) {
 // and what its teardown did so the sweep can interpret a reappearance.
 func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) ([]harvestedURN, *teardownOutcome) {
 	t.Helper()
+
+	// Before anything is copied or applied: wait for the entity this example
+	// reads but does not create. An example that looks one up would otherwise
+	// fail its apply for a reason that has nothing to do with the provider.
+	awaitPreflightURN(t, env, ex)
 
 	dir := t.TempDir()
 	copyExampleDir(t, filepath.Join(env.examplesDir, "runnable", ex.dir), dir)
@@ -426,6 +446,62 @@ func runLiveExample(t *testing.T, env liveExampleEnv, ex liveExample) ([]harvest
 	}
 
 	return remaining, teardown
+}
+
+// awaitPreflightURN blocks until the entity named by ex.waitForURN exists, and
+// FAILS the example when it never does. A no-op for an example that names none.
+//
+// Polling rather than assuming, because DataHub's bootstrap is not one thing.
+// Most of the entities the examples lean on -- the root user, the built-in
+// roles, the ownership types, the page templates -- are declared blocking and
+// synchronous in bootstrap_mcps.yaml, so GMS is not healthy until they are
+// written and `datahub docker check` passing means they are there. The ingestion
+// recipes are not: ingestion-datahub-gc carries no overrides at all and so takes
+// the file's defaults, blocking: false and async: true. A Quickstart that has
+// just satisfied the health poll can therefore be missing it for a few seconds.
+//
+// Failing rather than skipping is the deliberate half. That template is
+// optional: false upstream, so its permanent absence is a defect in the server
+// or in this example's premise, and a skip would convert that finding into a
+// green run with one fewer example in it -- the exact shape of coverage loss the
+// classification test exists to prevent.
+func awaitPreflightURN(t *testing.T, env liveExampleEnv, ex liveExample) {
+	t.Helper()
+
+	if ex.waitForURN == "" {
+		return
+	}
+
+	start := time.Now()
+	deadline := start.Add(waitForURNBudget)
+	var lastErr error
+	for {
+		present, err := datahubtesting.URNPresent(t.Context(), env.client, ex.waitForURN)
+		switch {
+		case err != nil:
+			// Not fatal on its own: a probe can fail while the instance is still
+			// settling. Kept so the timeout message can say what went wrong rather
+			// than reporting a bare absence.
+			lastErr = err
+		case present:
+			t.Logf("[%s] preflight: %s present after %s", ex.dir, ex.waitForURN, time.Since(start).Round(time.Second))
+			return
+		default:
+			lastErr = nil
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("[%s] preflight: %s did not appear within %s. This example reads an "+
+				"entity it does not create, and that entity is written by an ASYNCHRONOUS "+
+				"bootstrap template (bootstrap_mcps.yaml declares ingestion recipes with "+
+				"blocking: false and async: true), so it can lag a healthy GMS. Exhausting "+
+				"the %s budget means something more than lag: the template is optional: "+
+				"false upstream, so permanent absence is a real defect rather than a reason "+
+				"to skip. Last probe error: %v",
+				ex.dir, ex.waitForURN, waitForURNBudget, waitForURNBudget, lastErr)
+		}
+		time.Sleep(waitForURNInterval)
+	}
 }
 
 // reapplySkipReason returns why the re-apply cycle does not run for ex, or the
@@ -826,12 +902,18 @@ func assertOutputsUsable(t *testing.T, env liveExampleEnv, dir string, vars map[
 
 // liveVars fills the per-run values the table leaves blank.
 //
-// Both are for home-page-layout. The email is randomised because
-// datahub_local_user_login is subject to the OSS signUp guard, which rejects the
-// request whenever the user entity exists at all -- so one failed destroy would
-// poison a fixed address permanently. The password exists because the attribute
-// is WriteOnly and therefore has no default anywhere; generating it here keeps
-// it out of state, out of the plan file and out of the repository.
+// Two of the three are randomised for one reason: datahub_local_user_login is
+// subject to the OSS signUp guard, which rejects the request whenever the user
+// entity exists AT ALL, not merely when it already has credentials. A fixed
+// address is therefore poisoned permanently by a single failed destroy, so
+// test_user_email (home-page-layout) and new_member_email (local-iam) each get a
+// fresh one per run. Note that the examples' published defaults are fine as
+// published -- a reader applies once against their own instance -- so this is a
+// harness concern and belongs here rather than in the .tf files.
+//
+// test_user_password exists for an unrelated reason: the attribute is WriteOnly
+// and so has no default anywhere. Generating it here keeps it out of state, out
+// of the plan file and out of the repository.
 func liveVars(t *testing.T, ex liveExample) map[string]string {
 	t.Helper()
 	if len(ex.vars) == 0 {
@@ -847,6 +929,8 @@ func liveVars(t *testing.T, ex liveExample) map[string]string {
 		switch k {
 		case "test_user_email":
 			vars[k] = fmt.Sprintf("tf-example-live-%s@example.invalid", randomSuffix(t))
+		case "new_member_email":
+			vars[k] = fmt.Sprintf("tf-example-live-iam-%s@example.invalid", randomSuffix(t))
 		case "test_user_password":
 			vars[k] = "TFLive-" + randomSuffix(t) + "-" + randomSuffix(t)
 		default:
@@ -1045,9 +1129,9 @@ func copyExampleDir(t *testing.T, src, dst string) {
 	}
 	for _, e := range entries {
 		if e.IsDir() {
-			// Examples carry fixtures/ and similar; none of the six in the first
-			// slice does, and copying a tree here would quietly bring along
-			// whatever a future example puts there.
+			// Examples carry fixtures/ and similar; none of the sixteen in the run
+			// list does, and copying a tree here would quietly bring along whatever
+			// a future example puts there.
 			continue
 		}
 		if !strings.HasSuffix(e.Name(), ".tf") {
