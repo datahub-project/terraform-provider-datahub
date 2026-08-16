@@ -18,6 +18,8 @@ Terraform provider for managing DataHub platform configuration as code.
 
 **Terraform version:** Most resources work with any recent Terraform version. Resources that use WriteOnly attributes (`datahub_secret`, `datahub_connection`) require Terraform >= 1.11; add `required_version = ">= 1.11"` to your `terraform {}` block when using those resources.
 
+**Release notes:** per-version changes are published on [GitHub Releases](https://github.com/datahub-project/terraform-provider-datahub/releases).
+
 ## Example Usage
 
 ```terraform
