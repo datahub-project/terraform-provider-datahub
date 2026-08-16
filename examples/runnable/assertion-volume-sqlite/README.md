@@ -41,11 +41,11 @@ datahub ingest -c <(terraform output -raw ingestion_source_urn | \
   python3 -c "import sys,json,yaml; print(yaml.dump(json.loads(sys.stdin.read())))")
 ```
 
-Simpler alternative: trigger ingestion from the DataHub Cloud UI (Ingestion -> Run now on the `TF Example SQLite - Assertion Dataset` source).
+Simpler alternative: trigger ingestion from the DataHub Cloud UI. Open **Ingestion**, find the `TF Example SQLite - Assertion Dataset` source, and click the play icon in its row (tooltip: **Execute**), then confirm.
 
 ### 4. Run the assertion (should PASS)
 
-In DataHub Cloud UI: navigate to the `tf_test_data` dataset -> **Observe** tab -> click **Run** on the volume assertion.
+In DataHub Cloud UI: navigate to the `tf_test_data` dataset -> **Quality** tab -> click **Run** on the volume assertion.
 
 Expected result: **PASS** (150 >= 100).
 

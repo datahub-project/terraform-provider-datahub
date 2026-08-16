@@ -43,8 +43,9 @@ func (d *organizationDisplayPreferencesDataSource) Schema(_ context.Context, _ d
 	resp.Schema = schema.Schema{
 		MarkdownDescription: cloudOnlyBadge +
 			"Reads the organization-wide display preferences shown in DataHub under " +
-			"**Settings -> Preferences** (the organization name and logo that brand the UI), " +
-			"without taking ownership of them in Terraform state.\n\n" +
+			"**Settings -> Preferences -> Appearance**, in the **Branding** section (the " +
+			"organization name and logo that brand the UI), without taking ownership of them " +
+			"in Terraform state.\n\n" +
 			"Takes no arguments: DataHub stores these settings on a single global settings " +
 			"object, so there is exactly one set per instance. Useful for reusing the " +
 			"organization name elsewhere in a configuration, or for inspecting current branding " +

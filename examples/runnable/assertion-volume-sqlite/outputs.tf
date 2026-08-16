@@ -8,9 +8,9 @@ output "ingestion_source_urn" {
   value       = "urn:li:dataHubIngestionSource:${datahub_ingestion_source.sqlite_profile.source_id}"
 }
 
-output "observe_url_hint" {
+output "quality_tab_hint" {
   description = "Navigation path to view the assertion result in DataHub."
-  value       = "In DataHub: navigate to the tf_test_data dataset -> Observe tab -> run the assertion manually."
+  value       = "In DataHub: navigate to the tf_test_data dataset -> Quality tab -> run the assertion manually."
 }
 
 output "seed_command_150_rows" {
