@@ -4,7 +4,7 @@ page_title: "datahub_organization_display_preferences Resource - datahub"
 subcategory: ""
 description: |-
   DataHub ❌ | DataHub Cloud ✅
-  Manages the organization-wide display preferences shown in DataHub under Settings -> Preferences: the organization name and logo that brand the UI for every user.
+  Manages the organization-wide display preferences shown in DataHub under Settings -> Preferences -> Appearance, in the Branding section: the organization name and logo that brand the UI for every user.
   These are org-wide platform settings, not per-user preferences. The language selector on the same settings page is a per-user choice and is deliberately not managed by this provider.
   Singleton
   DataHub stores these settings on a single, always-present global settings object, so this resource is a singleton: there is no id to supply, and at most one instance should exist in a configuration. Applying it updates the existing settings rather than creating anything; terraform destroy resets the managed fields to DataHub's defaults rather than deleting the settings object.
@@ -18,7 +18,7 @@ description: |-
 
 **DataHub ❌ | DataHub Cloud ✅**
 
-Manages the organization-wide display preferences shown in DataHub under **Settings -> Preferences**: the organization name and logo that brand the UI for every user.
+Manages the organization-wide display preferences shown in DataHub under **Settings -> Preferences -> Appearance**, in the **Branding** section: the organization name and logo that brand the UI for every user.
 
 These are org-wide platform settings, not per-user preferences. The language selector on the same settings page is a per-user choice and is deliberately not managed by this provider.
 

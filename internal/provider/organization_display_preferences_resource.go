@@ -54,8 +54,8 @@ func (r *organizationDisplayPreferencesResource) Schema(_ context.Context, _ res
 	resp.Schema = schema.Schema{
 		MarkdownDescription: cloudOnlyBadge +
 			"Manages the organization-wide display preferences shown in DataHub under " +
-			"**Settings -> Preferences**: the organization name and logo that brand the UI for " +
-			"every user.\n\n" +
+			"**Settings -> Preferences -> Appearance**, in the **Branding** section: the " +
+			"organization name and logo that brand the UI for every user.\n\n" +
 			"These are org-wide platform settings, not per-user preferences. The language " +
 			"selector on the same settings page is a per-user choice and is deliberately not " +
 			"managed by this provider.\n\n" +

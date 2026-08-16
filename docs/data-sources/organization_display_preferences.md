@@ -4,7 +4,7 @@ page_title: "datahub_organization_display_preferences Data Source - datahub"
 subcategory: ""
 description: |-
   DataHub ❌ | DataHub Cloud ✅
-  Reads the organization-wide display preferences shown in DataHub under Settings -> Preferences (the organization name and logo that brand the UI), without taking ownership of them in Terraform state.
+  Reads the organization-wide display preferences shown in DataHub under Settings -> Preferences -> Appearance, in the Branding section (the organization name and logo that brand the UI), without taking ownership of them in Terraform state.
   Takes no arguments: DataHub stores these settings on a single global settings object, so there is exactly one set per instance. Useful for reusing the organization name elsewhere in a configuration, or for inspecting current branding before adopting the datahub_organization_display_preferences resource.
   A preference that has not been set is returned as null.
   Organization display preferences are a DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this data source; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
@@ -14,7 +14,7 @@ description: |-
 
 **DataHub ❌ | DataHub Cloud ✅**
 
-Reads the organization-wide display preferences shown in DataHub under **Settings -> Preferences** (the organization name and logo that brand the UI), without taking ownership of them in Terraform state.
+Reads the organization-wide display preferences shown in DataHub under **Settings -> Preferences -> Appearance**, in the **Branding** section (the organization name and logo that brand the UI), without taking ownership of them in Terraform state.
 
 Takes no arguments: DataHub stores these settings on a single global settings object, so there is exactly one set per instance. Useful for reusing the organization name elsewhere in a configuration, or for inspecting current branding before adopting the `datahub_organization_display_preferences` resource.
 
