@@ -53,15 +53,24 @@ output "ingestion_source_urn" {
 # emptying the state removes the outputs regardless. The README carries the
 # same two commands as literals for that reason, and they work at any time.
 #
-# Note the demo pack contains nine datasets, not one. These remove only the
-# dataset the contract pointed at; see the README to sweep the rest.
-output "cleanup_dataset_cli" {
-  description = "DataHub CLI command that hard-deletes the ingested dataset. Read it BEFORE terraform destroy; see the README for a copy that survives."
+# THESE COMMANDS ARE NOT A FULL CLEANUP, and the gap is large. The demo pack
+# does not ingest one dataset, or nine: it loads DataHub's entire sample
+# estate. A run against a previously empty instance created 58 entities across
+# 16 types -- datasets, ML features and feature tables, containers, charts, a
+# dashboard, tags, glossary terms and nodes, corp groups, posts, a query, a
+# data flow. The commands below remove the single dataset the contract pointed
+# at, which is what the contract needs and nothing more.
+#
+# The README has the method that removes the rest safely. Do not improvise one:
+# deleting by platform or by name will take entities that were not yours, and
+# DataHub's own admin account (urn:li:corpuser:datahub) is in that sample pack.
+output "cleanup_contract_dataset_cli" {
+  description = "Removes ONLY the dataset the contract used -- not the rest of the demo pack. See the README. Read this BEFORE terraform destroy."
   value       = "datahub delete --urn '${local.dataset_urn}' --hard"
 }
 
-output "cleanup_dataset_curl" {
-  description = "curl equivalent, for when the DataHub CLI is not installed. Read it BEFORE terraform destroy; see the README for a copy that survives."
+output "cleanup_contract_dataset_curl" {
+  description = "curl equivalent for the single contract dataset, for when the DataHub CLI is not installed. Read it BEFORE terraform destroy."
   value       = "curl -sS -X DELETE -H \"Authorization: Bearer $DATAHUB_GMS_TOKEN\" \"$DATAHUB_GMS_URL/openapi/v3/entity/dataset/${local.dataset_urn_encoded}\""
 }
 
@@ -78,7 +87,10 @@ output "summary" {
   Created by the ingestion run (NOT removed by terraform destroy):
 
     Dataset            ${local.dataset_urn}
-    ...plus the eight other datasets in DataHub's bootstrap demo pack.
+    ...plus roughly 57 more entities across 16 types. The demo pack is
+    DataHub's entire sample estate, not a dataset: ML features and
+    feature tables, containers, charts, a dashboard, tags, glossary
+    terms and nodes, corp groups, posts, a query, a data flow.
 
   This asymmetry is the point of the example. A contract needs a dataset,
   datasets come from ingestion, and ingestion is a verb Terraform cannot
@@ -94,12 +106,18 @@ output "summary" {
 
       eval "$(terraform output -raw report_passing_result_command)"
 
-  Clean up the dataset after destroying. Copy the command NOW: destroy
-  empties the state, and terraform output reads from state, so it will
-  return nothing by the time you need it. The README has the same
-  command as a literal if you miss this window.
+  Cleanup is bigger than it looks, and the README has the method.
+  Removing the contract's dataset alone leaves the other 57 behind:
 
     ${"datahub delete --urn '${local.dataset_urn}' --hard"}
+
+  Do not sweep by platform or by name to get the rest. DataHub's admin
+  account is in that sample pack, and an entity the run merely touched
+  looks identical to one it created. Match on the ingestion run id
+  instead -- the README shows how.
+
+  Copy any command you want NOW: destroy empties the state, and
+  terraform output reads from state, so it returns nothing afterwards.
 
   EOT
 }

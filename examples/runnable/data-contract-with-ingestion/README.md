@@ -73,7 +73,7 @@ Report a failure instead by editing the command and changing `type: SUCCESS` to 
 **`terraform output` stops working the moment you destroy.** Outputs are read from state, and destroy empties it — this is true even here, where the cleanup commands are built from a hardcoded URN and depend on no resource at all. So either capture them first:
 
 ```bash
-terraform output -raw cleanup_dataset_cli   # capture BEFORE destroying
+terraform output -raw cleanup_contract_dataset_cli   # capture BEFORE destroying
 terraform destroy
 ```
 
@@ -92,12 +92,28 @@ curl -sS -X DELETE -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
 
 The outputs still exist and are worth reading before you destroy, but nothing in this section depends on them.
 
-**The demo pack contains nine datasets, not one.** The outputs clean up only the one the contract used. To sweep the rest, list them and delete each:
+### The demo pack is much larger than the contract's dataset
+
+`demo-data` loads DataHub's **entire sample estate**, not a dataset and not nine. Measured against a previously empty instance, one run created **58 entities across 16 types**: 6 datasets, 20 ML features, 7 ML primary keys, 5 ML feature tables, 2 containers, 2 charts, a dashboard, 2 tags, 3 glossary terms, a glossary node, 2 corp groups, 3 posts, a query, a data flow and an ML model.
+
+**Do not sweep by platform or by name.** Two traps make that genuinely dangerous:
+
+1. **`urn:li:corpuser:datahub` is in the sample pack** — DataHub's own admin account. Anything that deletes "everything the pack contains" will take it out.
+2. **An entity the run merely *touched* looks identical to one it created.** On a shared instance an assertion that pre-dated the run by eight months carried the run's id alongside its original one; deleting by name would have removed it.
+
+**Match on the ingestion run id instead.** Every aspect written by a run carries it in `systemMetadata`, so it distinguishes what the run *created* from what already existed:
 
 ```bash
-datahub delete --platform hive --hard
-datahub delete --platform kafka --hard
-datahub delete --platform hdfs --hard
+# 1. Read the run id off any entity you know the run produced.
+curl -sS -H "Authorization: Bearer $DATAHUB_GMS_TOKEN" \
+  "$DATAHUB_GMS_URL/openapi/v3/entity/dataset/<url-encoded-urn>?systemMetadata=true" \
+  | jq -r '[.. | objects | select(has("runId")) | .runId] | unique'
+
+# 2. For each candidate URN, keep only those whose runIds are EXACTLY that one.
+#    An entity listing two run ids pre-existed and must be left alone.
+
+# 3. Delete the verified list in one pass.
+datahub delete by-filter --urn-file ./verified-urns.txt --hard
 ```
 
-Run those against a throwaway instance only. On a shared instance they will remove datasets on those platforms that you did not create.
+On a throwaway Quickstart none of this matters — nuke the instance. It matters on any instance you share with someone else, which is precisely where the temptation to "just clean up quickly" is strongest.
