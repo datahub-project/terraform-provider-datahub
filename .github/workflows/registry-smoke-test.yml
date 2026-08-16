@@ -1,0 +1,66 @@
+name: Registry Smoke Test
+
+# Proves the published provider can actually be installed from the Terraform
+# Registry and started. Nothing else does: CI builds from source, and the live
+# suites run against a locally built binary through a dev override, so a
+# release that is broken on the Registry -- wrong architecture, bad checksum,
+# crash on startup, or simply never ingested -- looks green everywhere else.
+#
+# Its own workflow rather than a job inside nightly-live, for two reasons.
+#
+# It has to be dispatchable on its own. The release workflow triggers it after
+# publishing, and dispatching nightly-live instead would drag in fifteen
+# minutes of live acceptance plus exposure to known lag flakes, so a flaky
+# unrelated suite would read as a failed release check.
+#
+# And it must not be a job inside release.yml. It adds minutes to the release,
+# and a smoke failure would mark the whole run as "Release: failure" -- which
+# mislabels the run people look at to see whether a release shipped at all.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  registry-smoke-test:
+    name: Registry Install Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+
+      # The Registry ingests a release asynchronously after GitHub publishes it,
+      # so on a release event the provider may not be servable for a few
+      # minutes. Retry rather than fail, and say which of the two situations a
+      # persistent failure is: a genuinely broken artifact, or a version that
+      # is simply not there.
+      - name: terraform init from Terraform Registry
+        working-directory: examples/runnable/provider-install-verification
+        run: |
+          for attempt in $(seq 1 10); do
+            if terraform init -input=false; then
+              exit 0
+            fi
+            echo "::notice::init attempt ${attempt}/10 failed; retrying in 30s"
+            sleep 30
+          done
+          echo "::error::terraform init never succeeded. Either the published \
+          artifact is broken, or the version pinned in this example is not on \
+          the Registry. The pin is bumped during release prep, before the tag \
+          is pushed, so a scheduled run in that window fails for the second \
+          reason and is not a real failure."
+          exit 1
+
+      # init only downloads, checksums and unpacks. validate is what starts the
+      # provider and asks for its schema, so it is the step that proves the
+      # binary actually executes on this platform. A wrong-architecture or
+      # crash-on-startup build passes init and fails here, which is the exact
+      # shape of a dead release.
+      #
+      # No credentials are needed: validate does not call the provider's
+      # Configure, so this stays a pure artifact check.
+      - name: terraform validate to prove the provider starts
+        working-directory: examples/runnable/provider-install-verification
+        run: terraform validate
