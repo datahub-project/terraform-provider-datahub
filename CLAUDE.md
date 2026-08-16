@@ -146,7 +146,18 @@ Always use `--local`; without it, global mise tools (e.g. `awscli`) appear as no
 
 `--bump` on the check is essential: every pin in `mise.toml` is exact, and without `--bump`, `mise outdated` only verifies that the installed version satisfies the pin — an exact pin always satisfies itself, so the command reports "All tools are up to date" no matter how stale the pins are.
 
-When bumping, hold `python` at 3.11.x (newer Pythons break `acryl-datahub` compatibility), and keep the `go` pin in sync with the `go` directive in `go.mod`, `tools/go.mod`, and `tools/serve/go.mod` (CI resolves its Go version from `go.mod` via `go-version-file`).
+When bumping, keep the `go` pin in sync with the `go` directive in `go.mod`, `tools/go.mod`, and `tools/serve/go.mod` (CI resolves its Go version from `go.mod` via `go-version-file`).
+
+**Hold `python` at 3.11.x, and expect `mise outdated` to keep suggesting otherwise forever.** `acryl-datahub` declares `python_requires = ">=3.10"` with classifiers for 3.10, 3.11 and 3.12 only (`metadata-ingestion/setup.py` in the DataHub repository is the source of truth; verified still true for 1.7.0.x). So 3.12 is the ceiling, not a preference, and the 3.14.x that `mise outdated --local --bump` offers is two majors past it. That suggestion is permanent noise rather than a signal -- do not act on it, and do not re-derive the reason.
+
+**The datahub CLI version lives in two places that are easy to confuse**, which is worth stating plainly because the distinction gets forgotten:
+
+| Where | What it governs | Gate |
+|---|---|---|
+| `pipx:acryl-datahub` in the **global** `~/.config/mise/config.toml` | the `datahub` on your PATH outside this repo | mise's `minimum_release_age` applies |
+| `acryl-datahub==X` in this repo's `requirements-dev.txt` | the `datahub` used by `make quickstart-*` and the live suites, via the project `.venv` | **no gate at all** -- `uv` installs straight from PyPI |
+
+Inside the repo the project `.venv` wins, so `mise outdated` telling you a newer CLI exists says nothing about the pin that actually runs here. Bump `requirements-dev.txt` deliberately, prefer a release older than a day, and run `make dev-deps` afterwards -- `git pull` does not refresh the `.venv`, so a pin change is invisible until you do.
 
 **`mise outdated` will not always show you a new Go release, and the gap can be a security one.** mise applies a `minimum_release_age` gate that hides recent releases -- deliberately, so a bad release is not adopted the day it lands -- and it hid Go 1.26.6 while six standard-library advisories (`net/url`, `html/template`, `crypto/tls`, `net/http`, `encoding/asn1`) sat unfixed in the shipped binary. The only thing that caught it was the `Vulncheck` CI job, which is worth knowing before anyone decides that job is noisy. `mise ls-remote --minimum-release-age 0 go` shows what is being withheld.
 
