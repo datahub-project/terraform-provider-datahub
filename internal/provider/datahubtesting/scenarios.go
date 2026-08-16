@@ -1707,6 +1707,41 @@ func PolicyCheckDestroy(s *terraform.State) error {
 	return nil
 }
 
+// PoliciesListSteps creates a policy and verifies its URN appears in the
+// datahub_policies enumeration data source.
+//
+// The containment check (rather than exact-match) mirrors the live shape: a
+// real instance always holds DataHub's sixteen default policies alongside
+// anything a test creates, so a check that would only ever pass against the
+// mock's empty store proves less than one that tolerates neighbours.
+func PoliciesListSteps(policyID string) []resource.TestStep {
+	urn := "urn:li:dataHubPolicy:" + policyID
+	cfg := providerBlock + fmt.Sprintf(`
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "List DS test"
+  type       = "PLATFORM"
+  privileges = ["MANAGE_INGESTION"]
+  actors = {
+    users = ["urn:li:corpuser:datahub"]
+  }
+}
+
+data "datahub_policies" "all" {
+  depends_on = [datahub_policy.test]
+}
+`, policyID)
+
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			Check: resource.ComposeAggregateTestCheckFunc(
+				assertURNInList("data.datahub_policies.all", urn),
+			),
+		},
+	}
+}
+
 // RoleDataSourceSteps reads the built-in "Admin" role via the singular
 // datahub_role data source and asserts its URN.
 func RoleDataSourceSteps() []resource.TestStep {

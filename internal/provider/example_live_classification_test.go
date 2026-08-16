@@ -447,6 +447,25 @@ var liveExampleExclusions = map[string]liveExclusion{
 		reason:    "provisions billable Azure infrastructure (roughly USD 280/month per its README) with 10-15 minutes of provisioning; also Cloud-only, and needs three credentials plus a Cloudsmith entitlement",
 		permanent: true,
 	},
+	// The first exclusion whose reason is shape rather than cost or Cloud-only,
+	// which is why it is worth spelling out. This example triggers an ingestion
+	// run through a local-exec provisioner, because running a source is a verb
+	// and the provider exposes no resource for it. Two consequences make it a
+	// poor fit for the harness rather than merely slow: the dataset the run
+	// produces is unmanaged, so destroy leaves it behind with no tf-example
+	// identifier for a sweeper to attribute it by; and because it survives, the
+	// re-apply check runs against a different world than the first apply, which
+	// quietly weakens the strongest assertion the harness has. It also needs
+	// curl, bash and a live ingestion executor.
+	//
+	// It exists to teach the real workflow -- a contract needs a dataset, and a
+	// dataset comes from ingestion -- which the acceptance test cannot show,
+	// because that writes the aspect directly and no user obtains a dataset
+	// that way. Documentation value, deliberately not machine-verified.
+	"data-contract-with-ingestion": {
+		reason:    "drives an ingestion run via a local-exec provisioner, leaving an unmanaged dataset that destroy cannot remove and re-apply would find already present; needs curl, bash and a running ingestion executor",
+		permanent: true,
+	},
 
 	// No deferred entries remain: every Quickstart-capable example is in the run
 	// list. The permanent flag stays load-bearing rather than vestigial -- it is

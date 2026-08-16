@@ -38,10 +38,17 @@ func (d *dataContractsDataSource) Metadata(_ context.Context, req datasource.Met
 
 func (d *dataContractsDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: ossAndCloudBadge +
+		MarkdownDescription: cloudOnlyBadge +
 			"Returns the URNs of all DataHub data contracts visible to the authenticated principal.\n\n" +
-			"Backed by `searchAcrossEntities` (OpenSearch). Contracts created within the last few seconds " +
-			"may not yet appear. Feed the `urns` output into an `import {}` for-each block to bulk-import " +
+			"**Requires DataHub Cloud, unlike the `datahub_data_contract` resource, which works on both.** " +
+			"This data source is backed by `searchAcrossEntities`, and the GraphQL type that turns a search " +
+			"hit into an entity is registered only on Cloud. The contract is indexed on open-source DataHub " +
+			"too, so the search finds it and then has nothing to build it with, and the query fails with a " +
+			"non-null violation naming `searchResults[0].entity` rather than returning an empty list. " +
+			"Upstream intends to move the type to open source; until then there is no workaround here, and " +
+			"the resource's own read path is unaffected because it uses the OpenAPI v3 entity endpoint.\n\n" +
+			"Contracts created within the last few seconds may not yet appear, since the backing index is " +
+			"eventually consistent. Feed the `urns` output into an `import {}` for-each block to bulk-import " +
 			"existing contracts.",
 		Attributes: map[string]schema.Attribute{
 			"urns": schema.ListAttribute{

@@ -11,8 +11,8 @@ terraform {
 provider "datahub" {
   # Credentials from environment:
   #   DATAHUB_GMS_URL   - e.g. https://your-instance.acryl.io
-  #   DATAHUB_GMS_TOKEN - personal access token (needs MANAGE_USERS_AND_GROUPS
-  #                       and MANAGE_USER_CREDENTIALS privileges)
+  #   DATAHUB_GMS_TOKEN - personal access token (needs MANAGE_USERS_AND_GROUPS,
+  #                       MANAGE_USER_CREDENTIALS and MANAGE_POLICIES privileges)
 }
 
 # -------------------------------------------------------------------------
@@ -123,4 +123,16 @@ resource "datahub_policy" "data_platform_admins" {
   actors = {
     groups = [datahub_corp_group.data_platform.urn]
   }
+}
+
+# Enumerate every policy visible to the token. The list includes DataHub's
+# own built-in default policies, and -- once the search index catches up --
+# the policy created above (the backing listPolicies query is
+# OpenSearch-backed and eventually consistent, so a policy created seconds
+# ago may be missing from the first read). Feed the urns output into an
+# import {} for-each block to bulk-import existing policies, but select only
+# the ones you own: see the data source documentation for why adopting
+# DataHub's role-bound default policies breaks them (OSS-1216).
+data "datahub_policies" "all" {
+  depends_on = [datahub_policy.data_platform_admins]
 }
