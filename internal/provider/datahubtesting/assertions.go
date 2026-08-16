@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 )
@@ -27,6 +28,62 @@ type mockAssertion struct {
 	SchemaAssertion *map[string]any
 	OnSuccess       []string
 	OnFailure       []string
+	Monitor         *mockMonitor
+}
+
+// mockMonitor holds the monitor-side state that DataHub keeps on the separate
+// Monitor entity rather than on the assertion. Modelled on a live DataHub Cloud
+// response, not on what the client happens to send: the monitor read is the only
+// way the provider recovers the evaluation schedule, source type, mode and
+// backfill config, so a mock that skipped it would agree with any client bug.
+type mockMonitor struct {
+	Cron       string
+	Timezone   string
+	SourceType string
+	ParamsKey  string // datasetVolumeParameters, datasetFreshnessParameters, ...
+	Mode       string
+	// BackfillStartDateMs is zero when the upsert carried no backfillConfig.
+	// The live server then omits the bootstrapConfig field and the
+	// monitorBootstrapStatus aspect entirely, which this mock reproduces.
+	BackfillStartDateMs int64
+	BackfillState       string
+}
+
+// mockMonitorURN derives the monitor URN the mock reports for an assertion.
+func mockMonitorURN(assertionURN string) string { return "urn:li:monitor:mock-" + assertionURN }
+
+// captureMonitor extracts the monitor-side fields from an upsert input. paramsKey
+// names the evaluationParameters sub-object the assertion type uses, which is what
+// the provider reads its source_type back out of.
+func captureMonitor(input map[string]any, paramsKey string, prev *mockMonitor) *mockMonitor {
+	m := &mockMonitor{ParamsKey: paramsKey}
+	if sched, ok := input["evaluationSchedule"].(map[string]any); ok {
+		m.Cron, _ = sched["cron"].(string)
+		m.Timezone, _ = sched["timezone"].(string)
+	}
+	if params, ok := input["evaluationParameters"].(map[string]any); ok {
+		m.SourceType, _ = params["sourceType"].(string)
+	}
+	m.Mode, _ = input["mode"].(string)
+
+	// Absent backfillConfig clears the config and moves the bootstrap status to
+	// REJECTED -- but only when one had previously been requested. A monitor that
+	// never had one carries no status aspect at all.
+	if bc, ok := input["backfillConfig"].(map[string]any); ok {
+		switch v := bc["backfillStartDateMs"].(type) {
+		case float64:
+			m.BackfillStartDateMs = int64(v)
+		case int64:
+			m.BackfillStartDateMs = v
+		}
+	}
+	switch {
+	case m.BackfillStartDateMs > 0:
+		m.BackfillState = "PENDING"
+	case prev != nil && prev.BackfillState != "":
+		m.BackfillState = "REJECTED"
+	}
+	return m
 }
 
 // assertionCounter generates sequential mock assertion IDs.
@@ -148,6 +205,7 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 		VolumeAssertion: &volumeParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
+		Monitor:         captureMonitor(input, "datasetVolumeParameters", s.assertions[urn].Monitor),
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -198,6 +256,7 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 		FreshnessAssert: &freshnessParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
+		Monitor:         captureMonitor(input, "datasetFreshnessParameters", s.assertions[urn].Monitor),
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -253,6 +312,8 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 		SQLAssertion:  &sqlParams,
 		OnSuccess:     onSuccess,
 		OnFailure:     onFailure,
+		// SQL monitors carry no sourceType, so no parameters key is emitted.
+		Monitor: captureMonitor(input, "", s.assertions[urn].Monitor),
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -300,6 +361,7 @@ func (s *mockServer) handleUpsertSchemaAssertion(w http.ResponseWriter, variable
 		SchemaAssertion: &schemaParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
+		Monitor:         captureMonitor(input, "", s.assertions[urn].Monitor),
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -352,6 +414,7 @@ func (s *mockServer) handleUpsertFieldAssertion(w http.ResponseWriter, variables
 		FieldAssertion: &fieldParams,
 		OnSuccess:      onSuccess,
 		OnFailure:      onFailure,
+		Monitor:        captureMonitor(input, "datasetFieldParameters", s.assertions[urn].Monitor),
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -378,7 +441,7 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	if exists {
 		switch a.AssertionType {
 		case "VOLUME", "FRESHNESS", "SQL", "FIELD", "DATA_SCHEMA":
-			monitorVal = map[string]any{"urn": "urn:li:monitor:mock-" + urn}
+			monitorVal = map[string]any{"urn": mockMonitorURN(urn)}
 		}
 	}
 
@@ -392,14 +455,69 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	})
 }
 
-// handleMonitorDelete handles DELETE /openapi/v3/entity/monitor/{urn}.
-// Monitor entities are not tracked by the mock; this is a no-op that returns 200.
-func (s *mockServer) handleMonitorDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
+// handleMonitorEntity handles /openapi/v3/entity/monitor/{urn}. DELETE is a
+// no-op returning 200. GET reproduces the live DataHub Cloud response shape so
+// the provider's monitor read -- the only source of the evaluation schedule,
+// source type, mode and backfill config -- is exercised rather than skipped.
+func (s *mockServer) handleMonitorEntity(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodDelete:
+		w.WriteHeader(http.StatusOK)
+		return
+	case http.MethodGet:
+	default:
 		http.NotFound(w, r)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+
+	raw := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/monitor/")
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		decoded = raw
+	}
+	assertionURN := strings.TrimPrefix(decoded, "urn:li:monitor:mock-")
+
+	s.mu.Lock()
+	a, ok := s.assertions[assertionURN]
+	s.mu.Unlock()
+	if !ok || a.Monitor == nil {
+		http.NotFound(w, r)
+		return
+	}
+	m := a.Monitor
+
+	entry := map[string]any{"assertion": assertionURN}
+	if m.Cron != "" || m.Timezone != "" {
+		entry["schedule"] = map[string]any{"cron": m.Cron, "timezone": m.Timezone}
+	}
+	if m.ParamsKey != "" && m.SourceType != "" {
+		entry["parameters"] = map[string]any{m.ParamsKey: map[string]any{"sourceType": m.SourceType}}
+	}
+
+	assertionMonitor := map[string]any{"assertions": []any{entry}}
+	if m.BackfillStartDateMs > 0 {
+		assertionMonitor["bootstrapConfig"] = map[string]any{"backfillStartDateMs": m.BackfillStartDateMs}
+	}
+
+	body := map[string]any{
+		"urn": decoded,
+		"monitorInfo": map[string]any{
+			"value": map[string]any{
+				"type":             "ASSERTION",
+				"assertionMonitor": assertionMonitor,
+				"status":           map[string]any{"mode": m.Mode},
+			},
+		},
+	}
+	// The bootstrap-status aspect is absent entirely until a backfill is requested.
+	if m.BackfillState != "" {
+		body["monitorBootstrapStatus"] = map[string]any{
+			"value": map[string]any{
+				"metricsCubeBootstrapStatus": map[string]any{"state": m.BackfillState},
+			},
+		}
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // handleDeleteAssertion handles the deleteAssertion GraphQL mutation.

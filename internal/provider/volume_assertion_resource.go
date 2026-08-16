@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -53,6 +54,8 @@ type volumeAssertionResourceModel struct {
 	OnFailureActions   types.List   `tfsdk:"on_failure_actions"`
 	Mode               types.String `tfsdk:"mode"`
 	ExecutorID         types.String `tfsdk:"executor_id"`
+	BackfillStartDate  types.Int64  `tfsdk:"backfill_start_date_ms"`
+	BackfillState      types.String `tfsdk:"backfill_state"`
 	TagsAll            types.Set    `tfsdk:"tags_all"`
 }
 
@@ -195,6 +198,25 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 				Optional:            true,
 				MarkdownDescription: "ID of the remote executor pool to use for evaluation. Omit to use the default executor.",
 			},
+			"backfill_start_date_ms": schema.Int64Attribute{
+				Optional: true,
+				MarkdownDescription: "Seed the assertion with history by backfilling evaluations from this instant, " +
+					"as milliseconds since the Unix epoch. A new assertion otherwise starts with no history and " +
+					"only becomes meaningful once it has accumulated evaluations.\n\n" +
+					"DataHub caps the lookback at **365 days** before the assertion's creation for the " +
+					"non-bucketed and day-bucketed cases, and 156 weeks for week-bucketed ones, rejecting " +
+					"anything earlier. Changing this value re-runs the backfill; removing the attribute clears " +
+					"the request, leaving already-backfilled history in place.\n\n" +
+					"Milliseconds are what the DataHub API accepts, so they are what this attribute takes. " +
+					"Terraform has no epoch helper, so compute the value once and paste it as a literal " +
+					"(`1769583799348` is 2026-01-28T05:43:19Z).",
+			},
+			"backfill_state": schema.StringAttribute{
+				Computed: true,
+				MarkdownDescription: "State of the requested backfill: `PENDING`, `COMPLETED`, `FAILED`, or " +
+					"`REJECTED`. Empty when no backfill has been requested. A backfill produces no visible " +
+					"output of its own, so this is the only signal that one was refused rather than run.",
+			},
 			"tags_all": tagsAllSchema(),
 		},
 	}
@@ -263,22 +285,23 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 	}
 
 	urn, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
-		EntityURN:          plan.EntityURN.ValueString(),
-		Description:        strVal(plan.Description),
-		FilterSQL:          strVal(plan.FilterSQL),
-		VolumeType:         plan.VolumeType.ValueString(),
-		ChangeType:         strVal(plan.ChangeType),
-		Operator:           plan.Operator.ValueString(),
-		MinValue:           strVal(plan.MinValue),
-		MaxValue:           strVal(plan.MaxValue),
-		SingleValue:        strVal(plan.SingleValue),
-		EvaluationCron:     plan.EvaluationCron.ValueString(),
-		EvaluationTimezone: plan.EvaluationTimezone.ValueString(),
-		SourceType:         plan.SourceType.ValueString(),
-		OnSuccessActions:   onSuccess,
-		OnFailureActions:   onFailure,
-		Mode:               plan.Mode.ValueString(),
-		ExecutorID:         strVal(plan.ExecutorID),
+		EntityURN:           plan.EntityURN.ValueString(),
+		Description:         strVal(plan.Description),
+		FilterSQL:           strVal(plan.FilterSQL),
+		VolumeType:          plan.VolumeType.ValueString(),
+		ChangeType:          strVal(plan.ChangeType),
+		Operator:            plan.Operator.ValueString(),
+		MinValue:            strVal(plan.MinValue),
+		MaxValue:            strVal(plan.MaxValue),
+		SingleValue:         strVal(plan.SingleValue),
+		EvaluationCron:      plan.EvaluationCron.ValueString(),
+		EvaluationTimezone:  plan.EvaluationTimezone.ValueString(),
+		SourceType:          plan.SourceType.ValueString(),
+		OnSuccessActions:    onSuccess,
+		OnFailureActions:    onFailure,
+		Mode:                plan.Mode.ValueString(),
+		ExecutorID:          strVal(plan.ExecutorID),
+		BackfillStartDateMs: plan.BackfillStartDate.ValueInt64(),
 	})
 	if err != nil {
 		if errors.Is(err, datahub.ErrAssertionCloudOnly) {
@@ -301,7 +324,32 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
+	plan.BackfillState = r.readBackfillState(ctx, urn, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
+}
+
+// readBackfillState fetches the metrics-cube bootstrap state so the computed
+// backfill_state attribute is a server fact rather than an inference from what
+// was sent. The monitor carries no bootstrap-status aspect at all until a
+// backfill is requested, so an absent aspect is an empty string and not an
+// error. A failed lookup is reported but left empty: the assertion itself was
+// written successfully by this point, and failing the apply over an
+// observability field would strand it outside state.
+func (r *volumeAssertionResource) readBackfillState(ctx context.Context, urn string, diags *diag.Diagnostics) types.String {
+	mon, err := r.client.GetAssertionMonitor(ctx, urn)
+	if err != nil {
+		diags.AddWarning(
+			"Could not read backfill state",
+			fmt.Sprintf("The volume assertion %s was written successfully, but reading its "+
+				"backfill state back failed: %s. The backfill_state attribute will be empty "+
+				"until the next refresh.", urn, err),
+		)
+		return types.StringValue("")
+	}
+	if mon == nil {
+		return types.StringValue("")
+	}
+	return types.StringValue(mon.BackfillState)
 }
 
 func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -359,13 +407,15 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 	resp.Diagnostics.Append(d...)
 	state.OnFailureActions = onFailure
 
-	// Recover monitor-side fields (evaluation schedule, source type, mode) from
-	// the associated Monitor entity so ImportState produces a clean plan.
+	// Recover monitor-side fields (evaluation schedule, source type, mode, and the
+	// backfill config and its state) from the associated Monitor entity so
+	// ImportState produces a clean plan.
 	mon, err := r.client.GetAssertionMonitor(ctx, urn)
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
 	}
+	state.BackfillState = types.StringValue("")
 	if mon != nil {
 		state.EvaluationCron = nullIfEmpty(mon.EvaluationCron)
 		state.EvaluationTimezone = nullIfEmpty(mon.EvaluationTimezone)
@@ -373,6 +423,16 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 		if mon.Mode != "" {
 			state.Mode = types.StringValue(mon.Mode)
 		}
+		// backfillConfig round-trips on the monitor aspect, so the configured
+		// value is recovered rather than assumed. Zero means the monitor carries
+		// no backfill config, which must read back as null to match a config
+		// that omits the attribute.
+		if mon.BackfillStartDateMs > 0 {
+			state.BackfillStartDate = types.Int64Value(mon.BackfillStartDateMs)
+		} else {
+			state.BackfillStartDate = types.Int64Null()
+		}
+		state.BackfillState = types.StringValue(mon.BackfillState)
 	}
 
 	tagsAll, err := readTagsAll(ctx, r.client, assertionEntityPath, urn, state.TagsAll)
@@ -406,23 +466,24 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 	}
 
 	_, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
-		AssertionURN:       state.URN.ValueString(),
-		EntityURN:          plan.EntityURN.ValueString(),
-		Description:        strVal(plan.Description),
-		FilterSQL:          strVal(plan.FilterSQL),
-		VolumeType:         plan.VolumeType.ValueString(),
-		ChangeType:         strVal(plan.ChangeType),
-		Operator:           plan.Operator.ValueString(),
-		MinValue:           strVal(plan.MinValue),
-		MaxValue:           strVal(plan.MaxValue),
-		SingleValue:        strVal(plan.SingleValue),
-		EvaluationCron:     plan.EvaluationCron.ValueString(),
-		EvaluationTimezone: plan.EvaluationTimezone.ValueString(),
-		SourceType:         plan.SourceType.ValueString(),
-		OnSuccessActions:   onSuccess,
-		OnFailureActions:   onFailure,
-		Mode:               plan.Mode.ValueString(),
-		ExecutorID:         strVal(plan.ExecutorID),
+		AssertionURN:        state.URN.ValueString(),
+		EntityURN:           plan.EntityURN.ValueString(),
+		Description:         strVal(plan.Description),
+		FilterSQL:           strVal(plan.FilterSQL),
+		VolumeType:          plan.VolumeType.ValueString(),
+		ChangeType:          strVal(plan.ChangeType),
+		Operator:            plan.Operator.ValueString(),
+		MinValue:            strVal(plan.MinValue),
+		MaxValue:            strVal(plan.MaxValue),
+		SingleValue:         strVal(plan.SingleValue),
+		EvaluationCron:      plan.EvaluationCron.ValueString(),
+		EvaluationTimezone:  plan.EvaluationTimezone.ValueString(),
+		SourceType:          plan.SourceType.ValueString(),
+		OnSuccessActions:    onSuccess,
+		OnFailureActions:    onFailure,
+		Mode:                plan.Mode.ValueString(),
+		ExecutorID:          strVal(plan.ExecutorID),
+		BackfillStartDateMs: plan.BackfillStartDate.ValueInt64(),
 	})
 	if err != nil {
 		if errors.Is(err, datahub.ErrAssertionCloudOnly) {
@@ -457,6 +518,7 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 
 	plan.ID = state.ID
 	plan.URN = state.URN
+	plan.BackfillState = r.readBackfillState(ctx, state.URN.ValueString(), &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -540,6 +602,8 @@ func (r *volumeAssertionResource) ImportState(ctx context.Context, req resource.
 		EvaluationTimezone: types.StringValue("UTC"),
 		SourceType:         types.StringValue("DATAHUB_DATASET_PROFILE"),
 		Mode:               types.StringValue("ACTIVE"),
+		BackfillStartDate:  types.Int64Null(),
+		BackfillState:      types.StringValue(""),
 	}
 	if ai.Volume != nil {
 		state.VolumeType = types.StringValue(ai.Volume.VolumeType)

@@ -189,7 +189,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/openapi/v3/entity/test/", s.handleMetadataTestItem)
 	mux.HandleFunc("/openapi/v3/entity/assertionassignmentrule/", s.handleAssignmentRuleItem)
 	mux.HandleFunc("/openapi/v3/entity/form/", s.handleFormItem)
-	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorDelete)
+	mux.HandleFunc("/openapi/v3/entity/monitor/", s.handleMonitorEntity)
 	mux.HandleFunc("/openapi/v3/entity/oauthauthorizationserver/", s.handleOAuthAuthorizationServerItem)
 	mux.HandleFunc("/auth/signUp", s.handleSignUp)
 	mux.HandleFunc("/openapi/v3/entity/corpuser", s.handleCorpUserCollection)

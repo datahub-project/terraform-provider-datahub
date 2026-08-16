@@ -36,6 +36,18 @@ func TestVolumeAssertionChange_lifecycle_mock(t *testing.T) {
 	})
 }
 
+func TestVolumeAssertionBackfill_lifecycle_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.VolumeAssertionCheckDestroy,
+		Steps:                    datahubtesting.VolumeAssertionBackfillSteps(),
+	})
+}
+
 func TestVolumeAssertionChangeType_validation_mock(t *testing.T) {
 	server := datahubtesting.NewServer(t)
 	t.Setenv("DATAHUB_GMS_URL", server.URL)
