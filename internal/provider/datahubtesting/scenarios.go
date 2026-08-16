@@ -5057,6 +5057,77 @@ func VolumeAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_volume_assertion")
 }
 
+// VolumeAssertionBackfillSteps covers backfill_start_date_ms across the three
+// transitions measured against DataHub Cloud: setting it stores the value and
+// puts the bootstrap into PENDING, changing it re-triggers, and removing the
+// attribute clears the config and moves the bootstrap to REJECTED.
+//
+// The removal step is the one worth keeping. backfillConfig was originally
+// deferred on the belief that it does not round-trip, which would have made it a
+// write-only attribute with no readable state at all; it does round-trip, so the
+// ordinary declarative contract applies and this asserts that it holds.
+func VolumeAssertionBackfillSteps() []resource.TestStep {
+	const addr = "datahub_volume_assertion.backfill"
+	cfg := func(backfill string) string {
+		return providerBlock + `
+resource "datahub_volume_assertion" "backfill" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_backfill_data,PROD)"
+  volume_type         = "ROW_COUNT_TOTAL"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "1"
+  evaluation_cron     = "0 0 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+` + backfill + `
+}
+`
+	}
+
+	return []resource.TestStep{
+		{
+			Config: cfg(`  backfill_start_date_ms = 1769583799348`),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("backfill_start_date_ms"), knownvalue.Int64Exact(1769583799348)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("backfill_state"), knownvalue.StringExact("PENDING")),
+			},
+		},
+		{
+			Config: cfg(`  backfill_start_date_ms = 1778223887938`),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("backfill_start_date_ms"), knownvalue.Int64Exact(1778223887938)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("backfill_state"), knownvalue.StringExact("PENDING")),
+			},
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{plancheck.ExpectNonEmptyPlan()},
+			},
+		},
+		{
+			// Import is what actually proves the round trip. Post-apply state
+			// carries the configured value whether or not Read recovers it, so
+			// only a state built purely from the server distinguishes the two --
+			// and recovering it is the whole premise this attribute rests on.
+			ResourceName:            addr,
+			ImportState:             true,
+			ImportStateVerify:       true,
+			ImportStateVerifyIgnore: []string{"executor_id"},
+		},
+		{
+			// Dropping the attribute must clear the config rather than leave the
+			// last value in place, which is what makes this an ordinary
+			// declarative attribute rather than a one-shot imperative trigger.
+			Config: cfg(``),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("backfill_start_date_ms"), knownvalue.Null()),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("backfill_state"), knownvalue.StringExact("REJECTED")),
+			},
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{plancheck.ExpectNonEmptyPlan()},
+			},
+		},
+	}
+}
+
 // VolumeAssertionChangeLifecycleSteps returns test steps for the ROW_COUNT_CHANGE
 // (growth) volume assertion sub-type: create an ABSOLUTE single-value change
 // assertion, update it to a PERCENTAGE BETWEEN range, then import and verify.

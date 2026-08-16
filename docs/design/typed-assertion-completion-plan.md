@@ -24,10 +24,33 @@ Each increment repeats the same shape:
 | `description` | volume, freshness | Top-level `assertionInfo.description`; sql already had it. |
 | `filter_sql` | volume, freshness | `DatasetFilter` -- `DatasetFilterType` has a single member (`SQL`), so the resource takes just the clause string. Reads from the type-nested `*.filter`. SQL has no filter input. |
 | `failure_severity` | freshness, sql | `failureSeverityConfig.defaultSeverity` (LOW/MEDIUM/HIGH). Field exists on freshness/sql inputs only, NOT volume. Conditional `rules` engine not modeled. |
+| `backfill_start_date_ms` / `backfill_state` | volume | `AssertionMonitorBootstrapConfigInput { backfillStartDateMs }`. Seeds the metrics cube so a new assertion has history to judge against. See below. |
+
+## `backfillConfig`: why the original deferral was wrong
+
+This was deferred on the finding that the value does **not** round-trip on read, which would have left a managed attribute in perpetual drift. It was later unparked on the theory that the WriteOnly pattern -- shipped four times by then -- was the missing prerequisite, since a WriteOnly attribute is never stored in state and never drift-compared.
+
+**Both readings were wrong, and re-measuring is what settled it.** Four probes against DataHub Cloud (v1.7.x, August 2026), on a throwaway dataset:
+
+| Probe | Result |
+|---|---|
+| Set on create | Persisted and readable at `monitorInfo.value.assertionMonitor.bootstrapConfig.backfillStartDateMs`, byte-identical to what was sent. Bootstrap status `PENDING`. |
+| Omit on update | Config **cleared**; bootstrap status `PENDING -> REJECTED`. |
+| Re-provide, different date | New value readable; status `REJECTED -> PENDING`. |
+| 400 days back | Refused: *"backfillStartDateMs exceeds the maximum lookback of 365 days for non-bucketed assertions."* |
+| Never requested at all | `bootstrapConfig` absent **and** the `monitorBootstrapStatus` aspect absent entirely -- not a `REJECTED` status. |
+
+So it round-trips on exactly the path the provider already reads (`GET /openapi/v3/entity/monitor/{urn}`), and set/clear/change behave as an ordinary declarative attribute. A plain `Optional` Int64 is sufficient: no WriteOnly, no `_wo_version` companion, no drift.
+
+Two consequences worth recording:
+
+- **The re-trigger question answers itself.** The deferral asked whether replaying a backfill is rejected or silently re-runs, and treated it as the one thing the WriteOnly pattern could not settle. Changing the timestamp re-triggers, so the value is its own version marker -- which is precisely the job `_wo_version` would have been added to do.
+- **Volume-only is load-bearing, not incidental.** The *field* assertion resolver rejects `backfillConfig` on anything that is not a smart (INFERRED) assertion; the volume resolver has no such guard and accepted it on a NATIVE assertion. This provider is NATIVE-only, so volume is the sole type where the attribute can exist at all.
+
+The lasting lesson is narrower than "the finding was stale": an empirical result was recorded without the server version it was measured against, so nothing signalled when it expired. Re-measuring cost ten minutes; building on the record would have shipped a WriteOnly attribute solving a drift problem that no longer existed.
 
 ## Deferred (investigated, deliberately not built)
 
-- **`backfillConfig`** (volume input only). `AssertionMonitorBootstrapConfigInput { backfillStartDateMs: Long! }` -- a one-shot directive to seed historical evaluations from a start date, constrained to a 365-day lookback. Verified live: it does **not** round-trip into the assertion or monitor entity on read. Modeling it as a managed attribute would produce perpetual drift; it is imperative one-shot work, not declarative IaC state. Revisit only if a write-once / create-only attribute pattern is introduced.
 - **`failureSeverityConfig.rules`** (freshness, sql). Conditional per-result severity escalation (each rule = severity + operator + parameters). Niche, and the resource would have to own the full ordered list. Deferred behind `defaultSeverity`.
 - **`inferWithAI` / `inferenceSettings`** (all). Setting `inferWithAI` flips the assertion to `source = INFERRED`, out of scope by the source rule. Never to be modeled on the typed resources. (A separate future `user-declared AI monitor` capability is noted in the modeling doc.)
 - **Exclusion windows.** Surface under AI `adjustmentSettings` on the monitor; tied to the INFERRED path, hence out of scope alongside `inferWithAI`.

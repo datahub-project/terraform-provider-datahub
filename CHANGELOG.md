@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`datahub_volume_assertion` gains `backfill_start_date_ms` and a computed `backfill_state`.** A new volume assertion has no history to judge against, so it stays uninformative until it has run for a while; setting a backfill start date seeds it from data the warehouse already holds. DataHub caps the lookback at 365 days before the assertion's creation (156 weeks when week-bucketed) and rejects anything earlier with its own message, so the provider passes the value through rather than second-guessing it. Changing the value re-runs the backfill; removing the attribute clears the request and leaves history already gathered in place. Because a backfill emits nothing of its own, `backfill_state` (`PENDING`, `COMPLETED`, `FAILED`, `REJECTED`, or empty when none was asked for) is the only way to see that one was refused rather than run.
+
+  This was deferred for two releases on a recorded finding that the value does not survive a read, then very nearly built as a WriteOnly attribute -- state a WriteOnly attribute never keeps -- to dodge the drift that would follow. Re-measuring against DataHub Cloud found it round-trips exactly, on the endpoint the resource already reads, so an ordinary optional attribute was the right shape all along and the value is its own re-trigger marker.
+
+### Fixed
+
+- **Monitor-side attributes now survive `terraform import` on every Cloud assertion resource.** The mock server had no monitor read at all, so `evaluation_cron`, `evaluation_timezone`, `source_type` and `mode` were exercised by nothing and had to be excluded from import verification. They are covered now, which is what makes the new backfill round-trip provable rather than merely asserted.
+
 ## [0.23.0] - 2026-08-16
 
 ### Added

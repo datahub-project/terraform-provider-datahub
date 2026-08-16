@@ -897,6 +897,10 @@ type VolumeAssertionInput struct {
 	OnFailureActions   []string
 	Mode               string
 	ExecutorID         string
+	// BackfillStartDateMs seeds the metrics cube with history from this instant
+	// (epoch ms) so a new assertion has data to evaluate against immediately.
+	// Zero omits backfillConfig entirely, which clears any previously set value.
+	BackfillStartDateMs int64
 }
 
 // UpsertVolumeAssertion creates or updates a volume assertion monitor.
@@ -951,6 +955,13 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 	input["actions"] = buildActionsInput(in.OnSuccessActions, in.OnFailureActions)
 	if in.ExecutorID != "" {
 		input["executorId"] = in.ExecutorID
+	}
+	// Omitting backfillConfig clears whatever is already on the monitor -- verified
+	// against DataHub Cloud, where the bootstrap status then moves to REJECTED. That
+	// is what makes removing the attribute from config take effect, so a zero value
+	// must send nothing rather than a zero timestamp.
+	if in.BackfillStartDateMs > 0 {
+		input["backfillConfig"] = map[string]any{"backfillStartDateMs": in.BackfillStartDateMs}
 	}
 
 	vars := map[string]any{"input": input}
@@ -1436,6 +1447,18 @@ type AssertionMonitorInfo struct {
 	EvaluationTimezone string
 	SourceType         string // INFORMATION_SCHEMA, QUERY, etc.; empty for SQL
 	Mode               string // ACTIVE or PASSIVE
+
+	// BackfillStartDateMs is the metrics-cube bootstrap start instant (epoch ms),
+	// or zero when the monitor carries no backfill config. Unlike the fields
+	// above it belongs to the monitor as a whole rather than to one assertion
+	// entry, so it is read from assertionMonitor.bootstrapConfig directly.
+	BackfillStartDateMs int64
+	// BackfillState is the metrics-cube bootstrap state (PENDING, COMPLETED,
+	// FAILED, REJECTED), empty when no backfill has been requested. It is the
+	// only signal that a requested backfill was refused rather than run.
+	BackfillState string
+	// BackfillMessage explains a non-terminal state when the server supplies one.
+	BackfillMessage string
 }
 
 // monitorEntity is the OpenAPI v3 response shape for
@@ -1445,6 +1468,9 @@ type monitorEntity struct {
 	Info *struct {
 		Value struct {
 			AssertionMonitor *struct {
+				BootstrapConfig *struct {
+					BackfillStartDateMs int64 `json:"backfillStartDateMs"`
+				} `json:"bootstrapConfig"`
 				Assertions []struct {
 					Assertion string `json:"assertion"`
 					Schedule  *struct {
@@ -1469,6 +1495,15 @@ type monitorEntity struct {
 			} `json:"status"`
 		} `json:"value"`
 	} `json:"monitorInfo,omitempty"`
+	// BootstrapStatus is a sibling aspect of monitorInfo, not a field inside it.
+	BootstrapStatus *struct {
+		Value struct {
+			MetricsCube *struct {
+				State   string `json:"state"`
+				Message string `json:"message"`
+			} `json:"metricsCubeBootstrapStatus"`
+		} `json:"value"`
+	} `json:"monitorBootstrapStatus,omitempty"`
 }
 
 // GetAssertionMonitor returns the monitor-side configuration for a dataset
@@ -1524,6 +1559,13 @@ func (c *Client) GetAssertionMonitor(ctx context.Context, assertionURN string) (
 	out := &AssertionMonitorInfo{MonitorURN: monitorURN}
 	if entity.Info.Value.Status != nil {
 		out.Mode = entity.Info.Value.Status.Mode
+	}
+	if bc := entity.Info.Value.AssertionMonitor.BootstrapConfig; bc != nil {
+		out.BackfillStartDateMs = bc.BackfillStartDateMs
+	}
+	if bs := entity.BootstrapStatus; bs != nil && bs.Value.MetricsCube != nil {
+		out.BackfillState = bs.Value.MetricsCube.State
+		out.BackfillMessage = bs.Value.MetricsCube.Message
 	}
 	for _, a := range entity.Info.Value.AssertionMonitor.Assertions {
 		if a.Assertion != assertionURN {

@@ -50,7 +50,7 @@ So even for NATIVE assertions the provider covers 4 of 7 types, and within those
 | `filter` (row-level filter) | yes | yes (`filter_sql`) |
 | `inferWithAI` + `inferenceSettings` (smart/auto thresholds) | yes | **no** (INFERRED -- out of scope) |
 | `failureSeverityConfig` | n/a | n/a (not a field on the volume input -- freshness/sql only) |
-| `backfillConfig` (seed historical evals) | yes | **no** (deferred -- imperative one-shot bootstrap, does not round-trip; see completion plan) |
+| `backfillConfig` (seed historical evals) | yes | yes -- `backfill_start_date_ms`, with `backfill_state` reporting the bootstrap outcome |
 | `description` | yes | yes |
 | `evaluationSchedule`, `mode`, `actions`, `executorId` | yes | yes |
 
@@ -92,7 +92,6 @@ Remaining gaps, all deliberate:
 
 - `inferWithAI` + `inferenceSettings` -- AI/smart thresholds. Setting `inferWithAI` makes DataHub classify the assertion `source = INFERRED`, which is out of scope by the source rule. Never modeled.
 - `failureSeverityConfig.rules` -- the conditional per-result severity escalation list. `defaultSeverity` is modeled; the rules engine is deferred (list-ownership semantics, niche).
-- `backfillConfig` (volume) -- a one-shot imperative bootstrap: it seeds historical evaluations from a start date, is constrained to a 365-day lookback, and does **not** round-trip into the assertion or monitor entity on read. Modeling it as a managed attribute would produce perpetual drift, so it is deferred as out-of-band imperative work rather than IaC state.
 - Operators: 6 of 18 documented (passthrough -- the others are usable, just undocumented).
 - `MonitorMode` is `ACTIVE, INACTIVE, PASSIVE`; resources document `ACTIVE`/`PASSIVE` (passthrough, so `INACTIVE` is usable).
 
@@ -102,6 +101,6 @@ Two layers of scoping apply, and they pull in opposite directions:
 
 - **Scope first by source.** Filtering to `source.type == NATIVE` removes most of the apparent gap: the `EXTERNAL`/`INFERRED` assertions (ingested dbt tests, smart/AI monitors) are out of scope, so the unmodeled `DATASET`/`FIELD` types and the bulk-assignment subsystem largely fall away as migration concerns -- they are ingestion/auto artifacts, not author-as-code. This is the single most important framing: the assertion-migration surface is NATIVE assertions, which on the field-test instance was 5, not 101.
 
-- **Within NATIVE, the typed resources still cover only a slice.** Of the NATIVE monitor types, the provider models 4 of 7 assertion types, and within those only the absolute-threshold common case -- missing the change/growth sub-types, AI-inferred thresholds, filters, severity, backfill, and the FIELD/SCHEMA types entirely. A platform team authoring NATIVE assertions in code can hit these limits.
+- **Within NATIVE, the typed resources still cover only a slice.** Of the NATIVE monitor types, the provider models 4 of 7 assertion types, and within those only the absolute-threshold common case -- missing the AI-inferred thresholds and, historically, the change/growth sub-types, filters, severity, backfill and the FIELD/SCHEMA types -- most of which have since been built. A platform team authoring NATIVE assertions in code can hit these limits.
 
 This matrix is the evidence base for the typed-vs-generic-vs-codegen decision in [assertion-resource-modeling.md](assertion-resource-modeling.md). The headline conclusions: (1) migration enumeration/import filters to `source.type == NATIVE`; (2) the residual typed-coverage gap, now bounded to NATIVE assertions, is what the generic `datahub_assertion` escape hatch exists to close.
