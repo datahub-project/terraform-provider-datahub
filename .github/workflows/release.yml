@@ -25,6 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # actions: write is what lets the final step dispatch the smoke test.
+      # Dispatching is permitted with GITHUB_TOKEN; it is only the release
+      # event that GitHub suppresses, which is why the smoke test cannot
+      # simply trigger itself.
+      actions: write
     environment:
       name: release
     steps:
@@ -81,4 +86,37 @@ jobs:
           if [ -z "$BODY" ]; then
             echo "ERROR: release body for ${GITHUB_REF_NAME} is still empty after set" >&2
             exit 1
+          fi
+
+      # Verify the release is actually installable, without making that check
+      # part of this run's success.
+      #
+      # A release: published trigger would be the obvious mechanism and does
+      # not work: GitHub does not start workflows from events raised with
+      # GITHUB_TOKEN, and GoReleaser publishes with it, so the trigger that
+      # used to sit in nightly-live never fired once from v0.17.0 to v0.23.0.
+      # Every release so far has been smoke-tested only by the next day's
+      # schedule, or by someone remembering to dispatch it by hand.
+      #
+      # Dispatch rather than a job here on purpose. A smoke failure marking
+      # this run as "Release: failure" would mislabel the very run people check
+      # to see whether the release shipped -- it did ship; it may just not be
+      # servable yet. The dispatched run carries that signal separately, and
+      # the smoke test already retries for several minutes to absorb Registry
+      # ingestion lag.
+      #
+      # continue-on-error for the same reason: the release has already been
+      # published by this point, so a failed dispatch must not turn a shipped
+      # release red either. It still says so loudly rather than passing in
+      # silence, which is how the dead trigger survived six releases.
+      - name: Dispatch the Registry smoke test
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if gh workflow run registry-smoke-test.yml --ref main; then
+            echo "::notice::Registry smoke test dispatched; it runs separately from this release."
+          else
+            echo "::warning::Could not dispatch the Registry smoke test. The release itself \
+            published fine. Run it by hand: gh workflow run registry-smoke-test.yml --ref main"
           fi

@@ -5,9 +5,12 @@ name: Nightly Live
 #   - Daily at 14:00 UTC (off-peak for hosted runners).
 #   - PRs targeting main when the run-live-ci label is present; re-triggers on
 #     label add, new commits, and re-open so the result stays current.
-#   - A published release, which runs the registry smoke test only. Without it
-#     a broken release sits undetected until the next nightly, and the point of
-#     that job is to find a dead release before a user does.
+#
+# There is deliberately no release trigger. GitHub does not start workflows
+# from events raised with GITHUB_TOKEN, and GoReleaser publishes with it, so a
+# release: published trigger here never fired once between v0.17.0 and v0.23.0
+# -- while the comment that used to sit in this spot claimed it did. The
+# release workflow now dispatches the smoke test directly instead.
 #
 # Uses the live-acceptance reusable workflow (same logic as the release gate).
 on:
@@ -19,8 +22,6 @@ on:
   pull_request:
     types: [labeled, synchronize, reopened]
     branches: [main]
-  release:
-    types: [published]
 
 permissions: read-all
 
@@ -56,50 +57,9 @@ jobs:
     uses: ./.github/workflows/live-examples.yml
 
   # Proves a published release is usable, against the artifact the Registry
-  # actually serves rather than a locally built binary. On a release event
-  # checkout takes the tag, so the version pinned in the example is the one just
-  # published.
+  # actually serves rather than a locally built binary. Extracted to its own
+  # reusable workflow so release.yml can dispatch just this, without dragging
+  # in the live suites above.
   registry-smoke-test:
-    name: Registry Install Smoke Test
-    if: |
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'release'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-
-      # The Registry ingests a release asynchronously after GitHub publishes it,
-      # so on a release event the provider may not be servable for a few
-      # minutes. Retry rather than fail, and say which of the two situations a
-      # persistent failure is: a genuinely broken artifact, or a version that
-      # is simply not there.
-      - name: terraform init from Terraform Registry
-        working-directory: examples/runnable/provider-install-verification
-        run: |
-          for attempt in $(seq 1 10); do
-            if terraform init -input=false; then
-              exit 0
-            fi
-            echo "::notice::init attempt ${attempt}/10 failed; retrying in 30s"
-            sleep 30
-          done
-          echo "::error::terraform init never succeeded. Either the published \
-          artifact is broken, or the version pinned in this example is not on \
-          the Registry. The pin is bumped during release prep, before the tag \
-          is pushed, so a scheduled run in that window fails for the second \
-          reason and is not a real failure."
-          exit 1
-
-      # init only downloads, checksums and unpacks. validate is what starts the
-      # provider and asks for its schema, so it is the step that proves the
-      # binary actually executes on this platform. A wrong-architecture or
-      # crash-on-startup build passes init and fails here, which is the exact
-      # shape of a dead release.
-      #
-      # No credentials are needed: validate does not call the provider's
-      # Configure, so this stays a pure artifact check.
-      - name: terraform validate to prove the provider starts
-        working-directory: examples/runnable/provider-install-verification
-        run: terraform validate
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/registry-smoke-test.yml
