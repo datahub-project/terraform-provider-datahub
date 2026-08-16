@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-16
+
 ### Added
 
 - **New resource `datahub_glossary_term_relationship`** manages a single typed relationship edge between two glossary terms, backed by the `addRelatedTerms`/`removeRelatedTerms` GraphQL mutations: `term_urn` inherits from (`isA`, "Inherits" in the UI) or contains (`hasA`, "Contains" in the UI) `related_term_urn`. One resource per edge, following `datahub_corp_group_member`, so relationships added outside Terraform on the same terms are left untouched -- the alternative, a list on `datahub_glossary_term`, would have made Terraform silently delete every edge a steward added through the UI. The edge is stored one-sided on the source term's `glossaryRelatedTerms` aspect (DataHub writes no inverse edge; the UI's "Inherited by"/"Contained by" views are reverse graph lookups), which is what makes exactly one Terraform resource the owner of each edge. Import by composite ID: `<term_urn>|<relationship_type>|<related_term_urn>`.
@@ -23,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Three server behaviours worth knowing are documented on the resource. Updates fully replace the form definition, so prompts or actor assignments added outside Terraform are removed on the next apply. Assignment to matching entities is asynchronous and additive: narrowing or removing the filter stops future assignment but does not retract the form from entities that already carry it. Destroy is a hard delete that asynchronously removes the form's assignment and completion records from entities, while structured property values collected through the form survive as ordinary metadata.
 - **New resource `datahub_oauth_authorization_server`** (DataHub Cloud only): an outbound OAuth client configuration DataHub uses to obtain tokens from an external identity provider when calling an external API. Its consumer is the Ask DataHub AI plugin registry - a plugin's `USER_OAUTH` mode references a server by URN - and this resource is the prerequisite half of that pair ([design](docs/design/provider-ai-plugins.md)); `datahub_ai_plugin` follows. The client secret is WriteOnly (`client_secret_wo` + `client_secret_wo_version`), never stored in Terraform state, and - unlike `datahub_secret` - rotates **in place**: destroying an OAuth server cascades into every referencing AI plugin (DataHub flips their auth to `NONE`), so a replacement for a routine rotation would silently break them. The provider only sends the secret when the version changes, because every non-empty write makes DataHub mint a new encrypted secret entity and orphan the previous one - sending it on every apply would leak one orphan per update. Secret presence (`has_client_secret`) is drift-detected; the value, by design, is not.
+
+### Changed
+
+- **`datahub_data_contracts` is now marked DataHub Cloud only.** Nothing about its behaviour changed -- it never worked on open-source DataHub, and now says so instead of failing obscurely. The data source is backed by `searchAcrossEntities`, and the GraphQL type that turns a search hit into an entity is registered only on Cloud. The contract *is* indexed on open source, so the search finds it, has nothing to build it with, and the query fails with a non-null violation naming `searchResults[0].entity` rather than returning an empty list. Upstream intends to move the type to open source, at which point this reverts.
+
+  **The `datahub_data_contract` resource is unaffected and remains available on both**, because its read goes through the OpenAPI v3 entity endpoint rather than search. Only the plural lookup is Cloud-gated.
 
 ## [0.22.0] - 2026-08-15
 
@@ -452,7 +460,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.20.0...v0.21.0
