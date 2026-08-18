@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-19
+
 ### Added
 
 - **`datahub_volume_assertion` gains `backfill_start_date_ms` and a computed `backfill_state`.** A new volume assertion has no history to judge against, so it stays uninformative until it has run for a while; setting a backfill start date seeds it from data the warehouse already holds. DataHub caps the lookback at 365 days before the assertion's creation (156 weeks when week-bucketed) and rejects anything earlier with its own message, so the provider passes the value through rather than second-guessing it. Changing the value re-runs the backfill; removing the attribute clears the request and leaves history already gathered in place. Because a backfill emits nothing of its own, `backfill_state` (`PENDING`, `COMPLETED`, `FAILED`, `REJECTED`, or empty when none was asked for) is the only way to see that one was refused rather than run.
 
   This was deferred for two releases on a recorded finding that the value does not survive a read, then very nearly built as a WriteOnly attribute -- state a WriteOnly attribute never keeps -- to dodge the drift that would follow. Re-measuring against DataHub Cloud found it round-trips exactly, on the endpoint the resource already reads, so an ordinary optional attribute was the right shape all along and the value is its own re-trigger marker.
 
+- **Release notes are now reachable from the Registry.** The Registry publishes the `docs/` tree and nothing else, so `CHANGELOG.md` had never been linked from the provider's page -- the only route was out to GitHub and a guess at the repository layout. A line on the Overview and a **Release notes** page under Guides now point at [GitHub Releases](https://github.com/datahub-project/terraform-provider-datahub/releases), whose bodies carry the identical per-version content GoReleaser slices out of this file at tag time.
+
 ### Fixed
 
 - **Monitor-side attributes now survive `terraform import` on every Cloud assertion resource.** The mock server had no monitor read at all, so `evaluation_cron`, `evaluation_timezone`, `source_type` and `mode` were exercised by nothing and had to be excluded from import verification. They are covered now, which is what makes the new backfill round-trip provable rather than merely asserted.
+
+- **Three UI navigation paths in the examples and docs pointed at things that do not exist.** These are the "now go and look at it" lines a reader follows straight after `terraform apply`, so a wrong one leaves them unable to tell a failed apply from a wrong instruction. The dataset tab is **Quality**, not Observe -- Observe is a top-level navigation group, and only on DataHub Cloud. Triggering ingestion is a play icon in the source's row, tooltipped **Execute** behind a confirmation dialog, not an "Ingestion -> Run now" link. And **Settings -> Preferences** is a group heading whose only page is **Appearance**, where the organization name and logo sit in a **Branding** section. Checked against the front-end source of both open source and Cloud; the other thirteen paths were correct as written.
 
 ## [0.23.0] - 2026-08-16
 
@@ -470,7 +476,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.0...v0.21.1
