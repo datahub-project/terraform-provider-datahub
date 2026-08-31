@@ -1,1 +1,1 @@
-acryl-datahub==1.7.0.5
+acryl-datahub==1.7.0.7
