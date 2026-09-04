@@ -389,6 +389,34 @@ var liveExamples = []liveExample{
 		mustSurvive: []string{"datahub_page_template.home"},
 	},
 
+	// A recurring field question: catalog-wide read via the Reader role plus
+	// a domain-scoped METADATA policy (the tree's only DOMAIN filter
+	// criterion). Creates actors like local-iam does, so it sits in the same
+	// end-of-run blast-radius slot. The live run proves the configuration
+	// applies, reads back and destroys cleanly; the *enforcement* claims (the
+	// policy actually granting/denying as the steward) are covered separately
+	// by TestAcc_Policy_DomainScopedEnforcement, which needs fixtures and an
+	// as-user client the example harness deliberately does not have.
+	//
+	// serialDestroy for the same reason as domain-simple: nested domains
+	// (finance -> finance-billing) hit the child-delete race (datahub#17732).
+	// Measured 2026-09-04 against a fresh v1.7.0 Quickstart: 3.28s for the
+	// full cycle (apply 1s).
+	//
+	// test_user_email is overridden because datahub_local_user_login is
+	// subject to the OSS signUp guard, which rejects the request whenever the
+	// user entity exists at all -- a fixed address is poisoned permanently by
+	// one failed destroy. test_user_password is WriteOnly and so has no
+	// default anywhere. Both filled per run; see liveVars.
+	{
+		dir: "domain-scoped-write-access",
+		vars: map[string]string{
+			"test_user_email":    "", // filled per run; see liveVars
+			"test_user_password": "", // filled per run; see liveVars
+		},
+		serialDestroy: true,
+	},
+
 	// The broadest example in the tree: a group, a native login, a catalog-only
 	// user, three memberships, a role assignment and a policy. It is also the only
 	// one that touches the identity the harness authenticates as, which is why it

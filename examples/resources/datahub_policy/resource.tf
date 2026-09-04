@@ -98,3 +98,47 @@ resource "datahub_policy" "all_source_tagged_viewers" {
     }
   }
 }
+
+resource "datahub_domain" "finance" {
+  domain_id = "finance"
+  name      = "Finance"
+}
+
+# Domain-scoped stewardship: catalog-wide read stays with the built-in Reader
+# role (roles are platform-wide and cannot be narrowed), while edit rights come
+# from a METADATA policy filtered to one domain. DOMAIN matches the named
+# domain AND every sub-domain nested beneath it, so scope to the specific child
+# when you want the narrower grant. An asset with no domain matches nothing.
+#
+# Deliberately absent: EDIT_ENTITY_DOMAINS -- it would let a steward move an
+# asset out of the domain, beyond the reach of this very policy.
+resource "datahub_policy" "finance_domain_stewards" {
+  policy_id   = "finance-domain-stewards"
+  name        = "Finance Domain Stewards"
+  type        = "METADATA"
+  description = "Curation rights on assets in the Finance domain and its sub-domains"
+
+  privileges = [
+    "EDIT_ENTITY_OWNERS",
+    "EDIT_ENTITY_TAGS",
+    "EDIT_ENTITY_GLOSSARY_TERMS",
+    "EDIT_ENTITY_DOCS",
+    "EDIT_ENTITY_DOC_LINKS",
+    "EDIT_ENTITY_PROPERTIES",
+  ]
+
+  actors = {
+    groups = [datahub_corp_group.data_platform.urn]
+  }
+
+  resources = {
+    filter = {
+      criteria = [
+        {
+          field  = "DOMAIN"
+          values = [datahub_domain.finance.urn]
+        },
+      ]
+    }
+  }
+}

@@ -1406,6 +1406,58 @@ resource "datahub_policy" "test" {
 	}
 }
 
+// PolicyDomainFilterSteps covers a DOMAIN filter criterion referencing a domain
+// created in the same config -- the domain-scoped write-access pattern (read
+// everywhere via a role, edit rights confined to one domain via a METADATA
+// policy). The .urn reference puts the domain in the dependency graph, and the
+// import step proves the criterion survives a round-trip. CRUD fidelity only:
+// whether the policy actually grants and denies is a live-target concern,
+// covered by TestAcc_Policy_DomainScopedEnforcement.
+func PolicyDomainFilterSteps(policyID, domainID string) []resource.TestStep {
+	const addr = "datahub_policy.test"
+	criteria := tfjsonpath.New("resources").AtMapKey("filter").AtMapKey("criteria")
+
+	return []resource.TestStep{
+		{
+			Config: providerBlock + fmt.Sprintf(`
+resource "datahub_domain" "test" {
+  domain_id = %q
+  name      = "Steward Domain"
+}
+
+resource "datahub_policy" "test" {
+  policy_id  = %q
+  name       = "Domain Stewards"
+  type       = "METADATA"
+  privileges = ["EDIT_ENTITY_TAGS", "EDIT_ENTITY_OWNERS", "EDIT_ENTITY_DOCS"]
+  actors = {
+    all_users = true
+  }
+  resources = {
+    filter = {
+      criteria = [
+        { field = "DOMAIN", values = [datahub_domain.test.urn] },
+      ]
+    }
+  }
+}
+`, domainID, policyID),
+			ConfigStateChecks: []statecheck.StateCheck{
+				statecheck.ExpectKnownValue(addr, criteria, knownvalue.ListSizeExact(1)),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("field"), knownvalue.StringExact("DOMAIN")),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("values"),
+					knownvalue.ListExact([]knownvalue.Check{knownvalue.StringExact("urn:li:domain:" + domainID)})),
+				statecheck.ExpectKnownValue(addr, criteria.AtSliceIndex(0).AtMapKey("condition"), knownvalue.StringExact("EQUALS")),
+			},
+		},
+		{
+			ResourceName:      addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
 // SeedFilterPolicy injects a filter-scoped METADATA policy into the mock store at
 // baseURL via /test-control/seed-policy, bypassing the provider's own write path.
 // Stands in for a policy authored in the DataHub UI. Mock-only.
