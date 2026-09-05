@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -5013,6 +5014,7 @@ resource "datahub_volume_assertion" "test" {
 `,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				monitorURNCheck(addr),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("volume_type"), knownvalue.StringExact("ROW_COUNT_TOTAL")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("GREATER_THAN_OR_EQUAL_TO")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("at least 100 rows")),
@@ -5259,6 +5261,7 @@ resource "datahub_freshness_assertion" "test" {
 `,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				monitorURNCheck(addr),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("schedule_type"), knownvalue.StringExact("FIXED_INTERVAL")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fixed_interval_unit"), knownvalue.StringExact("HOUR")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("data must land daily")),
@@ -5276,6 +5279,53 @@ resource "datahub_freshness_assertion" "test" {
 // FreshnessAssertionCheckDestroy verifies every datahub_freshness_assertion has been removed.
 func FreshnessAssertionCheckDestroy(s *terraform.State) error {
 	return assertionCheckDestroy(s, "datahub_freshness_assertion")
+}
+
+// FreshnessAssertionMonitorDeleteErrorSteps verifies that a failing monitor
+// delete fails the destroy instead of being silently discarded (the discard is
+// how orphaned monitors used to accumulate), and that a retry then converges.
+//
+// Step 1 creates the assertion (persisting monitor_urn). Step 2 arms the mock's
+// one-shot monitor-delete failure and applies an empty config: Delete runs,
+// the monitor DELETE returns 500, and the step expects the surfaced diagnostic.
+// Because the monitor is deleted BEFORE the assertion, the failed destroy has
+// removed nothing and the resource stays in state. The test framework's final
+// destroy then retries with the one-shot consumed, succeeds, and the
+// CheckDestroy wired by the caller proves both entities are gone -- which is the
+// retry-convergence property the delete ordering was chosen for.
+//
+// Mock-only: it drives /test-control/force-monitor-delete-fail, which a live
+// target does not expose. Delete plumbing is shared by all five monitor-backed
+// assertion resources, so exercising it through one of them covers the path.
+func FreshnessAssertionMonitorDeleteErrorSteps() []resource.TestStep {
+	cfg := providerBlock + `
+resource "datahub_freshness_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:hive,freshness.table,PROD)"
+  schedule_type       = "SINCE_THE_LAST_CHECK"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_OPERATION"
+  mode                = "ACTIVE"
+}
+`
+	return []resource.TestStep{
+		{Config: cfg},
+		{
+			PreConfig: func() {
+				reqURL := os.Getenv("DATAHUB_GMS_URL") + "/test-control/force-monitor-delete-fail"
+				resp, err := http.Post(reqURL, "", bytes.NewReader(nil)) //nolint:noctx
+				if err != nil {
+					panic(fmt.Sprintf("FreshnessAssertionMonitorDeleteErrorSteps PreConfig: POST force-fail: %v", err))
+				}
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusNoContent {
+					panic(fmt.Sprintf("FreshnessAssertionMonitorDeleteErrorSteps PreConfig: unexpected status %d", resp.StatusCode))
+				}
+			},
+			Config:      providerBlock, // empty: triggers delete of the resource
+			ExpectError: regexp.MustCompile(`deleting\s+monitor`),
+		},
+	}
 }
 
 // FreshnessAssertionSinceLastCheckLifecycleSteps returns test steps for the
@@ -5383,6 +5433,7 @@ resource "datahub_sql_assertion" "test" {
 `,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				monitorURNCheck(addr),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("sql_type"), knownvalue.StringExact("METRIC")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("operator"), knownvalue.StringExact("EQUAL_TO")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("value"), knownvalue.StringExact("0")),
@@ -5427,6 +5478,7 @@ resource "datahub_schema_assertion" "test" {
 `,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				monitorURNCheck(addr),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("compatibility"), knownvalue.StringExact("SUPERSET")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(0).AtMapKey("path"), knownvalue.StringExact("id")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("fields").AtSliceIndex(0).AtMapKey("type"), knownvalue.StringExact("NUMBER")),
@@ -5584,6 +5636,7 @@ resource "datahub_field_assertion" "test" {
 `,
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.NotNull()),
+				monitorURNCheck(addr),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_assertion_type"), knownvalue.StringExact("FIELD_METRIC")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("metric"), knownvalue.StringExact("NULL_COUNT")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("field_path"), knownvalue.StringExact("id")),
@@ -5830,7 +5883,19 @@ resource "datahub_sql_assertion" "test" {
 	}
 }
 
+// monitorURNCheck asserts the resource's monitor_urn attribute is populated
+// with a monitor URN after apply -- the create-time capture that lets destroy
+// delete the monitor without depending on the eventually-consistent lookup.
+func monitorURNCheck(addr string) statecheck.StateCheck {
+	return statecheck.ExpectKnownValue(addr, tfjsonpath.New("monitor_urn"),
+		knownvalue.StringRegexp(regexp.MustCompile(`^urn:li:monitor:`)))
+}
+
 // assertionCheckDestroy is a shared helper for assertion CheckDestroy functions.
+// Beyond the assertion entity itself, it verifies the assertion's monitor entity
+// (recorded in the monitor_urn attribute) is gone too: DataHub's deleteAssertion
+// leaves the monitor behind, so an assertion gone while its monitor persists is
+// exactly the orphan the provider's explicit monitor delete exists to prevent.
 func assertionCheckDestroy(s *terraform.State, resourceType string) error {
 	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
 	if err != nil {
@@ -5852,8 +5917,40 @@ func assertionCheckDestroy(s *terraform.State, resourceType string) error {
 		if a != nil {
 			return stillExistsAfterDestroyError(ctx, client, resourceType, urn)
 		}
+		if monitorURN := rs.Primary.Attributes["monitor_urn"]; monitorURN != "" {
+			if monErr := verifyMonitorDeleted(ctx, monitorURN); monErr != nil {
+				return monErr
+			}
+		}
 	}
 	return nil
+}
+
+// verifyMonitorDeleted checks via the OpenAPI v3 entity endpoint (strongly
+// consistent) that the monitor entity no longer exists after destroy.
+func verifyMonitorDeleted(ctx context.Context, monitorURN string) error {
+	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
+	reqURL := gmsURL + "/openapi/v3/entity/monitor/" + url.PathEscape(monitorURN)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: build monitor request: %w", err)
+	}
+	if token := os.Getenv("DATAHUB_GMS_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("CheckDestroy: GET monitor %q: %w", monitorURN, err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		return nil
+	case http.StatusOK:
+		return fmt.Errorf("CheckDestroy: monitor %q still exists after destroy -- the assertion was deleted but its monitor was orphaned", monitorURN)
+	default:
+		return fmt.Errorf("CheckDestroy: unexpected HTTP %d checking monitor %q", resp.StatusCode, monitorURN)
+	}
 }
 
 // SeedAssertion injects an assertion into the mock store at baseURL via the

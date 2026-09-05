@@ -38,6 +38,7 @@ type volumeAssertionResource struct {
 type volumeAssertionResourceModel struct {
 	ID                 types.String `tfsdk:"id"`
 	URN                types.String `tfsdk:"urn"`
+	MonitorURN         types.String `tfsdk:"monitor_urn"`
 	EntityURN          types.String `tfsdk:"entity_urn"`
 	Description        types.String `tfsdk:"description"`
 	FilterSQL          types.String `tfsdk:"filter_sql"`
@@ -116,6 +117,7 @@ func (r *volumeAssertionResource) Schema(_ context.Context, _ resource.SchemaReq
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"monitor_urn": monitorURNSchema(),
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
@@ -284,7 +286,7 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	urn, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
+	urn, monitorURN, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
 		EntityURN:           plan.EntityURN.ValueString(),
 		Description:         strVal(plan.Description),
 		FilterSQL:           strVal(plan.FilterSQL),
@@ -324,6 +326,9 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
+	// Persist the monitor URN resolved during create so destroy can delete the
+	// monitor without depending on the eventually-consistent lookup.
+	plan.MonitorURN = nullIfEmpty(monitorURN)
 	plan.BackfillState = r.readBackfillState(ctx, urn, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -416,7 +421,13 @@ func (r *volumeAssertionResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 	state.BackfillState = types.StringValue("")
+	// A nil mon with no error means the assertion genuinely has no monitor, so
+	// record the absence. A lookup ERROR has already failed this Read above; it
+	// must never silently null monitor_urn, or the next destroy would fall back
+	// to the same flaky lookup the attribute exists to avoid.
+	state.MonitorURN = types.StringNull()
 	if mon != nil {
+		state.MonitorURN = types.StringValue(mon.MonitorURN)
 		state.EvaluationCron = nullIfEmpty(mon.EvaluationCron)
 		state.EvaluationTimezone = nullIfEmpty(mon.EvaluationTimezone)
 		state.SourceType = nullIfEmpty(mon.SourceType)
@@ -465,7 +476,7 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 		return
 	}
 
-	_, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
+	_, _, err := r.client.UpsertVolumeAssertion(ctx, datahub.VolumeAssertionInput{
 		AssertionURN:        state.URN.ValueString(),
 		EntityURN:           plan.EntityURN.ValueString(),
 		Description:         strVal(plan.Description),
@@ -518,6 +529,9 @@ func (r *volumeAssertionResource) Update(ctx context.Context, req resource.Updat
 
 	plan.ID = state.ID
 	plan.URN = state.URN
+	// The monitor is stable across updates; carry the stored URN forward. When
+	// prior state predates monitor_urn it stays null here and Read fills it.
+	plan.MonitorURN = state.MonitorURN
 	plan.BackfillState = r.readBackfillState(ctx, state.URN.ValueString(), &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -543,7 +557,11 @@ func (r *volumeAssertionResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn); err != nil {
+	// Prefer the monitor URN persisted in state at create/read time. Empty covers
+	// legacy state written before monitor_urn existed and assertions with no
+	// monitor: the client then falls back to resolving it, and aborts the delete
+	// rather than orphan the monitor when that fallback lookup fails.
+	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn, state.MonitorURN.ValueString()); err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
 	}

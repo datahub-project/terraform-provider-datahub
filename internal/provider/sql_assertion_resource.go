@@ -37,6 +37,7 @@ type sqlAssertionResource struct {
 type sqlAssertionResourceModel struct {
 	ID                 types.String `tfsdk:"id"`
 	URN                types.String `tfsdk:"urn"`
+	MonitorURN         types.String `tfsdk:"monitor_urn"`
 	EntityURN          types.String `tfsdk:"entity_urn"`
 	SQLType            types.String `tfsdk:"sql_type"`
 	ChangeType         types.String `tfsdk:"change_type"`
@@ -108,6 +109,7 @@ func (r *sqlAssertionResource) Schema(_ context.Context, _ resource.SchemaReques
 					stringplanmodifier.UseStateForUnknown(),
 				},
 			},
+			"monitor_urn": monitorURNSchema(),
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
@@ -256,7 +258,7 @@ func (r *sqlAssertionResource) Create(ctx context.Context, req resource.CreateRe
 		return
 	}
 
-	urn, err := r.client.UpsertSQLAssertion(ctx, datahub.SQLAssertionInput{
+	urn, monitorURN, err := r.client.UpsertSQLAssertion(ctx, datahub.SQLAssertionInput{
 		EntityURN:          plan.EntityURN.ValueString(),
 		SQLType:            plan.SQLType.ValueString(),
 		ChangeType:         strVal(plan.ChangeType),
@@ -293,6 +295,9 @@ func (r *sqlAssertionResource) Create(ctx context.Context, req resource.CreateRe
 
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
+	// Persist the monitor URN resolved during create so destroy can delete the
+	// monitor without depending on the eventually-consistent lookup.
+	plan.MonitorURN = nullIfEmpty(monitorURN)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -361,6 +366,13 @@ func (r *sqlAssertionResource) Read(ctx context.Context, req resource.ReadReques
 		if mon.Mode != "" {
 			state.Mode = types.StringValue(mon.Mode)
 		}
+		state.MonitorURN = types.StringValue(mon.MonitorURN)
+	} else {
+		// nil with no error means the assertion genuinely has no monitor, so
+		// record the absence. A lookup ERROR has already failed this Read above;
+		// it must never silently null this attribute, or the next destroy would
+		// fall back to the same flaky lookup the attribute exists to avoid.
+		state.MonitorURN = types.StringNull()
 	}
 
 	tagsAll, err := readTagsAll(ctx, r.client, assertionEntityPath, urn, state.TagsAll)
@@ -393,7 +405,7 @@ func (r *sqlAssertionResource) Update(ctx context.Context, req resource.UpdateRe
 		return
 	}
 
-	_, err := r.client.UpsertSQLAssertion(ctx, datahub.SQLAssertionInput{
+	_, _, err := r.client.UpsertSQLAssertion(ctx, datahub.SQLAssertionInput{
 		AssertionURN:       state.URN.ValueString(),
 		EntityURN:          plan.EntityURN.ValueString(),
 		SQLType:            plan.SQLType.ValueString(),
@@ -443,6 +455,9 @@ func (r *sqlAssertionResource) Update(ctx context.Context, req resource.UpdateRe
 
 	plan.ID = state.ID
 	plan.URN = state.URN
+	// The monitor is stable across updates; carry the stored URN forward. When
+	// prior state predates monitor_urn it stays null here and Read fills it.
+	plan.MonitorURN = state.MonitorURN
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -467,7 +482,11 @@ func (r *sqlAssertionResource) Delete(ctx context.Context, req resource.DeleteRe
 		return
 	}
 
-	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn); err != nil {
+	// Prefer the monitor URN persisted in state at create/read time. Empty covers
+	// legacy state written before monitor_urn existed and assertions with no
+	// monitor: the client then falls back to resolving it, and aborts the delete
+	// rather than orphan the monitor when that fallback lookup fails.
+	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn, state.MonitorURN.ValueString()); err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
 		return
 	}

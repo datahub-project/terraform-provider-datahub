@@ -93,5 +93,6 @@ resource "datahub_freshness_assertion" "orders_daily" {
 ### Read-Only
 
 - `id` (String) The ID of this resource.
+- `monitor_urn` (String) URN of the DataHub Monitor entity backing this assertion (e.g. `urn:li:monitor:<id>`). Captured when the assertion is created and refreshed on read. The provider deletes this monitor explicitly on destroy: DataHub's `deleteAssertion` leaves the monitor in place, and an orphaned monitor counts toward the DataHub Cloud monitor limit and blocks recreating an assertion of the same type on the same dataset.
 - `tags_all` (Set of String) Tag URNs attached by the provider's `defaults.tags`. While non-null, the provider owns the complete `globalTags` list on this entity: tags added outside Terraform show as drift here and are removed on the next apply. Null when `defaults.tags` is not configured and the provider has never written tags to this entity (existing and externally-applied tags are then left untouched).
 - `urn` (String) Full DataHub URN for this assertion (e.g. `urn:li:assertion:<uuid>`).

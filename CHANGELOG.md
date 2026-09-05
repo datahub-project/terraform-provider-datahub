@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Destroying a Cloud assertion no longer risks orphaning its monitor.** Every monitor-backed assertion resource (`datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`, `datahub_field_assertion`, `datahub_schema_assertion`) now records a computed `monitor_urn` at create time and refreshes it on read, so destroy deletes the monitor through a reference it already holds instead of re-resolving it through an eventually-consistent graph query at the moment of deletion. Previously a failed lookup -- index lag was enough -- was silently discarded: the assertion was deleted, the monitor stayed behind, and nothing reported it. Orphaned monitors count toward a DataHub Cloud tenant's monitor limit and block recreating an assertion of the same type on the same dataset, so the leak surfaced later as an unrelated-looking apply failure.
+
+  Delete-time errors are no longer discarded either. When state carries no monitor URN (state written by an older provider version, or a fresh import before its first refresh), destroy falls back to the lookup -- and if that lookup fails, it aborts before removing anything and says a retry is safe, rather than trading a clean error for a leak. The monitor is deleted before the assertion, so a partial failure always leaves a state a retry converges from; a monitor already absent counts as success, because DataHub Cloud's server-side deletion hook can remove it first.
+
 ## [0.24.0] - 2026-08-19
 
 ### Added

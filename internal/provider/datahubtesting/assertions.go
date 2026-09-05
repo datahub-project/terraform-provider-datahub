@@ -28,7 +28,6 @@ type mockAssertion struct {
 	SchemaAssertion *map[string]any
 	OnSuccess       []string
 	OnFailure       []string
-	Monitor         *mockMonitor
 }
 
 // mockMonitor holds the monitor-side state that DataHub keeps on the separate
@@ -36,12 +35,20 @@ type mockAssertion struct {
 // response, not on what the client happens to send: the monitor read is the only
 // way the provider recovers the evaluation schedule, source type, mode and
 // backfill config, so a mock that skipped it would agree with any client bug.
+//
+// Monitors live in their own store (mockServer.monitors) keyed by monitor URN,
+// separately from assertions, because that is how the server behaves: the
+// deleteAssertion mutation removes the assertion entity and leaves the Monitor
+// entity in place (a server-side hook deletes it asynchronously at best). A
+// mock that dropped the monitor together with the assertion would make any
+// provider that forgets to delete the monitor look correct.
 type mockMonitor struct {
-	Cron       string
-	Timezone   string
-	SourceType string
-	ParamsKey  string // datasetVolumeParameters, datasetFreshnessParameters, ...
-	Mode       string
+	AssertionURN string
+	Cron         string
+	Timezone     string
+	SourceType   string
+	ParamsKey    string // datasetVolumeParameters, datasetFreshnessParameters, ...
+	Mode         string
 	// BackfillStartDateMs is zero when the upsert carried no backfillConfig.
 	// The live server then omits the bootstrapConfig field and the
 	// monitorBootstrapStatus aspect entirely, which this mock reproduces.
@@ -55,8 +62,8 @@ func mockMonitorURN(assertionURN string) string { return "urn:li:monitor:mock-" 
 // captureMonitor extracts the monitor-side fields from an upsert input. paramsKey
 // names the evaluationParameters sub-object the assertion type uses, which is what
 // the provider reads its source_type back out of.
-func captureMonitor(input map[string]any, paramsKey string, prev *mockMonitor) *mockMonitor {
-	m := &mockMonitor{ParamsKey: paramsKey}
+func captureMonitor(input map[string]any, paramsKey, assertionURN string, prev *mockMonitor) *mockMonitor {
+	m := &mockMonitor{ParamsKey: paramsKey, AssertionURN: assertionURN}
 	if sched, ok := input["evaluationSchedule"].(map[string]any); ok {
 		m.Cron, _ = sched["cron"].(string)
 		m.Timezone, _ = sched["timezone"].(string)
@@ -205,8 +212,8 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 		VolumeAssertion: &volumeParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
-		Monitor:         captureMonitor(input, "datasetVolumeParameters", s.assertions[urn].Monitor),
 	}
+	s.monitors[mockMonitorURN(urn)] = captureMonitor(input, "datasetVolumeParameters", urn, s.monitors[mockMonitorURN(urn)])
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
@@ -256,8 +263,8 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 		FreshnessAssert: &freshnessParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
-		Monitor:         captureMonitor(input, "datasetFreshnessParameters", s.assertions[urn].Monitor),
 	}
+	s.monitors[mockMonitorURN(urn)] = captureMonitor(input, "datasetFreshnessParameters", urn, s.monitors[mockMonitorURN(urn)])
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
@@ -312,9 +319,9 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 		SQLAssertion:  &sqlParams,
 		OnSuccess:     onSuccess,
 		OnFailure:     onFailure,
-		// SQL monitors carry no sourceType, so no parameters key is emitted.
-		Monitor: captureMonitor(input, "", s.assertions[urn].Monitor),
 	}
+	// SQL monitors carry no sourceType, so no parameters key is emitted.
+	s.monitors[mockMonitorURN(urn)] = captureMonitor(input, "", urn, s.monitors[mockMonitorURN(urn)])
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
@@ -361,8 +368,8 @@ func (s *mockServer) handleUpsertSchemaAssertion(w http.ResponseWriter, variable
 		SchemaAssertion: &schemaParams,
 		OnSuccess:       onSuccess,
 		OnFailure:       onFailure,
-		Monitor:         captureMonitor(input, "", s.assertions[urn].Monitor),
 	}
+	s.monitors[mockMonitorURN(urn)] = captureMonitor(input, "", urn, s.monitors[mockMonitorURN(urn)])
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
@@ -414,8 +421,8 @@ func (s *mockServer) handleUpsertFieldAssertion(w http.ResponseWriter, variables
 		FieldAssertion: &fieldParams,
 		OnSuccess:      onSuccess,
 		OnFailure:      onFailure,
-		Monitor:        captureMonitor(input, "datasetFieldParameters", s.assertions[urn].Monitor),
 	}
+	s.monitors[mockMonitorURN(urn)] = captureMonitor(input, "datasetFieldParameters", urn, s.monitors[mockMonitorURN(urn)])
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{
@@ -424,25 +431,34 @@ func (s *mockServer) handleUpsertFieldAssertion(w http.ResponseWriter, variables
 	})
 }
 
-// handleGetAssertionMonitor handles the getAssertionMonitor GraphQL query.
-// For Cloud-only assertion types (VOLUME, FRESHNESS, SQL), returns a synthetic
-// monitor URN so that waitForAssertionMonitor resolves immediately on the create
-// path. The monitor DELETE handler accepts any URN as a no-op, so returning a
-// synthetic URN here is safe for the delete path too.
-// CUSTOM assertions have no monitor entity; nil is returned for those.
+// handleGetAssertionMonitor handles the getAssertionMonitor GraphQL query. It
+// reports the monitor entity linked to the assertion, if one exists in the
+// monitor store; a monitor is created by the five *AssertionMonitor upsert
+// mutations, so CUSTOM and seeded assertions read back nil.
+//
+// When the fail-monitor-lookup test control is armed, the query returns a
+// GraphQL error instead -- modelling the transient graph/search failures the
+// live query can produce, which is what the provider's delete-time fallback
+// hardening exists to survive.
 func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 
 	s.mu.Lock()
-	a, exists := s.assertions[urn]
+	failLookup := s.failMonitorLookup
+	_, assertionExists := s.assertions[urn]
+	_, monitorExists := s.monitors[mockMonitorURN(urn)]
 	s.mu.Unlock()
 
+	if failLookup {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"errors": []map[string]any{{"message": "simulated monitor lookup failure (search backend unavailable)"}},
+		})
+		return
+	}
+
 	var monitorVal any
-	if exists {
-		switch a.AssertionType {
-		case "VOLUME", "FRESHNESS", "SQL", "FIELD", "DATA_SCHEMA":
-			monitorVal = map[string]any{"urn": mockMonitorURN(urn)}
-		}
+	if assertionExists && monitorExists {
+		monitorVal = map[string]any{"urn": mockMonitorURN(urn)}
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -455,13 +471,37 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	})
 }
 
-// handleMonitorEntity handles /openapi/v3/entity/monitor/{urn}. DELETE is a
-// no-op returning 200. GET reproduces the live DataHub Cloud response shape so
-// the provider's monitor read -- the only source of the evaluation schedule,
+// handleMonitorEntity handles /openapi/v3/entity/monitor/{urn}. DELETE removes
+// the monitor from the store and returns 404 when it is already absent, which
+// is the case the provider must treat as success (on the live server, the
+// MonitorDeletionHook or an earlier partially-failed destroy may have removed
+// it first). GET reproduces the live DataHub Cloud response shape so the
+// provider's monitor read -- the only source of the evaluation schedule,
 // source type, mode and backfill config -- is exercised rather than skipped.
 func (s *mockServer) handleMonitorEntity(w http.ResponseWriter, r *http.Request) {
+	raw := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/monitor/")
+	decoded, err := url.PathUnescape(raw)
+	if err != nil {
+		decoded = raw
+	}
+
 	switch r.Method {
 	case http.MethodDelete:
+		s.mu.Lock()
+		if s.failNextMonitorDelete {
+			// One-shot failure armed via /test-control/force-monitor-delete-fail.
+			s.failNextMonitorDelete = false
+			s.mu.Unlock()
+			http.Error(w, "simulated monitor delete failure", http.StatusInternalServerError)
+			return
+		}
+		_, ok := s.monitors[decoded]
+		delete(s.monitors, decoded)
+		s.mu.Unlock()
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		return
 	case http.MethodGet:
@@ -470,23 +510,15 @@ func (s *mockServer) handleMonitorEntity(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	raw := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/monitor/")
-	decoded, err := url.PathUnescape(raw)
-	if err != nil {
-		decoded = raw
-	}
-	assertionURN := strings.TrimPrefix(decoded, "urn:li:monitor:mock-")
-
 	s.mu.Lock()
-	a, ok := s.assertions[assertionURN]
+	m, ok := s.monitors[decoded]
 	s.mu.Unlock()
-	if !ok || a.Monitor == nil {
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	m := a.Monitor
 
-	entry := map[string]any{"assertion": assertionURN}
+	entry := map[string]any{"assertion": m.AssertionURN}
 	if m.Cron != "" || m.Timezone != "" {
 		entry["schedule"] = map[string]any{"cron": m.Cron, "timezone": m.Timezone}
 	}
@@ -520,7 +552,12 @@ func (s *mockServer) handleMonitorEntity(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// handleDeleteAssertion handles the deleteAssertion GraphQL mutation.
+// handleDeleteAssertion handles the deleteAssertion GraphQL mutation. Like the
+// live server, it removes only the assertion entity: the monitor stays in the
+// monitor store. (DataHub Cloud's MonitorDeletionHook deletes the monitor
+// asynchronously and can lose the race entirely -- OBS-2077 -- which is why the
+// provider deletes the monitor explicitly. The mock models the hook losing, so
+// a provider that stopped deleting monitors would fail the destroy checks.)
 func (s *mockServer) handleDeleteAssertion(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 
