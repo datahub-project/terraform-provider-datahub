@@ -71,6 +71,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
         with:
+          version: v2.18.0
           args: release --clean
       - name: Set release body
         # GoReleaser's --release-notes flag does not reliably apply the body
