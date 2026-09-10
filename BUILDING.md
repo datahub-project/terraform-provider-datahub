@@ -6,6 +6,8 @@
 |---|---|---|
 | Go | yes | Version pinned in `mise.toml` and `go.mod`. Use `mise` to install. |
 | Terraform CLI | yes | >= 1.11 required for `WriteOnly` attribute support. |
+| `make` | yes | Not managed by mise -- it has no first-class mise backend (only a third-party asdf plugin or a conda package, both heavier than the alternative). Ships with Xcode Command Line Tools on macOS and is preinstalled on GitHub Actions' `ubuntu-latest` runner; on a bare minimal Linux image, install via the platform package manager (e.g. `apt-get install -y make`). |
+| `git` | yes (soft) | `make build`/`make install` shell out to `git describe --tags --always --dirty` to embed a version string in the binary; this fails soft (`VERSION` falls back to `"dev"`) if `git` is unavailable or the tree isn't a git repo, so it never hard-blocks the build. |
 | `golangci-lint` | no | Only needed for `make lint`. Install via `mise` or see https://golangci-lint.run. |
 | `tfplugindocs` | no | Only needed for `make generate`. Managed by the `tools/` sub-module. |
 | Docker | no | Required for `make testacc-quickstart` and `make test-examples-live-quickstart` only. |
