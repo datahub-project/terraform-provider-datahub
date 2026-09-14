@@ -2,10 +2,6 @@
 # Builds the provider binary into ./bin instead of $GOPATH/bin.
 
 GO ?= go
-# Pinned so local runs and CI analyse with the same tool. The vulnerability
-# database it queries is always fetched fresh, so a pin here does not stale the
-# findings -- only the analyser.
-GOVULNCHECK_VERSION ?= v1.6.0
 BIN_DIR ?= bin
 BINARY_NAME ?= terraform-provider-datahub
 TOOL_NAME ?= datahub-tf-extract
@@ -237,19 +233,27 @@ endif
 # The check targets query the Go module proxy for newer versions but change nothing.
 # The update targets mutate go.mod/go.sum -- review 'git diff' before committing.
 # Run through mise in your shell so the pinned Go is used, e.g. 'mise exec -- make deps-outdated'.
+# Version pinned via the 'tool' directive in go.mod (see 'go get -tool'), so
+# Dependabot's existing gomod block for this module bumps it like any other
+# dependency -- a bare Makefile variable, by contrast, is invisible to it. The
+# vulnerability database it queries is always fetched fresh, so the pin does
+# not stale the findings, only the analyser.
 # Reports only vulnerabilities this module actually calls, which is a much
 # smaller set than "vulnerable version present in the graph" -- and a different
 # set, since the Go vulnerability database carries entries GitHub's advisory
 # database does not. Neither this nor Dependabot subsumes the other.
 deps-vulncheck:
-	$(GO) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	$(GO) run golang.org/x/vuln/cmd/govulncheck ./...
 
 # The target above is './...' from here, so it covers the main module and nothing
 # else -- and this repository has three Go modules. The other two are scanned by
 # building the commands they exist to pin and scanning those binaries, which is
 # the only mode that works on a build-tagged tools stub. See the script header.
+# tools/ and tools/serve are separate modules and cannot see this module's
+# 'tool' directive directly, so the script derives the same pinned version via
+# 'go -C <repo-root> list -m' rather than taking a second, driftable copy.
 deps-vulncheck-tools:
-	@GO="$(GO)" GOVULNCHECK_VERSION="$(GOVULNCHECK_VERSION)" ./scripts/vulncheck-tools.sh
+	@GO="$(GO)" ./scripts/vulncheck-tools.sh
 
 deps-vulncheck-all: deps-vulncheck deps-vulncheck-tools
 
