@@ -594,8 +594,12 @@ func (c *Client) deleteAssertionEntity(ctx context.Context, urn string) error {
 // The fallback lookup is backed by an eventually-consistent graph query, so a
 // lookup FAILURE aborts the whole delete before anything is removed: silently
 // proceeding would delete the assertion and orphan the monitor. An empty
-// fallback result with no error means the assertion has no monitor, and the
-// assertion alone is deleted.
+// fallback result with no error is TREATED AS the assertion having no monitor,
+// and the assertion alone is deleted -- treated as, not proof of: the same
+// index lag that loses the Evaluates edge returns empty without error, which
+// is exactly why callers that ever learned the monitor URN must keep passing
+// it here rather than re-deriving it, and why the resources' Read never nulls
+// a stored monitor_urn on a nil lookup.
 //
 // Deletion order is monitor first, then assertion, so that a partial failure
 // always converges on retry:

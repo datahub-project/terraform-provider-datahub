@@ -53,6 +53,26 @@ func TestFreshnessAssertionMonitorDeleteError_mock(t *testing.T) {
 	})
 }
 
+// TestFreshnessAssertionMonitorLookupLag_mock verifies that Read preserves a
+// stored monitor_urn when the monitor lookup returns nil without error. On the
+// live server that shape is produced by graph-index lag as well as by genuine
+// absence, so treating it as proof of absence would null the URN and send the
+// next destroy into the same eventually consistent fallback lookup the
+// attribute exists to avoid. The framework's final destroy also proves the
+// preserved stale URN deletes cleanly (absent monitor treated as success).
+// Mock-only: it drives the mock's drop-monitors test control.
+func TestFreshnessAssertionMonitorLookupLag_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.FreshnessAssertionCheckDestroy,
+		Steps:                    datahubtesting.FreshnessAssertionMonitorLookupLagSteps(),
+	})
+}
+
 func TestFreshnessAssertionSchedule_validation_mock(t *testing.T) {
 	server := datahubtesting.NewServer(t)
 	t.Setenv("DATAHUB_GMS_URL", server.URL)

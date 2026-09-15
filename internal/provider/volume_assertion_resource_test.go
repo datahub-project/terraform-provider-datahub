@@ -85,6 +85,25 @@ func TestAcc_VolumeAssertion_Lifecycle(t *testing.T) {
 	})
 }
 
+// TestVolumeAssertionMonitorLookupLag_mock verifies that Read preserves a
+// stored monitor_urn when the monitor lookup returns nil without error --
+// datahub_volume_assertion carries the second of the two Read code shapes the
+// preservation fix touches (assignment ahead of the nil check, rather than an
+// else branch). See TestFreshnessAssertionMonitorLookupLag_mock for the
+// failure mode this guards. Mock-only: it drives the mock's drop-monitors
+// test control.
+func TestVolumeAssertionMonitorLookupLag_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.VolumeAssertionCheckDestroy,
+		Steps:                    datahubtesting.VolumeAssertionMonitorLookupLagSteps(),
+	})
+}
+
 // TestAcc_VolumeAssertion_OSS_RejectsWithCloudOnlyError verifies that
 // datahub_volume_assertion surfaces a "DataHub Cloud Required" diagnostic
 // when applied against an OSS DataHub instance.
