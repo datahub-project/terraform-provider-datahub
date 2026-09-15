@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-09-16
+
 ### Fixed
 
 - **Destroying a Cloud assertion no longer risks orphaning its monitor.** Every monitor-backed assertion resource (`datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`, `datahub_field_assertion`, `datahub_schema_assertion`) now records a computed `monitor_urn` at create time and refreshes it on read, so destroy deletes the monitor through a reference it already holds instead of re-resolving it through an eventually-consistent graph query at the moment of deletion. Previously a failed lookup -- index lag was enough -- was silently discarded: the assertion was deleted, the monitor stayed behind, and nothing reported it. Orphaned monitors count toward a DataHub Cloud tenant's monitor limit and block recreating an assertion of the same type on the same dataset, so the leak surfaced later as an unrelated-looking apply failure.
@@ -484,7 +486,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.24.1...HEAD
+[0.24.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.21.1...v0.22.0
