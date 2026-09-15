@@ -30,11 +30,30 @@
 #
 # Exits 0 when no reachable vulnerability is found outside PERMANENT_OSV, 1
 # otherwise. Unreachable findings are always printed and never fail the run.
+#
+# The govulncheck version itself is pinned once, via a 'tool' directive in the
+# root go.mod (Dependabot's existing gomod block for this module bumps it like
+# any other dependency). This script derives that same version rather than
+# hardcoding a second copy, since tools/ and tools/serve are separate modules
+# that cannot see the root module's 'tool' directive directly.
 
 set -euo pipefail
 
 GO="${GO:-go}"
-GOVULNCHECK_VERSION="${GOVULNCHECK_VERSION:-v1.6.0}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+for cmd in jq "$GO"; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "error: $cmd is required but not on PATH" >&2
+    exit 1
+  fi
+done
+
+# tools/ and tools/serve are separate modules and cannot see the root module's
+# 'tool' directive directly (each has its own go.mod), so derive the version
+# Dependabot already tracks there rather than hardcoding a second copy that
+# could drift from it.
+GOVULNCHECK_VERSION="$("$GO" -C "$REPO_ROOT" list -m -f '{{.Version}}' golang.org/x/vuln)"
 GOVULNCHECK="golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
 
 # Advisories with no fix in any release, so no bump can clear them. Keeping this
@@ -59,15 +78,6 @@ TARGETS=(
   "tools:github.com/minamijoyo/tfupdate"
   "tools/serve:github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs"
 )
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-for cmd in jq "$GO"; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "error: $cmd is required but not on PATH" >&2
-    exit 1
-  fi
-done
 
 # An explicit template rather than a bare 'mktemp -d': macOS mktemp ignores a -p
 # flag and some sandboxes deny the default /var/folders location.
