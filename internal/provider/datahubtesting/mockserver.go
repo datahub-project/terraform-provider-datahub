@@ -86,12 +86,16 @@ type mockServer struct {
 	entityStructuredProps map[string]map[string][]spMockValue
 	// globalTags holds the full globalTags list per entity URN, written via
 	// the OpenAPI v3 collection endpoints (whole-aspect replace semantics).
-	globalTags      map[string][]string
-	ownershipTypes  map[string]mockOwnershipType
-	pageModules     map[string]mockPageModule
-	pageTemplates   map[string]mockPageTemplate
-	dataProducts    map[string]mockDataProduct
-	assertions      map[string]mockAssertion
+	globalTags     map[string][]string
+	ownershipTypes map[string]mockOwnershipType
+	pageModules    map[string]mockPageModule
+	pageTemplates  map[string]mockPageTemplate
+	dataProducts   map[string]mockDataProduct
+	assertions     map[string]mockAssertion
+	// monitors holds Monitor entities keyed by monitor URN, separate from
+	// assertions because the server keeps them as separate entities: deleting
+	// an assertion does not delete its monitor.
+	monitors        map[string]*mockMonitor
 	actionPipelines map[string]mockActionPipeline
 	assignmentRules map[string]mockAssignmentRule
 	dataContracts   map[string]mockDataContract
@@ -117,6 +121,13 @@ type mockServer struct {
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
+	// failMonitorLookup makes the getAssertionMonitor GraphQL query return an
+	// error while set, simulating the transient graph/search failures the live
+	// query can produce. Toggled via /test-control/fail-monitor-lookup.
+	failMonitorLookup bool
+	// failNextMonitorDelete makes the next DELETE on a monitor entity return
+	// 500 (one-shot). Armed via /test-control/force-monitor-delete-fail.
+	failNextMonitorDelete bool
 }
 
 // NewServer starts an in-memory httptest.Server that mimics the DataHub API
@@ -144,6 +155,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		pageTemplates:         make(map[string]mockPageTemplate),
 		dataProducts:          make(map[string]mockDataProduct),
 		assertions:            make(map[string]mockAssertion),
+		monitors:              make(map[string]*mockMonitor),
 		actionPipelines:       make(map[string]mockActionPipeline),
 		assignmentRules:       make(map[string]mockAssignmentRule),
 		dataContracts:         make(map[string]mockDataContract),
@@ -199,6 +211,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
+	mux.HandleFunc("/test-control/fail-monitor-lookup", s.handleFailMonitorLookup)
+	mux.HandleFunc("/test-control/force-monitor-delete-fail", s.handleForceMonitorDeleteFail)
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
@@ -875,6 +889,43 @@ func (s *mockServer) handleForceDeleteFail(w http.ResponseWriter, r *http.Reques
 	}
 	s.mu.Lock()
 	s.failDeleteFor[sourceID] = struct{}{}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleFailMonitorLookup toggles the mock's getAssertionMonitor failure mode.
+// While enabled, the query returns a GraphQL error, simulating the transient
+// graph/search failures the live lookup can produce. Called from tests via:
+//
+//	POST /test-control/fail-monitor-lookup    (enables failures)
+//	DELETE /test-control/fail-monitor-lookup  (reverts to normal)
+func (s *mockServer) handleFailMonitorLookup(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	switch r.Method {
+	case http.MethodPost:
+		s.failMonitorLookup = true
+	case http.MethodDelete:
+		s.failMonitorLookup = false
+	default:
+		s.mu.Unlock()
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleForceMonitorDeleteFail arms a one-shot 500 response for the next DELETE
+// on any monitor entity. Called from test PreConfig functions via:
+//
+//	POST /test-control/force-monitor-delete-fail
+func (s *mockServer) handleForceMonitorDeleteFail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	s.failNextMonitorDelete = true
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }

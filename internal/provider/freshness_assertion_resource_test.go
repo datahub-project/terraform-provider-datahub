@@ -36,6 +36,23 @@ func TestFreshnessAssertionSinceLastCheck_lifecycle_mock(t *testing.T) {
 	})
 }
 
+// TestFreshnessAssertionMonitorDeleteError_mock verifies that a failing monitor
+// delete fails the destroy with a surfaced diagnostic instead of silently
+// orphaning the monitor, and that the framework's final destroy then converges
+// (CheckDestroy proves both the assertion and its monitor are gone). Mock-only:
+// it drives the mock's force-monitor-delete-fail test control.
+func TestFreshnessAssertionMonitorDeleteError_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.FreshnessAssertionCheckDestroy,
+		Steps:                    datahubtesting.FreshnessAssertionMonitorDeleteErrorSteps(),
+	})
+}
+
 func TestFreshnessAssertionSchedule_validation_mock(t *testing.T) {
 	server := datahubtesting.NewServer(t)
 	t.Setenv("DATAHUB_GMS_URL", server.URL)
