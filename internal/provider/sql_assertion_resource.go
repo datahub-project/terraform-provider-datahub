@@ -367,13 +367,19 @@ func (r *sqlAssertionResource) Read(ctx context.Context, req resource.ReadReques
 			state.Mode = types.StringValue(mon.Mode)
 		}
 		state.MonitorURN = types.StringValue(mon.MonitorURN)
-	} else {
-		// nil with no error means the assertion genuinely has no monitor, so
-		// record the absence. A lookup ERROR has already failed this Read above;
-		// it must never silently null this attribute, or the next destroy would
-		// fall back to the same flaky lookup the attribute exists to avoid.
-		state.MonitorURN = types.StringNull()
 	}
+	// No else branch, deliberately: a nil monitor with no error is NOT proof
+	// of absence. The server resolves the monitor through an eventually
+	// consistent graph read (the incoming Evaluates edge in the graph index),
+	// so index lag returns nil without error, indistinguishable from a real
+	// absence. Nulling the stored URN here would send the next destroy back
+	// into the same flaky fallback lookup this attribute exists to avoid --
+	// the OBS-2077 orphan path, gated behind one lookup instead of zero.
+	// Leaving the prior value in place is safe in both readings: a stale URN
+	// is harmless at delete time because DeleteMonitor treats an absent
+	// monitor as success, and a genuinely monitor-less assertion never had a
+	// stored value to preserve. A lookup ERROR has already failed this Read
+	// above and never reaches here.
 
 	tagsAll, err := readTagsAll(ctx, r.client, assertionEntityPath, urn, state.TagsAll)
 	if err != nil {

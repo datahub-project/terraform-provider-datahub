@@ -5328,6 +5328,85 @@ resource "datahub_freshness_assertion" "test" {
 	}
 }
 
+// assertionMonitorLookupLagSteps builds the lookup-lag preservation scenario
+// for one assertion resource: create (persisting monitor_urn), then drop every
+// monitor from the mock's store and refresh. From the provider's point of view
+// the next monitor read returns a nil monitor with no error. On the live
+// server that same shape is produced by graph-index lag as well as by genuine
+// absence (AssertionMonitorResolver walks the Evaluates edge in the eventually
+// consistent graph index), so Read must leave the stored monitor_urn in place
+// rather than nulling it -- a nulled URN is what would send the next destroy
+// into the eventually consistent fallback lookup, reopening the OBS-2077
+// orphan window the attribute exists to close.
+//
+// The framework's final destroy then runs with the preserved, now-stale URN:
+// the monitor DELETE returns absent, which the client treats as success, and
+// the caller's CheckDestroy proves both entities are gone. So the scenario
+// also exercises the stale-URN delete path end to end.
+//
+// Mock-only: it drives /test-control/drop-monitors.
+func assertionMonitorLookupLagSteps(addr, cfg string) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config: cfg,
+			ConfigStateChecks: []statecheck.StateCheck{
+				monitorURNCheck(addr),
+			},
+		},
+		{
+			PreConfig: func() {
+				reqURL := os.Getenv("DATAHUB_GMS_URL") + "/test-control/drop-monitors"
+				resp, err := http.Post(reqURL, "", bytes.NewReader(nil)) //nolint:noctx
+				if err != nil {
+					panic(fmt.Sprintf("assertionMonitorLookupLagSteps PreConfig: POST drop-monitors: %v", err))
+				}
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusNoContent {
+					panic(fmt.Sprintf("assertionMonitorLookupLagSteps PreConfig: unexpected status %d", resp.StatusCode))
+				}
+			},
+			RefreshState: true,
+			Check:        resource.TestCheckResourceAttrSet(addr, "monitor_urn"),
+		},
+	}
+}
+
+// FreshnessAssertionMonitorLookupLagSteps runs the lookup-lag preservation
+// scenario against datahub_freshness_assertion, whose Read carries the
+// else-branch form of the monitor_urn wiring (shared by the sql, field and
+// schema resources). See assertionMonitorLookupLagSteps.
+func FreshnessAssertionMonitorLookupLagSteps() []resource.TestStep {
+	return assertionMonitorLookupLagSteps("datahub_freshness_assertion.test", providerBlock+`
+resource "datahub_freshness_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:hive,freshness.table,PROD)"
+  schedule_type       = "SINCE_THE_LAST_CHECK"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_OPERATION"
+  mode                = "ACTIVE"
+}
+`)
+}
+
+// VolumeAssertionMonitorLookupLagSteps runs the lookup-lag preservation
+// scenario against datahub_volume_assertion, whose Read assigns monitor-side
+// fields ahead of the nil check rather than in an else branch -- the second of
+// the two code shapes the fix touches. See assertionMonitorLookupLagSteps.
+func VolumeAssertionMonitorLookupLagSteps() []resource.TestStep {
+	return assertionMonitorLookupLagSteps("datahub_volume_assertion.test", providerBlock+`
+resource "datahub_volume_assertion" "test" {
+  entity_urn          = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_assertion_test.tf_test_data,PROD)"
+  volume_type         = "ROW_COUNT_TOTAL"
+  operator            = "GREATER_THAN_OR_EQUAL_TO"
+  single_value        = "100"
+  evaluation_cron     = "0 */8 * * *"
+  evaluation_timezone = "UTC"
+  source_type         = "DATAHUB_DATASET_PROFILE"
+  mode                = "ACTIVE"
+}
+`)
+}
+
 // FreshnessAssertionSinceLastCheckLifecycleSteps returns test steps for the
 // SINCE_THE_LAST_CHECK freshness schedule (no window sub-config): create, then
 // import and verify. SINCE_THE_LAST_CHECK requires source_type DATAHUB_OPERATION

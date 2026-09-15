@@ -211,6 +211,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	// Test-control endpoint: POST /test-control/force-delete-fail/{sourceID}
 	// registers a one-shot 500 response for the next DELETE on that source.
 	mux.HandleFunc("/test-control/force-delete-fail/", s.handleForceDeleteFail)
+	mux.HandleFunc("/test-control/drop-monitors", s.handleDropMonitors)
 	mux.HandleFunc("/test-control/fail-monitor-lookup", s.handleFailMonitorLookup)
 	mux.HandleFunc("/test-control/force-monitor-delete-fail", s.handleForceMonitorDeleteFail)
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
@@ -911,6 +912,26 @@ func (s *mockServer) handleFailMonitorLookup(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleDropMonitors removes every monitor from the store without touching the
+// assertions. From that point getAssertionMonitor returns a nil monitor with no
+// GraphQL error -- the exact shape the live server produces when the eventually
+// consistent graph read misses the assertion-to-monitor edge (index lag, graph
+// reindex) or when the monitor was deleted out-of-band. Tests use it to prove
+// that Read treats nil-without-error as "unknown", preserving a stored
+// monitor_urn, rather than as proof of absence. Called from test PreConfig via:
+//
+//	POST /test-control/drop-monitors
+func (s *mockServer) handleDropMonitors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	s.monitors = make(map[string]*mockMonitor)
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
 }
