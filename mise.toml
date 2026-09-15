@@ -5,7 +5,7 @@ golangci-lint = "2.13.2"
 jq = "1.8.2"
 yq = "4.53.6"
 python = "3.11.15"
-uv = "0.12.9"
+uv = "0.12.13"
 
 [env]
 _.file = ".mise.env"
