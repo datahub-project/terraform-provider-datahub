@@ -28,23 +28,27 @@ variable "logo_url" {
 variable "primary_color" {
   description = <<-EOT
     Brand colour for the DataHub UI, as a six-digit hex colour such as
-    "#EC0016". DataHub derives the UI's brand tokens from it, so it affects
-    more than one element.
-
-    Deliberately has NO default. Applying this example replaces the branding
-    every user of the instance sees, and destroying it resets that branding to
-    DataHub's defaults rather than restoring what was there - so a default here
-    would let someone recolour a whole instance without ever having made a
-    choice. Terraform prompts for a value instead.
+    "#EC0016".
 
         terraform apply -var "primary_color=#EC0016"
 
-    Keep supplying it for `terraform destroy` too: Terraform evaluates the
-    configuration, and therefore this variable's validation, on destroy as well.
+    WHEN DESTROYING, THIS VALUE IS IGNORED. Terraform evaluates the
+    configuration on destroy as well, so it asks for a colour either way - but
+    the answer is discarded and the branding is reset to DataHub's defaults
+    regardless of what you type. Any valid colour gets you past the prompt:
 
-    Requires DataHub Cloud v2.2.0 or later. On an older instance the apply
-    fails with a message naming the attribute; leaving the line out of main.tf
-    manages the other two attributes as before.
+        terraform destroy -var "primary_color=#EC0016"
+
+    There is deliberately no default. Applying this example replaces the
+    branding every user of the instance sees, and destroying it resets that
+    branding to DataHub's defaults rather than restoring what was there, so a
+    default would let someone recolour a whole instance without ever having
+    made a choice. Terraform asks instead.
+
+    DataHub derives the UI's brand tokens from this one value, so it affects
+    more than one element. Requires DataHub Cloud v2.2.0 or later; on an older
+    instance the apply fails with a message naming the attribute, and leaving
+    the line out of main.tf manages the other two attributes as before.
   EOT
   type        = string
 

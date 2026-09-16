@@ -48,7 +48,7 @@ terraform apply \
   -var "primary_color=#EC0016"
 ```
 
-Keep supplying `primary_color` for `terraform destroy` too — Terraform evaluates the configuration, and therefore this variable's validation, on destroy as well.
+`terraform destroy` asks for `primary_color` as well, because Terraform evaluates the configuration when destroying. **The value is ignored there** — the branding is reset to DataHub's defaults whatever you type, so any valid colour gets you past the prompt.
 
 ## Capture the previous branding
 
@@ -101,8 +101,10 @@ The language selector on the same settings page is a **per-user** preference, no
 ## Cleanup
 
 ```bash
-terraform destroy
+terraform destroy -var "primary_color=#EC0016"
 ```
+
+The colour is required at the prompt but **ignored on destroy** -- any valid six-digit hex gets you through, and the branding is reset regardless of what you type. Passing `-var` avoids the prompt entirely.
 
 **This resets the organization name, logo and brand colour to DataHub's defaults.** It does not restore the branding that was there before this example ran, and it does not delete the global settings object — that is platform state DataHub always expects to exist, and its other sections (SSO, notifications, integrations, the default home page template) are not this resource's to remove.
 
