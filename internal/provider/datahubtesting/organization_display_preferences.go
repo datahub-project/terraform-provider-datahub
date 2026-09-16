@@ -11,13 +11,14 @@ import (
 // mockOrgDisplayPreferences holds the org-wide branding stored at
 // globalSettingsInfo.visual on the globalSettings singleton.
 //
-// Empty string means "not set". DataHub offers no way to remove either field
-// once written, so the mock deliberately has no notion of absence for an
+// Empty string means "not set". DataHub offers no way to remove any of these
+// fields once written, so the mock deliberately has no notion of absence for an
 // individual field - matching the live behaviour the provider is written
 // against.
 type mockOrgDisplayPreferences struct {
-	OrgName string
-	LogoURL string
+	OrgName      string
+	LogoURL      string
+	PrimaryColor string
 }
 
 // handleUpdateOrganizationDisplayPreferences serves the
@@ -28,11 +29,18 @@ type mockOrgDisplayPreferences struct {
 // current value, and an explicit null is ignored rather than clearing the
 // field. Only an empty string resets a field.
 //
-// The provider currently always sends both fields, so this fidelity is not
-// guarding a specific provider bug today. It is modelled anyway so the mock
-// does not quietly diverge from live: if the client is ever changed to send
-// only the changed field, tests will keep matching real behaviour instead of
-// passing against a more forgiving stub.
+// The provider always sends customOrgName and customLogoUrl, so for those two
+// the fidelity is not guarding a specific provider bug today. It is modelled
+// anyway so the mock does not quietly diverge from live: if the client is ever
+// changed to send only the changed field, tests will keep matching real
+// behaviour instead of passing against a more forgiving stub.
+//
+// primaryColor is different: the provider deliberately omits it while the
+// attribute has never been configured, because the field does not exist in the
+// input type before DataHub Cloud v2.2.0 and GraphQL would reject the whole
+// mutation over it. Merge fidelity is therefore load-bearing here - a mock that
+// blanked an unmentioned primaryColor would make the omission look like a
+// reset and hide the distinction the resource is built around.
 func (s *mockServer) handleUpdateOrganizationDisplayPreferences(w http.ResponseWriter, variables map[string]any) {
 	input, _ := variables["input"].(map[string]any)
 
@@ -45,6 +53,11 @@ func (s *mockServer) handleUpdateOrganizationDisplayPreferences(w http.ResponseW
 	if raw, present := input["customLogoUrl"]; present {
 		if v, ok := raw.(string); ok {
 			s.orgDisplayPreferences.LogoURL = v
+		}
+	}
+	if raw, present := input["primaryColor"]; present {
+		if v, ok := raw.(string); ok {
+			s.orgDisplayPreferences.PrimaryColor = v
 		}
 	}
 	s.mu.Unlock()
@@ -75,6 +88,7 @@ func (s *mockServer) handleGlobalSettingsItem(w http.ResponseWriter, r *http.Req
 	visual := map[string]any{
 		"customOrgName": prefs.OrgName,
 		"customLogoUrl": prefs.LogoURL,
+		"primaryColor":  prefs.PrimaryColor,
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{

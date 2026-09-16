@@ -71,6 +71,27 @@ resource "datahub_organization_display_preferences" "oss_error_test" {
 	})
 }
 
+// TestAcc_OrganizationDisplayPreferences_UnmanagedPrimaryColor proves that a
+// brand colour the configuration never mentions is neither adopted into state
+// nor cleared on the instance.
+//
+// This is the guarantee that makes primary_color additive: the same branch that
+// leaves an undeclared colour alone is the branch that keeps primaryColor out
+// of the mutation, which is what lets the resource keep working against DataHub
+// Cloud instances older than v2.2.0, where the field does not exist and its
+// mere presence in the variables fails the write.
+func TestAcc_OrganizationDisplayPreferences_UnmanagedPrimaryColor(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if tg.IsLive() {
+		t.Skip("seeds the colour out-of-band through the mutation; mock-only")
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.OrganizationDisplayPreferencesUnmanagedPrimaryColorSteps(),
+	})
+}
+
 // TestAcc_OrganizationDisplayPreferences_ExternalEdit proves the provider owns
 // the values it manages: an edit made outside Terraform surfaces as drift and
 // is corrected on the next apply.

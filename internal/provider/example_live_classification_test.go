@@ -437,6 +437,19 @@ var liveExampleExclusions = map[string]liveExclusion{
 		reason:    "datahub_oauth_authorization_server is Cloud-only; the oauthAuthorizationServer entity type does not exist in OSS",
 		permanent: true,
 	},
+	// Cloud-only like the four above, and it would still be excluded if it were
+	// not. Every other runnable example creates entities under its own
+	// tf-example- ids, so applying it affects nothing that was already there and
+	// destroy puts the instance back. This one writes the globalSettings
+	// singleton, which is shared, always present and seen by every user of the
+	// instance -- and destroy resets the fields to DataHub's defaults rather
+	// than to whatever the instance had, so the harness could not restore the
+	// target even in principle. The example's own README carries the same
+	// warning for the same reason.
+	"org-branding-simple": {
+		reason:    "datahub_organization_display_preferences is Cloud-only (no globalSettings GraphQL surface in OSS), and it rebrands the instance-global settings singleton for every user; destroy resets those fields to DataHub's defaults rather than restoring what was there, so a live run cannot leave the target as it found it",
+		permanent: true,
+	},
 
 	// Permanent: cost and wall-clock. Both would also be excluded as Cloud-only.
 	"financial-services": {
