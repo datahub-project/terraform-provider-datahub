@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`datahub_organization_display_preferences` gains `primary_color`**, the hex brand colour DataHub Cloud derives the UI's brand tokens from, alongside the organization name and logo it already manages. The data source exposes it too. Requires DataHub Cloud v2.2.0 or later.
+
+  It is the first attribute in this provider that is not owned while it is unconfigured, and the exception is what makes it safe to add to a resource people already run. Everything else here is owned outright -- omit an attribute and the next apply resets it -- which would mean naming the field in every user's write, including users on a DataHub Cloud release that predates it. GraphQL checks a variable against the input type before executing, so an undefined key fails the whole mutation whatever its value: full ownership would have stopped `terraform apply` working for them, on an upgrade that was meant to add something optional. Instead the field is left out of the write entirely until you set it once, and a colour set in the DataHub UI survives an apply that says nothing about it.
+
+  Set it once -- to `""` if what you want is DataHub's default brand -- and it behaves like every other attribute here from then on, including being reset if you later remove the line or destroy the resource. Without that last part the removal would have been a lie: a plan, an apply that reported success, `null` written to state, and the old colour still on the instance.
+
+  Reading it needed no such care, because Read and import go through the OpenAPI v3 aspect endpoint rather than GraphQL. An absent field there is just absent JSON, so `terraform plan` against an older instance is unaffected -- which it would not have been had the read named the field in a GraphQL selection set.
+
 ## [0.24.1] - 2026-09-16
 
 ### Fixed

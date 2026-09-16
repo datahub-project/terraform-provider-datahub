@@ -24,9 +24,10 @@ type organizationDisplayPreferencesDataSource struct {
 }
 
 type organizationDisplayPreferencesDataSourceModel struct {
-	URN     types.String `tfsdk:"urn"`
-	OrgName types.String `tfsdk:"org_name"`
-	LogoURL types.String `tfsdk:"logo_url"`
+	URN          types.String `tfsdk:"urn"`
+	OrgName      types.String `tfsdk:"org_name"`
+	LogoURL      types.String `tfsdk:"logo_url"`
+	PrimaryColor types.String `tfsdk:"primary_color"`
 }
 
 // NewOrganizationDisplayPreferencesDataSource returns the singleton
@@ -44,8 +45,8 @@ func (d *organizationDisplayPreferencesDataSource) Schema(_ context.Context, _ d
 		MarkdownDescription: cloudOnlyBadge +
 			"Reads the organization-wide display preferences shown in DataHub under " +
 			"**Settings -> Preferences -> Appearance**, in the **Branding** section (the " +
-			"organization name and logo that brand the UI), without taking ownership of them " +
-			"in Terraform state.\n\n" +
+			"organization name, logo and brand colour that brand the UI), without taking " +
+			"ownership of them in Terraform state.\n\n" +
 			"Takes no arguments: DataHub stores these settings on a single global settings " +
 			"object, so there is exactly one set per instance. Useful for reusing the " +
 			"organization name elsewhere in a configuration, or for inspecting current branding " +
@@ -68,6 +69,12 @@ func (d *organizationDisplayPreferencesDataSource) Schema(_ context.Context, _ d
 			"logo_url": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "URL of the organization logo shown in the DataHub UI, or `null` when not set.",
+			},
+			"primary_color": schema.StringAttribute{
+				Computed: true,
+				MarkdownDescription: "Brand colour the DataHub UI derives its brand tokens from, as a hex " +
+					"colour such as `#EC0016`, or `null` when not set. Also `null` on a DataHub Cloud " +
+					"instance older than v2.2.0, which has no brand colour to report.",
 			},
 		},
 	}
@@ -104,9 +111,10 @@ func (d *organizationDisplayPreferencesDataSource) Read(ctx context.Context, _ d
 	}
 
 	state := organizationDisplayPreferencesDataSourceModel{
-		URN:     types.StringValue(datahub.GlobalSettingsURN),
-		OrgName: optionalStringValue(prefs.OrgName),
-		LogoURL: optionalStringValue(prefs.LogoURL),
+		URN:          types.StringValue(datahub.GlobalSettingsURN),
+		OrgName:      optionalStringValue(prefs.OrgName),
+		LogoURL:      optionalStringValue(prefs.LogoURL),
+		PrimaryColor: optionalStringValue(prefs.PrimaryColor),
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }

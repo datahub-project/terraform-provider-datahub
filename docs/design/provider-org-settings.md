@@ -12,6 +12,7 @@ A request to manage "whatever it takes to gain access to the settings on `/setti
 |---|---|---|---|---|
 | Organization name | org-wide | Cloud-only | `updateOrganizationDisplayPreferences` | **Managed** |
 | Organization logo URL | org-wide | Cloud-only | `updateOrganizationDisplayPreferences` | **Managed** |
+| Brand colour | org-wide | Cloud-only (v2.2.0+) | `updateOrganizationDisplayPreferences` | **Managed** (see the `primary_color` section below) |
 | Language select | **per-user** | OSS | `updateCorpUserLocaleSettings` | Excluded |
 | Sample-data toggle | org-wide | Cloud-only | `updateSampleDataSettings` | Excluded |
 | "Show Applications" (Beta features) | org-wide | OSS-stable | `updateApplicationsSettings` | Excluded |
@@ -50,7 +51,7 @@ Conventions established here, for reuse by the settings siblings that follow (`h
 - **Update-only lifecycle.** There is no create: `Create` and `Update` share one `apply` method that moves the server to the configured values. `Delete` resets the managed fields (writes `""`) and removes the resource from state; it never deletes the entity, which is platform-level state DataHub always expects to exist and whose other sections are not this resource's to remove.
 - **Read via OpenAPI v3** on the singleton URN. Never a `list*`/search query.
 - **Import takes any id.** The URN is fixed, so `ImportState` ignores the supplied id. The importtarget registry entry uses `Enumerate: nil` deliberately: enumeration would be trivially well-defined (one always-present URN), but auto-generating an import for org-wide branding nudges users into a config that blanks whichever field they omit. Importing this should be a deliberate act.
-- **Full ownership of every exposed field.** Because `null` cannot clear a field server-side, the client always sends both fields, mapping a null attribute to `""`. Omitting an attribute therefore *resets* it rather than leaving it alone - consistent with the provider's full-map/full-list ownership conventions elsewhere, and documented in the user-facing schema.
+- **Full ownership of every exposed field.** Because `null` cannot clear a field server-side, the client always sends `customOrgName` and `customLogoUrl`, mapping a null attribute to `""`. Omitting an attribute therefore *resets* it rather than leaving it alone - consistent with the provider's full-map/full-list ownership conventions elsewhere, and documented in the user-facing schema. `primary_color` qualifies this once, for compatibility reasons set out in its own section below.
 - **Canonical empty => null on read.** `canonicalDisplayPreference` keeps an omitted attribute null in state when the server reports empty, so an unset field does not drift `null -> ""` forever. A server value that is empty while the config asked for something is still surfaced, so real drift stays visible.
 - **Read-back verification after write**, per the established silent-no-op guard.
 
@@ -163,6 +164,55 @@ So the rule above still prefers a dedicated mutation, but the fallback is much c
 **1. Merging means omission cannot clear.** Because the mutation merges into the existing sub-object, a resource that drops a field from its configuration does not clear it server-side -- the old value persists. That is in direct tension with this provider's rule that a resource owns the complete state of what it declares. Each resource in this family must therefore send its section's full desired state, with explicit empties where the user removed something, and it must be verified that an explicit empty actually clears rather than being treated as "absent, leave alone". This is the same shape as the `mcpSettings.servers` merge-by-slug problem, which needed a separate `deleteMcpServer` mutation to become manageable at all.
 
 **2. Concurrent applies within the family can clobber each other.** Every write here is a read-modify-write of the whole aspect, whether performed server-side by the mutation or client-side against the aspect endpoint. Two settings resources applied concurrently -- Terraform's default parallelism is 10 -- can both read the same starting state and the second write can lose the first resource's section. Nothing in the API prevents it, and the loss is silent. Before a second resource in this family ships, decide the mitigation: serialise these writes in the provider client behind a mutex, which is invisible to users and cheap because these are singleton writes, or document `-parallelism=1`, which pushes the problem onto users and will be forgotten. The mutex is the better answer, and it is the reason this section exists before the resources do rather than after someone hits it.
+
+## `primary_color`: the one attribute that is not owned by default (added 2026-09-16)
+
+`primaryColor` arrived in DataHub Cloud v2.2.0, in `globalSettingsInfo.visual` beside `customOrgName` and `customLogoUrl` and writable through the mutation this resource already calls. So there is no new transport, no new domain, and no argument about granularity - it is an attribute on this resource, exactly as the roadmap predicted. What it does change is the ownership rule this document states twice, and the deviation is deliberate.
+
+### Why the established pattern could not simply be copied
+
+The resource's posture is **full ownership of every exposed field**: a null attribute is written as `""`, so omitting one resets it. Applying that to `primary_color` means every write names `primaryColor`, including the writes of users who have never heard of it.
+
+That is a breaking change rather than a new feature. DataHub Cloud is a rolling fleet with a wide deployed version span, and GraphQL coerces a variable's value against the input type *before* executing the operation - so an input-object key the schema does not define fails the whole mutation, whatever the value, including an explicit `null`. Under full ownership, every user of `datahub_organization_display_preferences` on a Cloud instance older than v2.2.0 would find that `terraform apply` had stopped working, on an upgrade that was supposed to add an optional attribute they are not using.
+
+`docs/roadmap.md`, "Version and capability compatibility", already answers this in general terms: the default shape for a new optional attribute on a shipped resource is `Optional` and not `Computed`-with-default, and the protection is to **emit only what the user configured**. This is the first time that rule has collided with a resource whose whole design is that omission means reset.
+
+### The rule as implemented
+
+`primaryColorToWrite(planned, prior)` decides whether the mutation carries `primaryColor` at all:
+
+| Config | Prior state | Sent | Effect |
+|---|---|---|---|
+| `"#EC0016"` | anything | `"#EC0016"` | set |
+| `""` | anything | `""` | clear, restoring DataHub's default brand |
+| absent | absent | **nothing** | the field is not named in the mutation |
+| absent | present | `""` | clear - removal resets, as it does for the siblings |
+
+And `canonicalPrimaryColor` is the read-side half: a null prior stays null whatever the server holds, where `canonicalDisplayPreference` would adopt the value.
+
+The effect is that `primary_color` is unowned until the practitioner sets it once, and fully owned - identically to `org_name` and `logo_url` - from that moment on, including being reset when the line is later removed or the resource destroyed.
+
+### Why not the two simpler variants
+
+**"Never send it unless configured", with no clear-on-withdrawal**, is what a literal reading of the roadmap rule gives, and it is wrong here. Removing the attribute would produce a plan (state holds a colour, config does not), an apply that reports success, a null written to state - and an instance still showing the old colour, which `canonicalPrimaryColor` then declines to re-adopt. State would diverge from the instance permanently and silently. An apply that does nothing is worse than an apply that refuses.
+
+**"Own it like the siblings"** is the breaking change described above. Note it is not only a compatibility problem: on a v2.2.0 instance it would also mean that adopting this resource to manage an organization's name silently wipes a brand colour set in the UI, because the adopting configuration has no reason to mention `primary_color`.
+
+### What this costs, stated plainly
+
+One resource now has two ownership behaviours, and a reader who knows how `org_name` behaves will guess wrong about `primary_color` exactly once - while it has never been set. The schema description, both examples and the registry page all say so, and the asymmetry is self-limiting: it disappears the moment the attribute is set to anything, including `""`.
+
+`terraform import` adopts a brand colour like any other field, so an imported resource owns it immediately and a configuration omitting it will clear it. That is consistent with the siblings and with the existing warning that importing this resource is a deliberate act.
+
+### Where this generalises, and where it does not
+
+Any future attribute added to an already-shipped resource in this family faces the same question, and the table above is the answer to copy: omit while never configured, clear on withdrawal, adopt on import. What does **not** generalise is the assumption that read is safe. It is safe here only because Read and ImportState use the OpenAPI v3 aspect endpoint, where an absent field is absent JSON and decodes to `""` - the "tolerate mere absence" case. Had Read been the Cloud `globalSettings` GraphQL query, naming `primaryColor` in the selection set would have failed the entire query against every older instance, breaking `terraform plan` for users who had merely upgraded the provider. The project's rule that Read goes through OpenAPI v3 was adopted for consistency, not for compatibility, and it happens to have paid for itself here.
+
+### Validation, and what is not yet known
+
+`primary_color` is validated at plan time by `hexColorOrEmptyValidator`, which delegates to the existing `hexColorValidator` (shared with `datahub_tag.color_hex`, `#RRGGBB`) and exempts `""`. This departs from the preference for server-side rejection recorded in `provider-home-page-layout.md`, and the reason is the failure mode rather than taste: that precedent turns on the server rejecting an unknown module type *cleanly*, whereas **whether DataHub validates a brand colour at all has not been observed**. If it stores `red` verbatim, the frontend derives brand tokens from nonsense and nothing reports it - the "silent" case the roadmap reserves for a guard. If it turns out DataHub accepts other CSS colour forms, the validator is the single thing to relax.
+
+Also unobserved: the exact wording a pre-v2.2.0 Cloud returns when the mutation carries `primaryColor`. `isPrimaryColorUnsupportedError` therefore matches only the field name, which is the part of any graphql-java rejection that can be relied on, and `ErrPrimaryColorUnsupported` wraps the server's message verbatim so a misfire still shows the user what actually went wrong. Guessing at graphql-java's phrasing is precisely how `isOrganizationDisplayPreferencesCloudOnlyError` came to miss the `UnknownType` shape and ship a raw error; the detector is consulted only when the write actually carried the field, which is what makes a loose match safe.
 
 ## Stability posture
 

@@ -8,15 +8,18 @@ data "datahub_organization_display_preferences" "current" {}
 # resets these fields to DataHub's defaults rather than restoring what was
 # there, so this data source is the only way to capture them first.
 output "current_branding" {
-  description = "Organization name and logo currently branding the DataHub UI."
+  description = "Organization name, logo and brand colour currently branding the DataHub UI."
   value = {
-    org_name = data.datahub_organization_display_preferences.current.org_name
-    logo_url = data.datahub_organization_display_preferences.current.logo_url
+    org_name      = data.datahub_organization_display_preferences.current.org_name
+    logo_url      = data.datahub_organization_display_preferences.current.logo_url
+    primary_color = data.datahub_organization_display_preferences.current.primary_color
   }
 }
 
 # A preference with no value stored comes back as null, so supply a fallback
 # wherever the value is reused in a configuration and has to be non-empty.
+# primary_color is also null on a DataHub Cloud instance older than v2.2.0,
+# which has no brand colour to report.
 #
 # Null covers two situations that are indistinguishable here: a preference never
 # configured, and one that was configured and later reset. DataHub has no way to

@@ -4,13 +4,14 @@ page_title: "datahub_organization_display_preferences Resource - datahub"
 subcategory: ""
 description: |-
   DataHub ❌ | DataHub Cloud ✅
-  Manages the organization-wide display preferences shown in DataHub under Settings -> Preferences -> Appearance, in the Branding section: the organization name and logo that brand the UI for every user.
+  Manages the organization-wide display preferences shown in DataHub under Settings -> Preferences -> Appearance, in the Branding section: the organization name, logo and brand colour that brand the UI for every user.
   These are org-wide platform settings, not per-user preferences. The language selector on the same settings page is a per-user choice and is deliberately not managed by this provider.
   Singleton
   DataHub stores these settings on a single, always-present global settings object, so this resource is a singleton: there is no id to supply, and at most one instance should exist in a configuration. Applying it updates the existing settings rather than creating anything; terraform destroy resets the managed fields to DataHub's defaults rather than deleting the settings object.
   Because it is a singleton, a second instance in the same configuration (or the same settings managed from two workspaces) will fight over the values on alternating applies. Manage it from one place.
   Resetting a value
-  Omitting an attribute, setting it to an empty string, or destroying the resource all reset that field to DataHub's default branding. DataHub has no way to remove the underlying value once written, so the field is stored as empty rather than removed - the effect in the UI is the same.
+  Setting an attribute to an empty string, removing an attribute you had previously set, or destroying the resource all reset that field to DataHub's default branding. DataHub has no way to remove the underlying value once written, so the field is stored as empty rather than removed - the effect in the UI is the same.
+  primary_color differs in one case, and only one: while you have never set it, this resource does not touch it, so a colour set in the DataHub UI survives an apply that does not mention it. Set it once - to "" if what you want is DataHub's default - and it is owned from then on like every other attribute here, including being reset if you later remove the line. The exception exists because the brand colour is newer than this resource: blanking it for everyone who has not asked for it would break configurations that work today against DataHub Cloud instances that predate the field.
   Organization display preferences are a DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
 ---
 
@@ -18,7 +19,7 @@ description: |-
 
 **DataHub ❌ | DataHub Cloud ✅**
 
-Manages the organization-wide display preferences shown in DataHub under **Settings -> Preferences -> Appearance**, in the **Branding** section: the organization name and logo that brand the UI for every user.
+Manages the organization-wide display preferences shown in DataHub under **Settings -> Preferences -> Appearance**, in the **Branding** section: the organization name, logo and brand colour that brand the UI for every user.
 
 These are org-wide platform settings, not per-user preferences. The language selector on the same settings page is a per-user choice and is deliberately not managed by this provider.
 
@@ -30,7 +31,9 @@ Because it is a singleton, a second instance in the same configuration (or the s
 
 ## Resetting a value
 
-Omitting an attribute, setting it to an empty string, or destroying the resource all reset that field to DataHub's default branding. DataHub has no way to remove the underlying value once written, so the field is stored as empty rather than removed - the effect in the UI is the same.
+Setting an attribute to an empty string, removing an attribute you had previously set, or destroying the resource all reset that field to DataHub's default branding. DataHub has no way to remove the underlying value once written, so the field is stored as empty rather than removed - the effect in the UI is the same.
+
+`primary_color` differs in one case, and only one: while you have **never** set it, this resource does not touch it, so a colour set in the DataHub UI survives an apply that does not mention it. Set it once - to `""` if what you want is DataHub's default - and it is owned from then on like every other attribute here, including being reset if you later remove the line. The exception exists because the brand colour is newer than this resource: blanking it for everyone who has not asked for it would break configurations that work today against DataHub Cloud instances that predate the field.
 
 Organization display preferences are a DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
 
@@ -46,9 +49,14 @@ Organization display preferences are a DataHub Cloud capability. DataHub Cloud u
 # reversible by removing the resource: destroy resets these fields to DataHub's
 # defaults rather than restoring whatever branding was there before. Capture the
 # existing values first (see the data source below) if you might want them back.
+# primary_color needs DataHub Cloud v2.2.0 or later. Leaving it out is safe on
+# any version and, uniquely among these attributes, is not a reset while you
+# have never set it: a colour set in the DataHub UI survives. Setting it once -
+# to "" if what you want is the default brand - takes ownership from then on.
 resource "datahub_organization_display_preferences" "main" {
-  org_name = "TF Example Org"
-  logo_url = "https://example.com/tf-example-logo.png"
+  org_name      = "TF Example Org"
+  logo_url      = "https://example.com/tf-example-logo.png"
+  primary_color = "#EC0016"
 }
 
 # Read the current branding without managing it, which is also how you record
@@ -59,6 +67,11 @@ output "organization_name" {
   description = "Organization name currently branding the DataHub UI."
   value       = data.datahub_organization_display_preferences.current.org_name
 }
+
+output "brand_color" {
+  description = "Brand colour the DataHub UI derives its theme from, or null when unset."
+  value       = data.datahub_organization_display_preferences.current.primary_color
+}
 ```
 
 <!-- schema generated by tfplugindocs -->
@@ -68,6 +81,11 @@ output "organization_name" {
 
 - `logo_url` (String) URL of the organization logo shown in the DataHub UI. Must be reachable by the browsers of users viewing DataHub. Omit or set to an empty string to fall back to the default DataHub logo.
 - `org_name` (String) Organization name used to brand the DataHub UI (browser title and navigation). Omit or set to an empty string to fall back to DataHub's default title.
+- `primary_color` (String) **Added in provider v0.25.0.** Requires a DataHub release that supports it; see the v0.25.0 release notes. Configuring it against an older instance fails with a clear error, and leaving it unset is always safe.
+
+Brand colour for the DataHub UI, as a hex colour such as `#EC0016`. DataHub derives the UI's brand tokens from it, so it affects more than one element. Set it to an empty string to restore DataHub's default brand.
+
+Leaving it out is safe on any version: the provider sends the field only once you have set it, so a configuration that never mentions it works unchanged against an older instance. Unlike the other attributes here, leaving it out is also not a reset while you have never set it - see *Resetting a value* above.
 
 ### Read-Only
 
