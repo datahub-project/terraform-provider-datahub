@@ -17,12 +17,17 @@ variable "logo_url" {
     URL of the organization logo shown in the DataHub UI. It must be reachable
     by the browsers of everyone viewing DataHub, not by Terraform.
 
-    The default is a deliberately non-resolving example.com URL, so applying
-    this example unmodified shows a broken image rather than quietly branding
-    the instance with somebody else's artwork. Override it with your own.
+    Defaults to "", which DataHub treats as clear-to-default: the UI keeps its
+    own mark. Do not replace that with a placeholder URL - an unreachable one
+    renders as a broken image beside the organization name and reads as a bug
+    in the example. An instance with no custom logo is the usual starting
+    point anyway, so the fallback leaves an unmodified apply looking
+    deliberate.
+
+    Set it to your own logo when adopting this against a real instance.
   EOT
   type        = string
-  default     = "https://example.com/tf-example-branding-logo.png"
+  default     = ""
 }
 
 variable "primary_color" {
