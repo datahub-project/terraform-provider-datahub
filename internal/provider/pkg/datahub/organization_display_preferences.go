@@ -53,15 +53,37 @@ func isOrganizationDisplayPreferencesCloudOnlyError(msg string) bool {
 }
 
 // OrganizationDisplayPreferences is the org-wide branding stored at
-// globalSettingsInfo.visual on the globalSettings singleton.
+// globalSettingsInfo.visual on the globalSettings singleton, as read back from
+// the server.
 //
-// An empty string means "not set": DataHub offers no way to remove either
-// field once written (an explicit null in the mutation input is ignored), and
-// the frontend's fallback chains treat an empty value as absent, so writing ""
-// is how the provider resets a field to DataHub's default branding.
+// An empty string means "not set": DataHub offers no way to remove any of
+// these fields once written (an explicit null in the mutation input is
+// ignored), and the frontend's fallback chains treat an empty value as absent,
+// so writing "" is how the provider resets a field to DataHub's default
+// branding.
 type OrganizationDisplayPreferences struct {
-	OrgName string
-	LogoURL string
+	OrgName      string
+	LogoURL      string
+	PrimaryColor string
+}
+
+// OrganizationDisplayPreferencesUpdate is the desired state for a write. It is
+// a separate type from OrganizationDisplayPreferences because the two halves
+// are not symmetric: every field can be read, but not every field can be sent.
+//
+// OrgName and LogoURL are always written - the resource owns them outright.
+// PrimaryColor is written only when non-nil, and a nil pointer leaves the key
+// out of the mutation's variables entirely rather than sending null. That
+// distinction is load-bearing: primaryColor does not exist in
+// UpdateOrganizationDisplayPreferencesInput before DataHub Cloud v2.2.0, and
+// GraphQL coerces a variable's value against the input type before executing,
+// so a key the schema does not define fails the whole mutation however benign
+// its value. Sending null would break exactly the users this omission
+// protects - everyone on an older Cloud who never asked for a brand colour.
+type OrganizationDisplayPreferencesUpdate struct {
+	OrgName      string
+	LogoURL      string
+	PrimaryColor *string
 }
 
 // globalSettingsVisualEntity is the OpenAPI v3 response shape for the subset
@@ -76,6 +98,7 @@ type globalSettingsVisualEntity struct {
 			Visual *struct {
 				CustomOrgName string `json:"customOrgName"`
 				CustomLogoURL string `json:"customLogoUrl"`
+				PrimaryColor  string `json:"primaryColor"`
 			} `json:"visual"`
 		} `json:"value"`
 	} `json:"globalSettingsInfo,omitempty"`
@@ -123,24 +146,34 @@ func (c *Client) GetOrganizationDisplayPreferences(ctx context.Context) (*Organi
 	if entity.GlobalSettingsInfo != nil && entity.GlobalSettingsInfo.Value.Visual != nil {
 		out.OrgName = entity.GlobalSettingsInfo.Value.Visual.CustomOrgName
 		out.LogoURL = entity.GlobalSettingsInfo.Value.Visual.CustomLogoURL
+		// Absent on a server predating the field, which decodes to "" - the
+		// same value an unset field yields, and exactly the "tolerate mere
+		// absence" case. The read path is OpenAPI v3 JSON rather than a
+		// GraphQL selection set, so naming a field the server does not have
+		// costs nothing; a GraphQL read would have failed the whole query.
+		out.PrimaryColor = entity.GlobalSettingsInfo.Value.Visual.PrimaryColor
 	}
 	return out, true, nil
 }
 
-// SetOrganizationDisplayPreferences writes both org display preference fields
+// SetOrganizationDisplayPreferences writes the org display preference fields
 // via the GraphQL updateOrganizationDisplayPreferences mutation, then verifies
 // the result with a read-back.
 //
-// The provider owns both fields, so both are always sent: an empty value in
-// want resets that field to DataHub's default branding. Sending an explicit
-// null instead would be a silent no-op (verified against DataHub Cloud).
+// OrgName and LogoURL are always sent: the provider owns them, so an empty
+// value in want resets that field to DataHub's default branding. Sending an
+// explicit null instead would be a silent no-op (verified against DataHub
+// Cloud). PrimaryColor is sent only when want carries one - see
+// OrganizationDisplayPreferencesUpdate for why omission rather than null is
+// what keeps older Cloud instances working.
 //
 // The mutation is a per-field read-modify-write of globalSettingsInfo.visual -
 // verified live: writing only one field leaves its sibling intact, and the
 // aspect's other sections (helpLink, sampleDataSettings, and the unrelated
 // docPropagation/homePage/integrations/notifications/views) are untouched. So
-// this call cannot clobber settings the provider does not manage.
-func (c *Client) SetOrganizationDisplayPreferences(ctx context.Context, want OrganizationDisplayPreferences) error {
+// this call cannot clobber settings the provider does not manage, and omitting
+// primaryColor genuinely leaves it alone rather than blanking it.
+func (c *Client) SetOrganizationDisplayPreferences(ctx context.Context, want OrganizationDisplayPreferencesUpdate) error {
 	if c == nil {
 		return errors.New("client is nil")
 	}
@@ -149,14 +182,17 @@ func (c *Client) SetOrganizationDisplayPreferences(ctx context.Context, want Org
   updateOrganizationDisplayPreferences(input: $input)
 }`
 
+	input := map[string]any{
+		"customOrgName": want.OrgName,
+		"customLogoUrl": want.LogoURL,
+	}
+	if want.PrimaryColor != nil {
+		input["primaryColor"] = *want.PrimaryColor
+	}
+
 	body := map[string]any{
-		"query": q,
-		"variables": map[string]any{
-			"input": map[string]any{
-				"customOrgName": want.OrgName,
-				"customLogoUrl": want.LogoURL,
-			},
-		},
+		"query":     q,
+		"variables": map[string]any{"input": input},
 	}
 
 	var raw struct {
@@ -172,6 +208,15 @@ func (c *Client) SetOrganizationDisplayPreferences(ctx context.Context, want Org
 		if isOrganizationDisplayPreferencesCloudOnlyError(msg) {
 			return ErrOrganizationDisplayPreferencesCloudOnly
 		}
+		// Only fields this write actually put on the wire are candidates, so a
+		// message about something else cannot be misread as a version problem.
+		carried := map[string]string{}
+		if want.PrimaryColor != nil {
+			carried["primaryColor"] = "primary_color"
+		}
+		if unsupported := unsupportedInputField(msg, carried); unsupported != nil {
+			return unsupported
+		}
 		return fmt.Errorf("DataHub API error: %s", msg)
 	}
 
@@ -183,11 +228,21 @@ func (c *Client) SetOrganizationDisplayPreferences(ctx context.Context, want Org
 		return errors.New(
 			"verifying organization display preferences write: global settings not found on read-back")
 	}
-	if *got != want {
+	if got.OrgName != want.OrgName || got.LogoURL != want.LogoURL {
 		return fmt.Errorf(
 			"DataHub accepted the organization display preferences write but the values did not persist "+
 				"(got org_name=%q logo_url=%q, want org_name=%q logo_url=%q)",
 			got.OrgName, got.LogoURL, want.OrgName, want.LogoURL)
+	}
+	// Only verify what was actually sent. A primaryColor left out of the
+	// mutation is not this write's to account for, and comparing it anyway
+	// would turn an unrelated value someone set in the UI into a spurious
+	// "did not persist" failure.
+	if want.PrimaryColor != nil && got.PrimaryColor != *want.PrimaryColor {
+		return fmt.Errorf(
+			"DataHub accepted the organization display preferences write but the values did not persist "+
+				"(got primary_color=%q, want primary_color=%q)",
+			got.PrimaryColor, *want.PrimaryColor)
 	}
 	return nil
 }

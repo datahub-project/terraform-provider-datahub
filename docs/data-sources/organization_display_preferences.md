@@ -4,7 +4,7 @@ page_title: "datahub_organization_display_preferences Data Source - datahub"
 subcategory: ""
 description: |-
   DataHub ❌ | DataHub Cloud ✅
-  Reads the organization-wide display preferences shown in DataHub under Settings -> Preferences -> Appearance, in the Branding section (the organization name and logo that brand the UI), without taking ownership of them in Terraform state.
+  Reads the organization-wide display preferences shown in DataHub under Settings -> Preferences -> Appearance, in the Branding section (the organization name, logo and brand colour that brand the UI), without taking ownership of them in Terraform state.
   Takes no arguments: DataHub stores these settings on a single global settings object, so there is exactly one set per instance. Useful for reusing the organization name elsewhere in a configuration, or for inspecting current branding before adopting the datahub_organization_display_preferences resource.
   A preference that has not been set is returned as null.
   Organization display preferences are a DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this data source; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
@@ -14,7 +14,7 @@ description: |-
 
 **DataHub ❌ | DataHub Cloud ✅**
 
-Reads the organization-wide display preferences shown in DataHub under **Settings -> Preferences -> Appearance**, in the **Branding** section (the organization name and logo that brand the UI), without taking ownership of them in Terraform state.
+Reads the organization-wide display preferences shown in DataHub under **Settings -> Preferences -> Appearance**, in the **Branding** section (the organization name, logo and brand colour that brand the UI), without taking ownership of them in Terraform state.
 
 Takes no arguments: DataHub stores these settings on a single global settings object, so there is exactly one set per instance. Useful for reusing the organization name elsewhere in a configuration, or for inspecting current branding before adopting the `datahub_organization_display_preferences` resource.
 
@@ -35,15 +35,18 @@ data "datahub_organization_display_preferences" "current" {}
 # resets these fields to DataHub's defaults rather than restoring what was
 # there, so this data source is the only way to capture them first.
 output "current_branding" {
-  description = "Organization name and logo currently branding the DataHub UI."
+  description = "Organization name, logo and brand colour currently branding the DataHub UI."
   value = {
-    org_name = data.datahub_organization_display_preferences.current.org_name
-    logo_url = data.datahub_organization_display_preferences.current.logo_url
+    org_name      = data.datahub_organization_display_preferences.current.org_name
+    logo_url      = data.datahub_organization_display_preferences.current.logo_url
+    primary_color = data.datahub_organization_display_preferences.current.primary_color
   }
 }
 
 # A preference with no value stored comes back as null, so supply a fallback
 # wherever the value is reused in a configuration and has to be non-empty.
+# primary_color is also null on a DataHub Cloud instance older than v2.2.0,
+# which has no brand colour to report.
 #
 # Null covers two situations that are indistinguishable here: a preference never
 # configured, and one that was configured and later reset. DataHub has no way to
@@ -63,4 +66,5 @@ output "display_name" {
 
 - `logo_url` (String) URL of the organization logo shown in the DataHub UI, or `null` when not set.
 - `org_name` (String) Organization name used to brand the DataHub UI, or `null` when not set.
+- `primary_color` (String) Brand colour the DataHub UI derives its brand tokens from, as a hex colour such as `#EC0016`, or `null` when not set. Also `null` on a DataHub Cloud instance older than v2.2.0, which has no brand colour to report.
 - `urn` (String) URN of the DataHub global settings singleton (`urn:li:globalSettings:0`).

@@ -12,10 +12,41 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
+
+// hexColorOrEmptyValidator applies the provider's existing #RRGGBB rule
+// (hexColorValidator, shared with datahub_tag.color_hex) while exempting the
+// empty string, which is DataHub's documented sentinel for "clear this and
+// restore the default brand" rather than a malformed colour.
+//
+// Validating the shape at plan time rather than letting the server decide is a
+// departure from the usual preference for server-side rejection, and it is
+// chosen on failure mode (docs/roadmap.md, "Version and capability
+// compatibility"): a server that rejects cleanly wants its error translated,
+// but whether DataHub rejects a malformed brand colour at all has not been
+// observed. If it stores "red" verbatim, the UI derives its brand tokens from
+// nonsense and nothing reports it. One regexp covers that case; nothing else
+// does.
+type hexColorOrEmptyValidator struct{}
+
+func (v hexColorOrEmptyValidator) Description(ctx context.Context) string {
+	return hexColorValidator{}.Description(ctx) + `, or "" to restore DataHub's default brand`
+}
+
+func (v hexColorOrEmptyValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v hexColorOrEmptyValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() || req.ConfigValue.ValueString() == "" {
+		return
+	}
+	hexColorValidator{}.ValidateString(ctx, req, resp)
+}
 
 var (
 	_ resource.Resource                = &organizationDisplayPreferencesResource{}
@@ -28,10 +59,11 @@ type organizationDisplayPreferencesResource struct {
 }
 
 type organizationDisplayPreferencesResourceModel struct {
-	ID      types.String `tfsdk:"id"`
-	URN     types.String `tfsdk:"urn"`
-	OrgName types.String `tfsdk:"org_name"`
-	LogoURL types.String `tfsdk:"logo_url"`
+	ID           types.String `tfsdk:"id"`
+	URN          types.String `tfsdk:"urn"`
+	OrgName      types.String `tfsdk:"org_name"`
+	LogoURL      types.String `tfsdk:"logo_url"`
+	PrimaryColor types.String `tfsdk:"primary_color"`
 }
 
 func NewOrganizationDisplayPreferencesResource() resource.Resource {
@@ -55,7 +87,7 @@ func (r *organizationDisplayPreferencesResource) Schema(_ context.Context, _ res
 		MarkdownDescription: cloudOnlyBadge +
 			"Manages the organization-wide display preferences shown in DataHub under " +
 			"**Settings -> Preferences -> Appearance**, in the **Branding** section: the " +
-			"organization name and logo that brand the UI for every user.\n\n" +
+			"organization name, logo and brand colour that brand the UI for every user.\n\n" +
 			"These are org-wide platform settings, not per-user preferences. The language " +
 			"selector on the same settings page is a per-user choice and is deliberately not " +
 			"managed by this provider.\n\n" +
@@ -69,10 +101,18 @@ func (r *organizationDisplayPreferencesResource) Schema(_ context.Context, _ res
 			"settings managed from two workspaces) will fight over the values on alternating " +
 			"applies. Manage it from one place.\n\n" +
 			"## Resetting a value\n\n" +
-			"Omitting an attribute, setting it to an empty string, or destroying the resource all " +
-			"reset that field to DataHub's default branding. DataHub has no way to remove the " +
-			"underlying value once written, so the field is stored as empty rather than removed - " +
-			"the effect in the UI is the same.\n\n" +
+			"Setting an attribute to an empty string, removing an attribute you had previously " +
+			"set, or destroying the resource all reset that field to DataHub's default branding. " +
+			"DataHub has no way to remove the underlying value once written, so the field is " +
+			"stored as empty rather than removed - the effect in the UI is the same.\n\n" +
+			"`primary_color` differs in one case, and only one: while you have **never** set it, " +
+			"this resource does not touch it, so a colour set in the DataHub UI survives an apply " +
+			"that does not mention it. Set it once - to `\"\"` if what you want is DataHub's " +
+			"default - and it is owned from then on like every other attribute here, including " +
+			"being reset if you later remove the line. The exception exists because the brand " +
+			"colour is newer than this resource: blanking it for everyone who has not asked for " +
+			"it would break configurations that work today against DataHub Cloud instances that " +
+			"predate the field.\n\n" +
 			"Organization display preferences are a DataHub Cloud capability. DataHub Cloud upgrades " +
 			"on its own release cadence, so a release may occasionally affect this resource; fixes " +
 			"are handled in the provider. Pin the provider version for client-side stability and " +
@@ -104,6 +144,19 @@ func (r *organizationDisplayPreferencesResource) Schema(_ context.Context, _ res
 					"by the browsers of users viewing DataHub. Omit or set to an empty string to fall back to " +
 					"the default DataHub logo.",
 			},
+			"primary_color": schema.StringAttribute{
+				Optional:   true,
+				Validators: []validator.String{hexColorOrEmptyValidator{}},
+				MarkdownDescription: newInProviderNote("v0.25.0") +
+					"Brand colour for the DataHub UI, as a hex colour such as `#EC0016`. " +
+					"DataHub derives the UI's brand tokens from it, so it affects more than one element. " +
+					"Set it to an empty string to restore DataHub's default brand.\n\n" +
+					"Leaving it out is safe on any version: the " +
+					"provider sends the field only once you have set it, so a configuration that never " +
+					"mentions it works unchanged against an older instance. Unlike the other attributes " +
+					"here, leaving it out is also not a reset while you have never set it - see " +
+					"*Resetting a value* above.",
+			},
 		},
 	}
 }
@@ -111,13 +164,19 @@ func (r *organizationDisplayPreferencesResource) Schema(_ context.Context, _ res
 // apply writes the desired display preferences and returns the state to
 // persist. It is shared by Create and Update: for a singleton there is no
 // distinction, both simply move the server to the configured values.
+//
+// priorPrimaryColor is the value state held before this apply - null on Create.
+// It is what lets a removed primary_color still be cleared; see
+// primaryColorToWrite.
 func (r *organizationDisplayPreferencesResource) apply(
 	ctx context.Context,
 	plan organizationDisplayPreferencesResourceModel,
+	priorPrimaryColor types.String,
 ) (organizationDisplayPreferencesResourceModel, error) {
-	want := datahub.OrganizationDisplayPreferences{
-		OrgName: plan.OrgName.ValueString(),
-		LogoURL: plan.LogoURL.ValueString(),
+	want := datahub.OrganizationDisplayPreferencesUpdate{
+		OrgName:      plan.OrgName.ValueString(),
+		LogoURL:      plan.LogoURL.ValueString(),
+		PrimaryColor: primaryColorToWrite(plan.PrimaryColor, priorPrimaryColor),
 	}
 	if err := r.client.SetOrganizationDisplayPreferences(ctx, want); err != nil {
 		return plan, fmt.Errorf("writing organization display preferences: %w", err)
@@ -129,10 +188,45 @@ func (r *organizationDisplayPreferencesResource) apply(
 		// Preserve the configured nullness rather than echoing the server's
 		// empty strings, so an omitted attribute stays null in state and the
 		// next plan is clean.
-		OrgName: plan.OrgName,
-		LogoURL: plan.LogoURL,
+		OrgName:      plan.OrgName,
+		LogoURL:      plan.LogoURL,
+		PrimaryColor: plan.PrimaryColor,
 	}
 	return state, nil
+}
+
+// primaryColorToWrite decides whether this write carries primaryColor at all,
+// and with what value. It returns nil to leave the field out of the mutation
+// entirely.
+//
+// Three cases, and the middle one is the whole point:
+//
+//   - Configured (including ""): send it. "" is DataHub's clear-to-default
+//     sentinel, so an explicit empty string is a real instruction, not an
+//     absence.
+//   - Not configured now, but present in prior state: the practitioner has
+//     removed a line they previously had. Send "" so removal resets the field,
+//     matching org_name and logo_url. Without this the apply would report
+//     success, write null into state, and leave the server holding a colour
+//     nothing now claims - state lying about the instance, permanently and
+//     silently, because Read below will not re-adopt it either.
+//   - Never configured: send nothing. This is the compatibility guarantee.
+//     primaryColor does not exist in the mutation input before DataHub Cloud
+//     v2.2.0, and GraphQL rejects a variable carrying an undefined input field
+//     before executing, so a user on an older Cloud who never asks for a brand
+//     colour must generate a mutation that never names one. It also means a
+//     colour set in the DataHub UI is left alone until Terraform is told to
+//     own it.
+func primaryColorToWrite(planned, prior types.String) *string {
+	if !planned.IsNull() && !planned.IsUnknown() {
+		v := planned.ValueString()
+		return &v
+	}
+	if !prior.IsNull() && !prior.IsUnknown() {
+		cleared := ""
+		return &cleared
+	}
+	return nil
 }
 
 func (r *organizationDisplayPreferencesResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -142,7 +236,9 @@ func (r *organizationDisplayPreferencesResource) Create(ctx context.Context, req
 		return
 	}
 
-	state, err := r.apply(ctx, plan)
+	// Create has no prior state, so a primary_color absent from the config has
+	// never been managed here and must not be written.
+	state, err := r.apply(ctx, plan, types.StringNull())
 	if err != nil {
 		r.addWriteError(resp.Diagnostics.AddError, err)
 		return
@@ -173,18 +269,20 @@ func (r *organizationDisplayPreferencesResource) Read(ctx context.Context, req r
 	state.URN = types.StringValue(datahub.GlobalSettingsURN)
 	state.OrgName = canonicalDisplayPreference(state.OrgName, prefs.OrgName)
 	state.LogoURL = canonicalDisplayPreference(state.LogoURL, prefs.LogoURL)
+	state.PrimaryColor = canonicalPrimaryColor(state.PrimaryColor, prefs.PrimaryColor)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *organizationDisplayPreferencesResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan organizationDisplayPreferencesResourceModel
+	var plan, prior organizationDisplayPreferencesResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &prior)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	state, err := r.apply(ctx, plan)
+	state, err := r.apply(ctx, plan, prior.PrimaryColor)
 	if err != nil {
 		r.addWriteError(resp.Diagnostics.AddError, err)
 		return
@@ -197,8 +295,22 @@ func (r *organizationDisplayPreferencesResource) Update(ctx context.Context, req
 // always expects to exist, and other sections of it (SSO, notifications,
 // integrations, the default home-page template) are not this resource's to
 // remove.
-func (r *organizationDisplayPreferencesResource) Delete(ctx context.Context, _ resource.DeleteRequest, resp *resource.DeleteResponse) {
-	if err := r.client.SetOrganizationDisplayPreferences(ctx, datahub.OrganizationDisplayPreferences{}); err != nil {
+func (r *organizationDisplayPreferencesResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var state organizationDisplayPreferencesResourceModel
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// The brand colour is reset only if this resource was managing it. A
+	// destroy of a configuration that never set primary_color must not name the
+	// field, both because there is nothing of ours to undo and because an
+	// older DataHub Cloud would reject the whole mutation over it - which would
+	// make the resource impossible to destroy.
+	want := datahub.OrganizationDisplayPreferencesUpdate{
+		PrimaryColor: primaryColorToWrite(types.StringNull(), state.PrimaryColor),
+	}
+	if err := r.client.SetOrganizationDisplayPreferences(ctx, want); err != nil {
 		r.addWriteError(resp.Diagnostics.AddError, err)
 		return
 	}
@@ -228,6 +340,12 @@ func (r *organizationDisplayPreferencesResource) ImportState(ctx context.Context
 		URN:     types.StringValue(datahub.GlobalSettingsURN),
 		OrgName: optionalStringValue(prefs.OrgName),
 		LogoURL: optionalStringValue(prefs.LogoURL),
+		// Import adopts whatever the instance holds, as it does for the other
+		// two fields, so an imported colour is owned from that moment and a
+		// config omitting it will reset it. On an instance predating the field
+		// the read yields "" and this stays null, so nothing is adopted and
+		// nothing is later sent.
+		PrimaryColor: optionalStringValue(prefs.PrimaryColor),
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
@@ -241,6 +359,15 @@ func (r *organizationDisplayPreferencesResource) addWriteError(add func(string, 
 			"This DataHub instance does not support organization display preferences. "+
 				"The setting is available on DataHub Cloud only; remove the "+
 				"datahub_organization_display_preferences resource when targeting open-source DataHub.",
+		)
+		return
+	}
+	var unsupported *datahub.UnsupportedFieldError
+	if errors.As(err, &unsupported) {
+		add(
+			"DataHub does not support "+unsupported.Attribute,
+			unsupported.Error()+"\n\nLeaving "+unsupported.Attribute+" unset manages the "+
+				"remaining attributes as before.",
 		)
 		return
 	}
@@ -260,6 +387,23 @@ func canonicalDisplayPreference(prior types.String, server string) types.String 
 		// The configuration asked for a value (possibly "") and the server is
 		// blank: report the server's empty string so real drift is visible.
 		return types.StringValue("")
+	}
+	return types.StringValue(server)
+}
+
+// canonicalPrimaryColor reconciles the server's brand colour against the prior
+// configured value, and differs from canonicalDisplayPreference in exactly one
+// case: a null prior stays null whatever the server holds.
+//
+// That case is the difference between "this resource owns the field" and "this
+// resource has not been told to". Adopting an undeclared server value would
+// make it look like drift, and the next apply would clear a colour the
+// practitioner set in the DataHub UI and never asked Terraform to touch. Once
+// the attribute is set - even to "" - the prior is non-null and the server
+// value is surfaced, so real drift against a managed colour is still caught.
+func canonicalPrimaryColor(prior types.String, server string) types.String {
+	if prior.IsNull() {
+		return prior
 	}
 	return types.StringValue(server)
 }
