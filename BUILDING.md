@@ -61,6 +61,8 @@ make testacc
 
 Sets `TF_ACC=1` and runs the Plugin Framework acceptance tests in `internal/provider/`. Each test spins up an in-memory mock server (`datahubtesting.NewServer`) -- no network access or DataHub instance needed. Completes in a few seconds.
 
+`TF_ACC=1` also enables `TestAcc_ImportRoundtrip_E2E` (`internal/extracttool/`), which drives real `terraform` subprocesses against `./bin/terraform-provider-datahub`. Both are hard requirements: a missing binary or a missing `terraform` fails the test rather than skipping it, since a skip reads as a pass and the import pipeline then goes untested. `make testacc` and `make coverage` build the binary via their `install` prerequisite, and `terraform` is pinned in `mise.toml`, so run them through `mise exec -- make ...`. A bare `TF_ACC=1 go test ./...` in a tree that has never been built will fail with a message naming `make install`.
+
 The `TestAcc_Secret_Lifecycle` test requires Terraform CLI >= 1.11 and is automatically skipped if an older CLI is found.
 
 ### Tests that pin against a published release (`ExternalProviders`)

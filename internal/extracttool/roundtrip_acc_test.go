@@ -13,18 +13,27 @@ package extracttool
 //     replaced by a var reference; variables.tf declares the variable;
 //     IMPORT_README.md has strictly-increasing step numbers.
 //
-// Prerequisites (test skips with a clear message if absent):
-//   - TF_ACC=1 in the environment.
+// Prerequisites. TF_ACC=1 is the only one that skips; every other missing
+// prerequisite fails the test. A skip is indistinguishable from a pass in a
+// green suite, so a skipping prerequisite let the entire import path go
+// untested without anyone noticing -- which is exactly what happened in CI,
+// where the Test job ran with TF_ACC=1 but never built the provider binary.
+//   - TF_ACC=1 in the environment (absent: skip -- this is the opt-in switch).
 //   - ./bin/terraform-provider-datahub built relative to the module root.
-//     Run `make install` first. `make testacc-local` and `make testacc-quickstart`
-//     build the binary automatically; `make testacc` (mock-only) does not.
-//     A missing binary fails the test on live targets and skips it on mock.
-//   - `terraform` CLI on PATH.
+//     Every Makefile target that sets TF_ACC=1 carries an `install`
+//     prerequisite, and the CI Test job invokes `make coverage` so that it
+//     inherits the same one.
+//   - `terraform` CLI on PATH. Pinned in mise.toml, so `mise exec --` provides
+//     it; the example suites already treat it as a hard requirement.
+//
+// providerBinDir below resolves the last two, and is unit-tested by
+// TestProviderBinDir -- which needs neither of them present.
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -41,16 +50,12 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 		t.Skip("set TF_ACC=1 to run this acceptance test")
 	}
 
-	// Choose mock or live target first -- we need tg.IsLive() to decide
-	// whether a missing binary is a hard failure or a graceful skip.
-	tg := datahubtesting.SetupTarget(t)
+	// Resolve the provider binary and the terraform CLI before anything else,
+	// so a missing prerequisite fails before a mock server is started. Both are
+	// hard failures on mock and live targets alike.
+	binDir := findProviderBinDir(t)
 
-	// Locate the provider binary (built by `make install`).
-	// On live targets the Makefile install prereq guarantees it is present, so
-	// a missing binary is a build failure -- fail fast. On mock targets the
-	// binary is not guaranteed (make testacc deliberately skips the build step),
-	// so a graceful skip is appropriate.
-	binDir := findProviderBinDir(t, tg.IsLive())
+	tg := datahubtesting.SetupTarget(t)
 	gmsURL := os.Getenv("DATAHUB_GMS_URL")
 	gmsToken := os.Getenv("DATAHUB_GMS_TOKEN")
 
@@ -174,11 +179,10 @@ func waitForURNsInList(ctx context.Context, t *testing.T, client *datahub.Client
 	t.Fatalf("timed out after %s waiting for URNs to appear in list APIs: %v", timeout, urns)
 }
 
-// findProviderBinDir walks up from the current working directory to find the
-// Go module root (the directory containing go.mod), then checks for
-// bin/terraform-provider-datahub. When requireBinary is true (live targets),
-// a missing binary is a hard failure; otherwise the test is skipped.
-func findProviderBinDir(t *testing.T, requireBinary bool) string {
+// findProviderBinDir resolves the provider binary directory, failing the test
+// if anything needed to drive real terraform subprocesses is missing. It is a
+// thin wrapper over providerBinDir so that the lookup itself stays unit-testable.
+func findProviderBinDir(t *testing.T) string {
 	t.Helper()
 
 	// During `go test`, cwd is the package directory.
@@ -186,52 +190,132 @@ func findProviderBinDir(t *testing.T, requireBinary bool) string {
 	if err != nil {
 		t.Fatalf("os.Getwd: %v", err)
 	}
+	binDir, err := providerBinDir(cwd)
+	if err != nil {
+		t.Fatalf("locating provider binary: %v", err)
+	}
+	return binDir
+}
 
-	dir := cwd
+// providerBinDir walks up from startDir to the Go module root (the directory
+// containing go.mod), then requires both bin/terraform-provider-datahub and the
+// terraform CLI. It returns the directory holding the provider binary.
+//
+// Every failure is an error rather than a skip, and all three mean the same
+// thing to a reader of a green suite: the import pipeline was not exercised at
+// all. A module root that cannot be found is a broken invocation rather than an
+// environment anyone legitimately runs in; a missing binary is what `make
+// install` exists to produce; and terraform is pinned in mise.toml, so its
+// absence is a setup error, consistent with how the example suites treat it.
+//
+// It takes startDir and returns an error rather than reaching for os.Getwd and
+// *testing.T so that TestProviderBinDir can point it at a temporary directory.
+func providerBinDir(startDir string) (string, error) {
+	dir := startDir
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			break
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Skip("could not find module root (go.mod) -- skipping")
-			return ""
+			return "", fmt.Errorf("could not find the Go module root: no go.mod at or above %s", startDir)
 		}
 		dir = parent
 	}
 
-	binPath := filepath.Join(dir, "bin", "terraform-provider-datahub")
+	binDir := filepath.Join(dir, "bin")
+	binPath := filepath.Join(binDir, "terraform-provider-datahub")
 	if _, err := os.Stat(binPath); err != nil {
-		msg := fmt.Sprintf("provider binary not found at %s -- run 'make install' first (make testacc-local and make testacc-quickstart do this automatically)", binPath)
-		if requireBinary {
-			t.Fatal(msg)
-		} else {
-			t.Skip(msg)
-		}
-		return ""
+		return "", fmt.Errorf("provider binary not found at %s -- run 'make install' first (every Makefile target that sets TF_ACC=1 builds it automatically)", binPath)
 	}
 
-	_, err = lookupTerraform()
-	if err != nil {
-		t.Skip("terraform CLI not found on PATH -- install terraform to run this test")
-		return ""
+	if _, err := exec.LookPath("terraform"); err != nil {
+		return "", fmt.Errorf("terraform CLI not found on PATH -- it is pinned in mise.toml, so run via mise (e.g. 'mise exec -- make testacc'): %w", err)
 	}
 
-	return filepath.Join(dir, "bin")
+	return binDir, nil
 }
 
-// lookupTerraform reports whether the terraform CLI is on PATH.
-func lookupTerraform() (string, error) {
-	// exec.LookPath is in os/exec but we avoid importing it just for this;
-	// replicate the check via PATH iteration.
-	pathEnv := os.Getenv("PATH")
-	for _, dir := range filepath.SplitList(pathEnv) {
-		candidate := filepath.Join(dir, "terraform")
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate, nil
+// TestProviderBinDir covers the three ways providerBinDir can refuse. It is a
+// plain unit test: it needs neither TF_ACC, nor a provider binary, nor
+// terraform, because it builds every input it looks at.
+//
+// The point of the test is the error returns themselves. They used to be
+// t.Skip calls, so each of these three cases silently passed the acceptance
+// test instead of failing it.
+func TestProviderBinDir(t *testing.T) {
+	// A directory with a terraform stub on PATH, shared by the cases below
+	// that need to get past the CLI check.
+	stubPATH := func(t *testing.T) {
+		t.Helper()
+		pathDir := t.TempDir()
+		stub := filepath.Join(pathDir, "terraform")
+		if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("writing terraform stub: %v", err)
 		}
+		t.Setenv("PATH", pathDir)
 	}
-	return "", fmt.Errorf("terraform not found on PATH")
+
+	writeModuleRoot := func(t *testing.T, withBinary bool) string {
+		t.Helper()
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test\n"), 0o644); err != nil {
+			t.Fatalf("writing go.mod: %v", err)
+		}
+		if withBinary {
+			binDir := filepath.Join(root, "bin")
+			if err := os.MkdirAll(binDir, 0o755); err != nil {
+				t.Fatalf("creating bin dir: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(binDir, "terraform-provider-datahub"), []byte("stub"), 0o755); err != nil {
+				t.Fatalf("writing provider stub: %v", err)
+			}
+		}
+		return root
+	}
+
+	t.Run("no module root", func(t *testing.T) {
+		stubPATH(t)
+		// t.TempDir has no go.mod at or above it, so the walk hits the
+		// filesystem root.
+		if _, err := providerBinDir(t.TempDir()); err == nil {
+			t.Fatal("expected an error when no go.mod exists above the start directory")
+		} else if !strings.Contains(err.Error(), "module root") {
+			t.Errorf("error should name the module root, got: %v", err)
+		}
+	})
+
+	t.Run("no provider binary", func(t *testing.T) {
+		stubPATH(t)
+		root := writeModuleRoot(t, false)
+		if _, err := providerBinDir(root); err == nil {
+			t.Fatal("expected an error when the provider binary is absent")
+		} else if !strings.Contains(err.Error(), "make install") {
+			t.Errorf("error should tell the reader to run make install, got: %v", err)
+		}
+	})
+
+	t.Run("no terraform on PATH", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		root := writeModuleRoot(t, true)
+		if _, err := providerBinDir(root); err == nil {
+			t.Fatal("expected an error when terraform is not on PATH")
+		} else if !strings.Contains(err.Error(), "terraform CLI") {
+			t.Errorf("error should name the terraform CLI, got: %v", err)
+		}
+	})
+
+	t.Run("all prerequisites present", func(t *testing.T) {
+		stubPATH(t)
+		root := writeModuleRoot(t, true)
+		got, err := providerBinDir(root)
+		if err != nil {
+			t.Fatalf("providerBinDir: %v", err)
+		}
+		if want := filepath.Join(root, "bin"); got != want {
+			t.Errorf("providerBinDir = %q, want %q", got, want)
+		}
+	})
 }
 
 // writeDevTfrc writes a Terraform CLI config file that routes the datahub
