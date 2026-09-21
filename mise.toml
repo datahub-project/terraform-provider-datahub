@@ -1,6 +1,6 @@
 [tools]
 go = "1.27.1"
-terraform = "1.15.8"
+terraform = "1.16.3"
 golangci-lint = "2.13.2"
 jq = "1.8.2"
 yq = "4.53.6"

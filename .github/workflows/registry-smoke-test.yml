@@ -29,6 +29,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Deliberately unpinned, unlike every other terraform in this repository.
+      # This job simulates a user installing the published provider from the
+      # Registry, so the terraform it runs should be the one a user is likely
+      # to have rather than the version this project develops against. Pinning
+      # it to mise.toml was tried and reverted: it couples a user-fidelity
+      # check to an internal toolchain decision, and the job only runs init and
+      # validate, where the version barely matters. If a pin is ever wanted
+      # here, the defensible one is the ">= 1.11" floor the examples declare,
+      # which would actually prove that claim -- not whatever we develop on.
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       # The Registry ingests a release asynchronously after GitHub publishes it,

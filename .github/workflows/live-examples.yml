@@ -35,13 +35,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
-        with:
-          # The harness shells out to the terraform binary; the wrapper script
-          # setup-terraform installs by default rewrites stdout, which would
-          # corrupt the JSON that `terraform show -json` is parsed from.
-          terraform_wrapper: false
-
+      # terraform comes from mise-action below, which installs the version
+      # pinned in mise.toml. A hashicorp/setup-terraform step used to sit here
+      # as well; it was removed because mise.toml is then the only place
+      # terraform is pinned, rather than two places that can drift. The
+      # ci.yml Examples job already proves the mise-only arrangement works:
+      # it has no setup-terraform step, and the harness resolves the binary
+      # with a bare exec.LookPath("terraform") exactly as this one does.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
