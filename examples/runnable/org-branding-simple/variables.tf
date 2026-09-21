@@ -17,12 +17,16 @@ variable "logo_url" {
     URL of the organization logo shown in the DataHub UI. It must be reachable
     by the browsers of everyone viewing DataHub, not by Terraform.
 
-    Defaults to "", which DataHub treats as clear-to-default: the UI keeps its
-    own mark. Do not replace that with a placeholder URL - an unreachable one
+    Defaults to "", which DataHub treats as clear-to-default. Read that as an
+    action, not as leaving things alone: on an instance with no custom logo it
+    is a no-op and the UI keeps its own mark, but on one that already has a
+    logo, applying this REMOVES it. No custom logo is the usual starting
+    point, which is why the default is safe for a first look and why it is
+    the wrong thing to leave in place against an instance you care about.
+
+    Do not swap the default for a placeholder URL either - an unreachable one
     renders as a broken image beside the organization name and reads as a bug
-    in the example. An instance with no custom logo is the usual starting
-    point anyway, so the fallback leaves an unmodified apply looking
-    deliberate.
+    in the example rather than as something to replace.
 
     Set it to your own logo when adopting this against a real instance.
   EOT

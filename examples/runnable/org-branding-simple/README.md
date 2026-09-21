@@ -39,7 +39,7 @@ terraform apply
 terraform apply -var "primary_color=#EC0016"
 ```
 
-`org_name` and `logo_url` do have defaults (`TF Example Branding`, and `""` for the logo, which DataHub treats as clear-to-default so the UI keeps its own mark rather than showing a broken image). Override them when adopting this against a real instance:
+`org_name` and `logo_url` do have defaults (`TF Example Branding`, and `""` for the logo, which DataHub treats as clear-to-default -- a no-op on an instance that has no logo, but it **removes** an existing one). Override them when adopting this against a real instance:
 
 ```bash
 terraform apply \
