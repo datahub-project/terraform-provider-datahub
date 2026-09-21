@@ -30,6 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          # Keep in step with the terraform pin in mise.toml. Unpinned, this
+          # step installs whatever is latest, so a terraform release the
+          # project has deliberately not adopted runs here regardless -- which
+          # is what happened through 1.16.0-1.16.2 while mise.toml held 1.15.8
+          # over hashicorp/terraform#39144. This job has no mise step, so this
+          # is the only place the version can be stated.
+          terraform_version: 1.16.3
 
       # The Registry ingests a release asynchronously after GitHub publishes it,
       # so on a release event the provider may not be servable for a few

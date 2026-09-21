@@ -41,6 +41,14 @@ jobs:
           # setup-terraform installs by default rewrites stdout, which would
           # corrupt the JSON that `terraform show -json` is parsed from.
           terraform_wrapper: false
+          # Keep in step with the terraform pin in mise.toml. Unpinned, this
+          # step installs whatever is latest, so a terraform release the
+          # project has deliberately not adopted runs here regardless -- which
+          # is what happened through 1.16.0-1.16.2 while mise.toml held 1.15.8
+          # over hashicorp/terraform#39144. mise-action below installs the
+          # pinned version too; naming it here means the two cannot disagree
+          # whichever ends up first on PATH.
+          terraform_version: 1.16.3
 
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         env:
