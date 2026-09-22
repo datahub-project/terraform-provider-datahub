@@ -3,7 +3,7 @@ terraform {
   required_providers {
     datahub = {
       source  = "datahub-project/datahub"
-      version = "0.25.0"
+      version = "0.26.0"
     }
     azurerm = {
       source  = "hashicorp/azurerm"

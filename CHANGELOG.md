@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-22
+
 ### Added
 
 - **`datahub_entity_ownership`**, a new resource that assigns owners to the platform-configuration entities this provider manages. One resource per owned entity, holding a set of `owner` entries, each one an `(owner, ownership type)` pair. It completes `datahub_ownership_type`, which until now could define a vocabulary of roles that nothing in the provider could use.
@@ -22,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Accepted targets are the eight entity types that both carry the `ownership` aspect and sit on this provider's configuration side of the per-asset deny-list: `domain`, `glossaryTerm`, `glossaryNode`, `dataProduct`, `corpGroup`, `tag`, `form` and `dataHubIngestionSource`. Data assets are refused at plan time, with the deny-list reasoning. So are `corpuser`, `dataContract`, `dataHubPolicy` and `structuredProperty`, for the opposite reason and with a message that says so: none of them declares the `ownership` aspect, so a write would land nowhere. Three of those four *are* valid `datahub_structured_property_assignment` targets, so the two allowlists differ on purpose and this one is the narrower.
 
 - **`examples/runnable/ownership-type-simple` now assigns owners** using the two ownership types it already defined, which is the natural completion of that example's story. It adds a glossary term to own and a group to own it, and demonstrates both repetition shapes with the reasoning in comments. The second owner principal is a variable defaulting to the built-in `urn:li:corpuser:datahub` rather than a `datahub_corp_user` the example creates: the OSS sign-up endpoint refuses an address whose user entity already exists, so one failed destroy would poison a fixed address permanently, and this example should not inherit that fragility.
+
+### Changed
+
+- **The `org-branding-simple` example no longer describes its empty `logo_url` default as harmless.** It said the default left the UI with its own mark, which holds only on an instance that has no custom logo; on one that already has a logo, applying the example with the default in place removes it. The variable description now says so, and reads the empty string as the action it is rather than as leaving things alone.
 
 ## [0.25.0] - 2026-09-21
 
@@ -518,7 +524,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.24.1...v0.25.0
 [0.24.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.23.0...v0.24.0
