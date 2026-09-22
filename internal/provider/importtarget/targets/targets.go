@@ -507,6 +507,21 @@ func init() {
 		OSSCompatible:      true,
 	})
 
+	// datahub_entity_ownership identifies one entity's owner set, so it imports
+	// by the target entity's URN rather than by a URN of its own. There is no
+	// enumeration data source: the set of entities that happen to have owners
+	// spans eight entity types and is not a list DataHub exposes, and it would
+	// in any case be the wrong thing to enumerate -- an entity with only
+	// UI-assigned owners should not be swept into Terraform management.
+	// OSS-compatible (batchAddOwners/removeOwner).
+	importtarget.Register(importtarget.Target{
+		ResourceTypeName:   "datahub_entity_ownership",
+		DataSourceTypeName: "",
+		Enumerate:          nil,
+		IDFromURN:          nil,
+		OSSCompatible:      true,
+	})
+
 	// datahub_glossary_term_relationship identifies a (term, type, related term)
 	// edge, not a single URN, so IDFromURN does not apply and there is no
 	// enumeration data source. OSS-compatible (add/removeRelatedTerms).

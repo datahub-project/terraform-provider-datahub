@@ -86,7 +86,11 @@ type mockServer struct {
 	entityStructuredProps map[string]map[string][]spMockValue
 	// globalTags holds the full globalTags list per entity URN, written via
 	// the OpenAPI v3 collection endpoints (whole-aspect replace semantics).
-	globalTags     map[string][]string
+	globalTags map[string][]string
+	// entityOwners holds the ownership aspect's owners array per target entity
+	// URN. Distinct from ownershipTypes (which holds ownership type DEFINITIONS):
+	// this is who owns what, under which of those types.
+	entityOwners   map[string][]mockOwnerEdge
 	ownershipTypes map[string]mockOwnershipType
 	pageModules    map[string]mockPageModule
 	pageTemplates  map[string]mockPageTemplate
@@ -150,6 +154,7 @@ func NewServer(t *testing.T) *httptest.Server {
 		structuredProperties:  make(map[string]mockStructuredProperty),
 		entityStructuredProps: make(map[string]map[string][]spMockValue),
 		globalTags:            make(map[string][]string),
+		entityOwners:          make(map[string][]mockOwnerEdge),
 		ownershipTypes:        make(map[string]mockOwnershipType),
 		pageModules:           make(map[string]mockPageModule),
 		pageTemplates:         make(map[string]mockPageTemplate),
@@ -218,6 +223,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
 	mux.HandleFunc("/test-control/seed-form", s.handleSeedForm)
+	mux.HandleFunc("/test-control/seed-owner", s.handleSeedOwner)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
 	srv := httptest.NewServer(mux)
@@ -297,6 +303,10 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleSetTagColor(w, req.Variables)
 	case strings.Contains(q, "deleteTag"):
 		s.handleDeleteTag(w, req.Variables)
+	case strings.Contains(q, "batchAddOwners"):
+		s.handleBatchAddOwners(w, req.Variables)
+	case strings.Contains(q, "removeOwner"):
+		s.handleRemoveOwner(w, req.Variables)
 	case strings.Contains(q, "listOwnershipTypes"):
 		s.handleListOwnershipTypes(w, req.Variables)
 	case strings.Contains(q, "deleteOwnershipType"):
@@ -854,6 +864,20 @@ func (s *mockServer) handleIngestionSourceItem(w http.ResponseWriter, r *http.Re
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		// The stored source is a typed struct, so the ownership aspect is
+		// merged in via a map round-trip rather than a struct field: the aspect
+		// is written by a GraphQL mutation and never by the ingestion-source
+		// resource, so it has no business in mockIngestionSource.
+		body, marshalErr := json.Marshal(entity)
+		aspect := s.ownershipAspect("urn:li:dataHubIngestionSource:" + sourceID)
+		if marshalErr == nil && aspect != nil {
+			var asMap map[string]any
+			if json.Unmarshal(body, &asMap) == nil {
+				asMap["ownership"] = aspect
+				_ = json.NewEncoder(w).Encode(asMap)
+				return
+			}
+		}
 		_ = json.NewEncoder(w).Encode(entity)
 
 	case http.MethodDelete:

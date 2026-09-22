@@ -163,6 +163,9 @@ func (s *mockServer) handleDataProductItem(w http.ResponseWriter, r *http.Reques
 	if aspect := s.structuredPropertiesAspect(dp.URN); aspect != nil {
 		entity["structuredProperties"] = aspect
 	}
+	if aspect := s.ownershipAspect(dp.URN); aspect != nil {
+		entity["ownership"] = aspect
+	}
 	if aspect := s.globalTagsAspect(dp.URN); aspect != nil {
 		entity["globalTags"] = aspect
 	}

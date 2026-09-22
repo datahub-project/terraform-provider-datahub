@@ -146,6 +146,16 @@ var liveExamples = []liveExample{
 	// So no flags, and deliberately no noReapplyReason: that check is what would
 	// report a future release making the delete path asynchronous, in the one
 	// configuration positioned to notice. See flakiness item 9 in the design.
+	//
+	// It also assigns owners (datahub_entity_ownership) using those two types,
+	// which keeps the re-apply check honest for a second reason. batchAddOwners
+	// is a per-(owner, ownership type) upsert server-side -- OwnerServiceUtils
+	// drops any existing edge with the same owner and type before appending --
+	// so a second apply of the same pairs is a no-op rather than a duplicate,
+	// and removeOwner validates only that the target entity exists, so the
+	// destroy cannot fail on an owner somebody removed first. Neither claim is
+	// a law of nature; leaving the check on is what would report either of them
+	// changing.
 	{dir: "ownership-type-simple"},
 
 	// Three-level hierarchy, four children across two parents: hits the

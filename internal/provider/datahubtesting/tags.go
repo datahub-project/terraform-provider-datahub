@@ -148,6 +148,9 @@ func (s *mockServer) handleTagItem(w http.ResponseWriter, r *http.Request) {
 			"value": propsValue,
 		},
 	}
+	if aspect := s.ownershipAspect(t.URN); aspect != nil {
+		entity["ownership"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
