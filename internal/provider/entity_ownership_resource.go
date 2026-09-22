@@ -202,10 +202,17 @@ func (r *entityOwnershipResource) Schema(_ context.Context, _ resource.SchemaReq
 			"declare the `ownership` aspect at all, so a write would have nowhere to land. Note " +
 			"`corpuser` and `dataContract` *are* valid `datahub_structured_property_assignment` " +
 			"targets; the two allowlists differ, and this one is the narrower.\n\n" +
-			"## Import\n\n" +
+			"## Adopting owners that already exist\n\n" +
 			"Import by entity URN. Import adopts **every** owner then present on the entity, so " +
 			"the imported resource declares them all; drop an entry from the configuration " +
 			"afterwards and the next apply removes that pair from DataHub.\n\n" +
+			"That includes owners **DataHub assigned itself**. Creating a glossary term (and " +
+			"several other entity types) makes the creating actor a Technical Owner " +
+			"automatically, so an entity nobody has curated by hand still arrives with one " +
+			"owner. After importing, run `terraform state show` and write the configuration " +
+			"from what it reports -- an adopted owner you leave out is one the next apply " +
+			"removes. Expect a non-empty plan straight after an import for this reason; it is " +
+			"the resource telling you the configuration does not yet match what it adopted.\n\n" +
 			"## References\n\n" +
 			"Prefer expression inputs so Terraform creates things in the right order and you never " +
 			"hand-assemble a URN: set `entity_urn` to the target's `.urn` (e.g. " +

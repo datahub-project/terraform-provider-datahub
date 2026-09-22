@@ -28,6 +28,12 @@ type mockUser struct {
 	RoleURN          string
 	SubTypes         []string
 	CustomProperties map[string]string
+	// PreExisting marks a user seedUsers put in the store rather than one the
+	// configuration under test created. Owner validation refuses these (bar the
+	// built-in admin), because a real DataHub does not have them and a mock that
+	// accepted them would be more permissive than any server -- see
+	// ownerPrincipalExists.
+	PreExisting bool
 }
 
 // seedUsers pre-populates a couple of users so corp_user lookups, group
@@ -42,12 +48,16 @@ func (s *mockServer) seedUsers() {
 		Title:       "Engineer",
 		Active:      true,
 		Status:      "ACTIVE",
+		PreExisting: true,
 	}
+	// The one seeded user a real DataHub also has, so the one that may own
+	// things. Everything else here is a fixture for a specific suite.
 	s.users["datahub"] = mockUser{
 		URN:         "urn:li:corpuser:datahub",
 		Username:    "datahub",
 		DisplayName: "DataHub",
 		Active:      true,
+		PreExisting: true,
 	}
 	// A seeded service account (corpUser + SERVICE_ACCOUNT subtype) for
 	// service-account data-source and import scenarios.
@@ -58,6 +68,7 @@ func (s *mockServer) seedUsers() {
 		Title:       "Seeded for tests",
 		Active:      true,
 		SubTypes:    []string{"SERVICE_ACCOUNT"},
+		PreExisting: true,
 	}
 	// A service_-prefixed corpUser WITHOUT the subtype, to exercise the
 	// service-account resource's subtype guard (it must refuse to manage this).
@@ -66,6 +77,7 @@ func (s *mockServer) seedUsers() {
 		Username:    "service_faker",
 		DisplayName: "Not Actually A Service Account",
 		Active:      true,
+		PreExisting: true,
 	}
 }
 

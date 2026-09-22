@@ -50,17 +50,47 @@ type mockOwnerEdge struct {
 }
 
 // systemOwnershipTypePrefix marks the ownership type entities DataHub
-// bootstraps for the legacy enum values. They are real entities server-side, so
-// they resolve in validation without appearing in the mock's ownershipTypes map
-// (which holds only types a test created).
+// bootstraps for the legacy Owner.type enum values.
 const systemOwnershipTypePrefix = "urn:li:ownershipType:__system__"
+
+// BuiltinAdminOwnerURN is the one principal that exists on every DataHub
+// without anything creating it, so the only owner URN a test may use without
+// first creating the principal. On a Quickstart it is also the PAT actor
+// (TOKEN_ACTOR in the Makefile).
+const BuiltinAdminOwnerURN = "urn:li:corpuser:datahub"
+
+// bootstrappedOwnershipTypes are the system ownership type entities a real
+// DataHub creates at bootstrap. The set is closed on purpose: accepting any
+// __system__* URN would let a test pass against the mock while failing live
+// with `Custom Ownership type with urn ... does not exist`.
+var bootstrappedOwnershipTypes = map[string]bool{
+	systemOwnershipTypePrefix + "technical_owner": true,
+	systemOwnershipTypePrefix + "business_owner":  true,
+	systemOwnershipTypePrefix + "data_steward":    true,
+	systemOwnershipTypePrefix + "none":            true,
+}
 
 // ownerPrincipalExists mirrors the EntityService resolution
 // OwnerUtils.validateOwners performs on each owner URN. Caller must hold s.mu.
+//
+// It is deliberately NARROWER than "is this URN in s.users". That map also holds
+// the fixtures seedUsers installs for other suites -- testuser, service_seed,
+// service_faker -- and a real DataHub has none of them. Consulting the map
+// unqualified is what shipped a green mock suite alongside a red live run: five
+// ownership tests named urn:li:corpuser:testuser as an owner, the mock accepted
+// it, and the server answered "Owner with urn urn:li:corpuser:testuser does not
+// exist." for every one of them.
+//
+// So the rule here models the TARGET rather than the mock's own store: the
+// built-in admin, plus whatever the configuration under test created. Groups
+// need no such qualification because nothing pre-seeds them.
 func (s *mockServer) ownerPrincipalExists(urn string) bool {
 	if id, ok := strings.CutPrefix(urn, "urn:li:corpuser:"); ok {
-		_, found := s.users[id]
-		return found
+		u, found := s.users[id]
+		if !found {
+			return false
+		}
+		return !u.PreExisting || urn == BuiltinAdminOwnerURN
 	}
 	if id, ok := strings.CutPrefix(urn, "urn:li:corpGroup:"); ok {
 		_, found := s.groups[id]
@@ -73,7 +103,7 @@ func (s *mockServer) ownerPrincipalExists(urn string) bool {
 // Caller must hold s.mu.
 func (s *mockServer) ownershipTypeExists(urn string) bool {
 	if strings.HasPrefix(urn, systemOwnershipTypePrefix) {
-		return true
+		return bootstrappedOwnershipTypes[urn]
 	}
 	id, ok := strings.CutPrefix(urn, "urn:li:ownershipType:")
 	if !ok {
@@ -224,11 +254,12 @@ func (s *mockServer) handleRemoveOwner(w http.ResponseWriter, variables map[stri
 		}
 		kept = append(kept, e)
 	}
-	if len(kept) == 0 {
-		delete(s.entityOwners, resourceURN)
-	} else {
-		s.entityOwners[resourceURN] = kept
-	}
+	// Assign even when empty. OwnerUtils.removeOwnersIfExists writes the aspect
+	// back with an empty owners array rather than deleting it, so an entity
+	// whose owners have all been removed reads as ownership.value.owners = []
+	// -- present and empty -- which is a different JSON shape from an entity
+	// that never had an owner and must not be collapsed into it.
+	s.entityOwners[resourceURN] = kept
 	s.mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -258,8 +289,11 @@ func (s *mockServer) ownershipAspect(entityURN string) map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	edges := s.entityOwners[entityURN]
-	if len(edges) == 0 {
+	edges, written := s.entityOwners[entityURN]
+	if !written {
+		// The aspect was never written: the real endpoint omits the key from the
+		// entity entirely rather than returning an empty array, and the
+		// provider's Read has to tolerate exactly that.
 		return nil
 	}
 	owners := make([]map[string]any, 0, len(edges))
@@ -298,11 +332,20 @@ type seedOwnerRequest struct {
 }
 
 // handleSeedOwner injects an owner edge straight into the stored aspect,
-// bypassing the mutation entirely -- the mock equivalent of somebody assigning
-// an owner in the DataHub UI. It is what makes the merge contract testable:
-// there is no other way to have an owner present that Terraform never declared.
+// bypassing the mutation entirely.
 //
-//	POST /test-control/seed-owner {"entityUrn": ..., "ownerUrn": ..., "ownershipTypeUrn": ...}
+// It now has exactly one remaining caller, and that narrowing is the point.
+// Simulating a UI-assigned owner no longer needs a control endpoint at all --
+// AssignOwnerOutOfBand calls batchAddOwners, which works against a live
+// instance too, so the merge contract is verified on a real server rather than
+// only here. What no GraphQL write can produce is an owner edge with no
+// typeUrn, since OwnerUtils always materialises one, and that shape has to come
+// from somewhere for the legacy-type read path to be testable.
+//
+// Prefer a real mutation over this endpoint for anything a real client can do:
+// a mock-only path is a mock-only guarantee.
+//
+//	POST /test-control/seed-owner {"entityUrn": ..., "ownerUrn": ..., "legacyType": ..., "omitTypeUrn": true}
 func (s *mockServer) handleSeedOwner(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -328,31 +371,6 @@ func (s *mockServer) handleSeedOwner(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.addOwnerLocked(req.EntityURN, edge)
-	s.mu.Unlock()
-
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// handleDropOwners clears every owner from an entity's stored aspect, leaving
-// the ownership key absent from the entity read -- the state of an entity that
-// has never had an owner, and the one the provider's Read has to tolerate.
-//
-//	POST /test-control/drop-owners {"entityUrn": ...}
-func (s *mockServer) handleDropOwners(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		EntityURN string `json:"entityUrn"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.EntityURN == "" {
-		http.Error(w, "entityUrn is required", http.StatusBadRequest)
-		return
-	}
-
-	s.mu.Lock()
-	delete(s.entityOwners, req.EntityURN)
 	s.mu.Unlock()
 
 	w.WriteHeader(http.StatusNoContent)

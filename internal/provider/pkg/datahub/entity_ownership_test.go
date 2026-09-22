@@ -4,6 +4,8 @@
 package datahub
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -264,5 +266,109 @@ func TestRemoveOwnerRequiresOwnershipType(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "removes that owner under every ownership type") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestGetEntityOwnersReadShapes pins the three JSON shapes the OpenAPI v3
+// entity endpoint can return for the ownership aspect, because they mean
+// different things and two of them are easy to conflate.
+//
+// An entity that has never had an owner omits the aspect key entirely. An
+// entity whose owners were all removed has the key with an empty owners array,
+// because OwnerUtils.removeOwnersIfExists writes the aspect back rather than
+// deleting it. Both are "no owners" and neither is "the entity is missing" --
+// conflating either with a 404 would make Read drop the resource from state and
+// the next plan propose a create.
+func TestGetEntityOwnersReadShapes(t *testing.T) {
+	t.Parallel()
+
+	const termURN = "urn:li:glossaryTerm:revenue"
+
+	tests := map[string]struct {
+		status    int
+		body      string
+		wantFound bool
+		wantEdges []OwnerEdge
+	}{
+		"aspect absent entirely -- never had an owner": {
+			status:    http.StatusOK,
+			body:      `{"urn":"` + termURN + `"}`,
+			wantFound: true,
+			wantEdges: []OwnerEdge{},
+		},
+		"aspect present with an empty owners array -- owners were removed": {
+			status:    http.StatusOK,
+			body:      `{"urn":"` + termURN + `","ownership":{"value":{"owners":[],"ownerTypes":{}}}}`,
+			wantFound: true,
+			wantEdges: []OwnerEdge{},
+		},
+		"owners present, typeUrn populated": {
+			status: http.StatusOK,
+			body: `{"urn":"` + termURN + `","ownership":{"value":{"owners":[
+				{"owner":"urn:li:corpuser:alice","type":"NONE","typeUrn":"urn:li:ownershipType:io.acme.steward","source":{"type":"MANUAL"}},
+				{"owner":"urn:li:corpGroup:finance","type":"NONE","typeUrn":"urn:li:ownershipType:io.acme.steward"}
+			]}}}`,
+			wantFound: true,
+			wantEdges: []OwnerEdge{
+				{OwnerURN: "urn:li:corpuser:alice", OwnershipTypeURN: "urn:li:ownershipType:io.acme.steward"},
+				{OwnerURN: "urn:li:corpGroup:finance", OwnershipTypeURN: "urn:li:ownershipType:io.acme.steward"},
+			},
+		},
+		// typeUrn is optional in the PDL while type is not, so an aspect written
+		// directly can carry only the legacy enum. It must resolve to the same
+		// pair a configuration would declare, or the resource shows a diff it can
+		// never settle.
+		"owner with only the legacy type enum": {
+			status: http.StatusOK,
+			body: `{"urn":"` + termURN + `","ownership":{"value":{"owners":[
+				{"owner":"urn:li:corpuser:alice","type":"TECHNICAL_OWNER"}
+			]}}}`,
+			wantFound: true,
+			wantEdges: []OwnerEdge{
+				{OwnerURN: "urn:li:corpuser:alice", OwnershipTypeURN: "urn:li:ownershipType:__system__technical_owner"},
+			},
+		},
+		"entity missing": {
+			status:    http.StatusNotFound,
+			body:      `{}`,
+			wantFound: false,
+			wantEdges: nil,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got, want := r.URL.Path, "/openapi/v3/entity/glossaryterm/"+termURN; got != want {
+					t.Errorf("GET path = %q, want %q", got, want)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			c, err := NewClient(server.URL, "token")
+			if err != nil {
+				t.Fatalf("NewClient: %v", err)
+			}
+			edges, found, err := c.GetEntityOwners(t.Context(), termURN)
+			if err != nil {
+				t.Fatalf("GetEntityOwners returned %v", err)
+			}
+			if found != tc.wantFound {
+				t.Fatalf("found = %v, want %v", found, tc.wantFound)
+			}
+			if len(edges) != len(tc.wantEdges) {
+				t.Fatalf("got %d owner(s) %v, want %d %v", len(edges), edges, len(tc.wantEdges), tc.wantEdges)
+			}
+			for i := range edges {
+				if edges[i] != tc.wantEdges[i] {
+					t.Errorf("owner[%d] = %+v, want %+v", i, edges[i], tc.wantEdges[i])
+				}
+			}
+		})
 	}
 }

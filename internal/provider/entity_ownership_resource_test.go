@@ -12,11 +12,17 @@ import (
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
 )
 
-// entityOwnershipFixtureIDs mints the four ids every ownership scenario needs.
+// entityOwnershipFixtureIDs mints the five ids every ownership scenario needs.
 // Each scenario gets its own set so a leaked entity from one cannot affect
 // another on a live target.
-func entityOwnershipFixtureIDs(tg *datahubtesting.Target, base string) (termID, groupID, typeIDA, typeIDB string) {
-	return tg.Name(base + "-term"), tg.Name(base + "-grp"), tg.Name(base + "-ta"), tg.Name(base + "-tb")
+//
+// Two groups, because every owner other than the built-in admin has to be a
+// principal the configuration creates. Naming a principal that only the mock
+// has is how five of these tests came to pass against the mock and fail against
+// a Quickstart with `Owner with urn urn:li:corpuser:testuser does not exist`.
+func entityOwnershipFixtureIDs(tg *datahubtesting.Target, base string) (termID, groupID, group2ID, typeIDA, typeIDB string) {
+	return tg.Name(base + "-term"), tg.Name(base + "-grp"), tg.Name(base + "-grp2"),
+		tg.Name(base + "-ta"), tg.Name(base + "-tb")
 }
 
 // TestAcc_EntityOwnership_Lifecycle covers create, update and import, and with
@@ -25,12 +31,12 @@ func entityOwnershipFixtureIDs(tg *datahubtesting.Target, base string) (termID, 
 // holding two ownership types.
 func TestAcc_EntityOwnership_Lifecycle(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-life")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-life")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipLifecycleSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipLifecycleSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -41,12 +47,12 @@ func TestAcc_EntityOwnership_Lifecycle(t *testing.T) {
 // break the two legitimate repetition shapes the lifecycle test covers.
 func TestAcc_EntityOwnership_DuplicateEntry(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-dup")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-dup")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipDuplicateEntrySteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipDuplicateEntrySteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -54,15 +60,12 @@ func TestAcc_EntityOwnership_DuplicateEntry(t *testing.T) {
 // assigned outside Terraform survives create, update and destroy.
 func TestAcc_EntityOwnership_OutOfBandOwnerSurvives(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	if tg.IsLive() {
-		t.Skip("seeding an owner straight into the stored aspect needs /test-control/seed-owner, which only the mock exposes")
-	}
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-oob")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-oob")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipOutOfBandSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipOutOfBandSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -71,12 +74,12 @@ func TestAcc_EntityOwnership_OutOfBandOwnerSurvives(t *testing.T) {
 // place. A removeOwner call without the type would silently take both.
 func TestAcc_EntityOwnership_RemovalPinnedToType(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-pin")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-pin")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipPinnedRemovalSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipPinnedRemovalSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -86,12 +89,12 @@ func TestAcc_EntityOwnership_RemovalPinnedToType(t *testing.T) {
 // value would surface as "Provider produced inconsistent result after apply".
 func TestAcc_EntityOwnership_ReplaceOnEntityChange(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-move")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-move")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipReplaceSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipReplaceSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -102,12 +105,12 @@ func TestAcc_EntityOwnership_ReplaceOnEntityChange(t *testing.T) {
 // module consumer of the resource is broken.
 func TestAcc_EntityOwnership_FromNonLiteral(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-unk")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-unk")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipFromVariableSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipFromVariableSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -168,6 +171,20 @@ func TestAcc_EntityOwnership_RejectedTargets(t *testing.T) {
 	}
 }
 
+// TestAcc_EntityOwnership_FixturePrincipalRejected is the regression test for
+// the fixture defect: an owner URN that exists only in the mock must be refused,
+// on the mock as well as on a live instance. It is what would have caught five
+// tests passing against the mock and failing against a Quickstart.
+func TestAcc_EntityOwnership_FixturePrincipalRejected(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-fixture")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps:                    datahubtesting.EntityOwnershipFixturePrincipalSteps(termID, groupID, group2ID, typeIDA, typeIDB),
+	})
+}
+
 // TestAcc_EntityOwnership_InvalidOwnerURN asserts an owner URN that is neither a
 // corp user nor a corp group is rejected at plan time.
 func TestAcc_EntityOwnership_InvalidOwnerURN(t *testing.T) {
@@ -180,21 +197,18 @@ func TestAcc_EntityOwnership_InvalidOwnerURN(t *testing.T) {
 	})
 }
 
-// TestAcc_EntityOwnership_AbsentAspect proves Read tolerates an entity whose
-// ownership aspect is absent entirely, which is how an entity with no owners
-// reads, and plans to re-add the declared pairs rather than erroring or deciding
-// the resource is gone.
-func TestAcc_EntityOwnership_AbsentAspect(t *testing.T) {
+// TestAcc_EntityOwnership_NoOwners proves Read tolerates an entity that exists
+// with no owners and plans to re-add the declared pairs, rather than erroring or
+// deciding the resource is gone. The owners are cleared through DataHub's own
+// removeOwner mutation, so this runs against a live instance too.
+func TestAcc_EntityOwnership_NoOwners(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
-	if tg.IsLive() {
-		t.Skip("clearing an entity's owners out of band needs /test-control/drop-owners, which only the mock exposes")
-	}
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-empty")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-empty")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipAbsentAspectSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipNoOwnersSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }
 
@@ -207,11 +221,11 @@ func TestAcc_EntityOwnership_ImportLegacyType(t *testing.T) {
 	if tg.IsLive() {
 		t.Skip("writing a typeUrn-less owner edge needs /test-control/seed-owner, which only the mock exposes")
 	}
-	termID, groupID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-legacy")
+	termID, groupID, group2ID, typeIDA, typeIDB := entityOwnershipFixtureIDs(tg, "tfprovider-eo-legacy")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.EntityOwnershipCheckDestroy,
-		Steps:                    datahubtesting.EntityOwnershipLegacyTypeImportSteps(termID, groupID, typeIDA, typeIDB),
+		Steps:                    datahubtesting.EntityOwnershipLegacyTypeImportSteps(termID, groupID, group2ID, typeIDA, typeIDB),
 	})
 }

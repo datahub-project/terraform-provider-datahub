@@ -65,6 +65,23 @@ func (s *mockServer) handleCreateGlossaryTerm(w http.ResponseWriter, variables m
 
 	s.mu.Lock()
 	s.glossaryTerms[id] = mockGlossaryTerm{URN: urn, ID: id, Name: name, Definition: def, ParentNode: parent}
+	// CreateGlossaryTermResolver calls OwnerUtils.addCreatorAsOwner, so a term
+	// arrives already owned by the creating actor as TECHNICAL_OWNER. Nobody
+	// asked for that owner and Terraform never declares it, which makes it the
+	// most realistic test there is of datahub_entity_ownership's merge contract
+	// -- and reproducing it is what stops the mock disagreeing with the server.
+	//
+	// The actor is deliberately __datahub_system rather than the mock's
+	// authenticated user: metadata service auth is off on an OSS Quickstart, so
+	// every request there is attributed to the system actor, which is what a
+	// live run of these scenarios observes. On an authenticated instance it
+	// would be the real user -- so a test must never assume WHICH actor, only
+	// that an owner it did not declare may be present.
+	s.addOwnerLocked(urn, mockOwnerEdge{
+		Owner:   "urn:li:corpuser:__datahub_system",
+		Type:    "TECHNICAL_OWNER",
+		TypeURN: systemOwnershipTypePrefix + "technical_owner",
+	})
 	s.mu.Unlock()
 
 	_ = json.NewEncoder(w).Encode(map[string]any{

@@ -14,8 +14,9 @@ description: |-
   domain, glossaryTerm, glossaryNode, dataProduct, corpGroup, tag, form and dataHubIngestionSource -- the platform-configuration entities that both carry the ownership aspect and fall inside this provider's remit.
   Everything else is rejected at plan time, for one of two reasons:
   Ingested data assets (dataset, chart, dashboard, dataJob, ...) carry ownership, but their metadata belongs to ingestion and to business users editing the catalog. Managing it here would mean every apply overwrote their edits.corpuser, dataContract, dataHubPolicy and structuredProperty do not declare the ownership aspect at all, so a write would have nowhere to land. Note corpuser and dataContract are valid datahub_structured_property_assignment targets; the two allowlists differ, and this one is the narrower.
-  Import
+  Adopting owners that already exist
   Import by entity URN. Import adopts every owner then present on the entity, so the imported resource declares them all; drop an entry from the configuration afterwards and the next apply removes that pair from DataHub.
+  That includes owners DataHub assigned itself. Creating a glossary term (and several other entity types) makes the creating actor a Technical Owner automatically, so an entity nobody has curated by hand still arrives with one owner. After importing, run terraform state show and write the configuration from what it reports -- an adopted owner you leave out is one the next apply removes. Expect a non-empty plan straight after an import for this reason; it is the resource telling you the configuration does not yet match what it adopted.
   References
   Prefer expression inputs so Terraform creates things in the right order and you never hand-assemble a URN: set entity_urn to the target's .urn (e.g. datahub_glossary_term.<name>.urn), ownership_type_urn to datahub_ownership_type.<name>.urn, and owner_urn to datahub_corp_group.<name>.urn or datahub_corp_user.<name>.urn. Raw URN strings work for principals and types managed outside Terraform -- DataHub validates that each one exists and rejects the whole write otherwise -- but then you are responsible for the ordering.
 ---
@@ -45,9 +46,11 @@ Everything else is rejected at plan time, for one of two reasons:
 - **Ingested data assets** (`dataset`, `chart`, `dashboard`, `dataJob`, ...) carry `ownership`, but their metadata belongs to ingestion and to business users editing the catalog. Managing it here would mean every apply overwrote their edits.
 - **`corpuser`, `dataContract`, `dataHubPolicy` and `structuredProperty`** do not declare the `ownership` aspect at all, so a write would have nowhere to land. Note `corpuser` and `dataContract` *are* valid `datahub_structured_property_assignment` targets; the two allowlists differ, and this one is the narrower.
 
-## Import
+## Adopting owners that already exist
 
 Import by entity URN. Import adopts **every** owner then present on the entity, so the imported resource declares them all; drop an entry from the configuration afterwards and the next apply removes that pair from DataHub.
+
+That includes owners **DataHub assigned itself**. Creating a glossary term (and several other entity types) makes the creating actor a Technical Owner automatically, so an entity nobody has curated by hand still arrives with one owner. After importing, run `terraform state show` and write the configuration from what it reports -- an adopted owner you leave out is one the next apply removes. Expect a non-empty plan straight after an import for this reason; it is the resource telling you the configuration does not yet match what it adopted.
 
 ## References
 
