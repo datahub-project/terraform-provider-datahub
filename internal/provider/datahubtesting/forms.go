@@ -318,6 +318,9 @@ func (s *mockServer) handleFormItem(w http.ResponseWriter, r *http.Request) {
 			"formKey":  map[string]any{"value": map[string]any{"id": id}},
 			"formInfo": map[string]any{"value": info},
 		}
+		if aspect := s.ownershipAspect(mockFormURNPrefix + id); aspect != nil {
+			entity["ownership"] = aspect
+		}
 		if f.Assignment != nil {
 			orGroups := make([]map[string]any, 0, len(f.Assignment))
 			for _, group := range f.Assignment {

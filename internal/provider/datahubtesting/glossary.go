@@ -223,6 +223,9 @@ func (s *mockServer) handleGlossaryNodeItem(w http.ResponseWriter, r *http.Reque
 	if aspect := s.structuredPropertiesAspect(n.URN); aspect != nil {
 		entity["structuredProperties"] = aspect
 	}
+	if aspect := s.ownershipAspect(n.URN); aspect != nil {
+		entity["ownership"] = aspect
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(entity)
@@ -373,6 +376,9 @@ func (s *mockServer) handleGlossaryTermItem(w http.ResponseWriter, r *http.Reque
 	}
 	if aspect := s.structuredPropertiesAspect(t.URN); aspect != nil {
 		entity["structuredProperties"] = aspect
+	}
+	if aspect := s.ownershipAspect(t.URN); aspect != nil {
+		entity["ownership"] = aspect
 	}
 
 	w.Header().Set("Content-Type", "application/json")
