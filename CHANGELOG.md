@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`datahub_entity_ownership`**, a new resource that assigns owners to the platform-configuration entities this provider manages. One resource per owned entity, holding a set of `owner` entries, each one an `(owner, ownership type)` pair. It completes `datahub_ownership_type`, which until now could define a vocabulary of roles that nothing in the provider could use.
+
+  **It merges rather than owning the whole `ownership` aspect**, which is a deliberate departure from this provider's usual rule and the only design that makes it useful for what people actually need it for. The case driving it is adopting a glossary, domain tree or data product catalogue that people have already been curating by hand in the DataHub UI; owning the complete owner list would delete every one of those assignments on the first apply. So the resource owns only the pairs it declares: an owner assigned in the UI survives create, update and destroy untouched. Removing an `owner` entry from the configuration does still remove that pair, because what is preserved is what Terraform never declared, not everything that happens to be there.
+
+  **`(entity, ownership type)` is not a unique key, in either direction, and both repetitions are ordinary.** Several owners commonly share one ownership type -- in the estate this was built against, 92 of 1,782 owner cells named two people in the same role -- and one owner commonly holds several. Each pair is its own entry. The only entry that collapses is an exact duplicate of both attributes, which Terraform folds away before the provider sees it because `owner` is a set.
+
+  Writes go through the `batchAddOwners` and `removeOwner` GraphQL mutations rather than an OpenAPI v3 aspect write, and the reason is worth stating because the aspect write would otherwise look like the cheaper option: `OwnerUtils.validateOwners` resolves every owner URN and every ownership type URN server-side and refuses the whole batch when one is missing, whereas an aspect write would accept a dangling owner reference and persist it silently. Reads and import use the OpenAPI v3 entity endpoint, so they are strongly consistent and tolerate an entity whose `ownership` aspect is absent entirely. Removal always pins `ownershipTypeUrn`: DataHub treats an omitted one as "every ownership type this owner holds", so an under-specified removal would quietly take roles the configuration still declared.
+
+  Accepted targets are the eight entity types that both carry the `ownership` aspect and sit on this provider's configuration side of the per-asset deny-list: `domain`, `glossaryTerm`, `glossaryNode`, `dataProduct`, `corpGroup`, `tag`, `form` and `dataHubIngestionSource`. Data assets are refused at plan time, with the deny-list reasoning. So are `corpuser`, `dataContract`, `dataHubPolicy` and `structuredProperty`, for the opposite reason and with a message that says so: none of them declares the `ownership` aspect, so a write would land nowhere. Three of those four *are* valid `datahub_structured_property_assignment` targets, so the two allowlists differ on purpose and this one is the narrower.
+
+- **`examples/runnable/ownership-type-simple` now assigns owners** using the two ownership types it already defined, which is the natural completion of that example's story. It adds a glossary term to own and a group to own it, and demonstrates both repetition shapes with the reasoning in comments. The second owner principal is a variable defaulting to the built-in `urn:li:corpuser:datahub` rather than a `datahub_corp_user` the example creates: the OSS sign-up endpoint refuses an address whose user entity already exists, so one failed destroy would poison a fixed address permanently, and this example should not inherit that fragility.
+
 ## [0.25.0] - 2026-09-21
 
 ### Added
