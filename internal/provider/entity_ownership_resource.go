@@ -469,10 +469,33 @@ func (r *entityOwnershipResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	// Only the declared pairs, one removeOwner each with the ownership type
-	// pinned. removeOwner is idempotent (it validates only that the entity
-	// exists), so a pair already gone is a successful delete.
-	for _, e := range dedupeOwnerEdges(declared) {
+	// Read first, for two reasons that both reduce to removeOwner validating
+	// the target entity rather than the owner.
+	//
+	// If the entity is gone, its owners are gone with it, but removeOwner would
+	// refuse with "Resource does not exist" -- and a Delete that errors leaves
+	// the resource in state permanently, needing terraform state rm. Read
+	// normally catches this first and removes the resource before any destroy
+	// plan, so this guard covers the window Read cannot: a refresh that was
+	// skipped, or a deletion that lands between refresh and apply.
+	//
+	// Otherwise, narrowing to the pairs still present skips calls that would
+	// achieve nothing. removeOwner does not validate owners, so those calls
+	// would succeed either way; not making them is simply cheaper and keeps the
+	// request count proportional to what is actually being removed.
+	actual, found, err := r.client.GetEntityOwners(ctx, entityURN)
+	if err != nil {
+		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+		return
+	}
+	if !found {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
+	// Only pairs this resource declared, one removeOwner each with the ownership
+	// type pinned so the owner's other ownership types are left alone.
+	for _, e := range retainPresentOwnerEdges(declared, actual) {
 		if err := r.client.RemoveOwner(ctx, entityURN, e.OwnerURN, e.OwnershipTypeURN); err != nil {
 			resp.Diagnostics.AddError("DataHub API Error", err.Error())
 			return
