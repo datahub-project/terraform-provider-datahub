@@ -434,6 +434,7 @@ func (p *datahubProvider) Resources(_ context.Context) []func() resource.Resourc
 		NewDataContractResource,
 		NewDataProductResource,
 		NewDomainResource,
+		NewEntityOwnershipResource,
 		NewGlossaryNodeResource,
 		NewGlossaryTermResource,
 		NewGlossaryTermRelationshipResource,
