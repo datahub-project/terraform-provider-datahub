@@ -11,6 +11,10 @@ DEV_TFRC ?= $(PWD)/dev.tfrc
 COVERAGE_FILE ?= coverage.out
 COVERAGE_HTML ?= coverage.html
 COVER_PKG ?= ./internal/...
+# Overridable so CI can keep a tight go-test timeout while the local default
+# stays long enough for a live run.
+COVERAGE_TIMEOUT ?= 120m
+TEST_PARALLEL ?= 10
 DATAHUB_GMS_URL ?= http://localhost:8080
 
 TFPLUGINDOCS_SERVE_BIN := $(BIN_DIR)/tfplugindocs-serve
@@ -278,7 +282,12 @@ deps-update-all:
 test:
 	$(GO) test -v -cover -timeout=120s -parallel=10 ./...
 
-testacc:
+# The install prerequisite is not a convenience. With TF_ACC=1,
+# TestAcc_ImportRoundtrip_E2E drives real terraform subprocesses against
+# ./bin/terraform-provider-datahub, and a missing binary now fails the test
+# rather than skipping it -- so every target that sets TF_ACC=1 has to produce
+# the binary, exactly as the example targets already do.
+testacc: install
 	TF_ACC=1 DATAHUB_GMS_URL= DATAHUB_GMS_TOKEN= $(GO) test -v -cover -timeout 120m ./...
 
 # Runs terraform validate over every example against the freshly built provider.
@@ -388,8 +397,11 @@ testacc-remote: install
 	@sleep 3
 	TF_ACC=1 $(GO) test -v -timeout 30m ./...
 
-coverage:
-	TF_ACC=1 $(GO) test -coverprofile=$(COVERAGE_FILE) -coverpkg=$(COVER_PKG) -timeout 120m ./...
+# Sets TF_ACC=1, so it carries the same install prerequisite as testacc. This
+# is also the target the CI Test job runs, which is how CI came to build the
+# provider binary it had been testing without.
+coverage: install
+	TF_ACC=1 $(GO) test -coverprofile=$(COVERAGE_FILE) -coverpkg=$(COVER_PKG) -timeout $(COVERAGE_TIMEOUT) -parallel=$(TEST_PARALLEL) ./...
 	@echo ""
 	@$(GO) tool cover -func=$(COVERAGE_FILE) | tail -1
 

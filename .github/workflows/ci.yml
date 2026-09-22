@@ -70,7 +70,11 @@ jobs:
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: TF_ACC=1 go test -coverprofile=coverage.out -coverpkg=./internal/... -timeout=5m -parallel=10 ./...
+      # Runs via make rather than a bare `go test` so that the install
+      # prerequisite builds ./bin/terraform-provider-datahub. Without it
+      # TestAcc_ImportRoundtrip_E2E found no binary and skipped on every run,
+      # which left the whole import pipeline untested behind a green job.
+      - run: make coverage COVERAGE_TIMEOUT=5m
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
