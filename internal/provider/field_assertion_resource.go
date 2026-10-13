@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -126,6 +127,7 @@ func (r *fieldAssertionResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"entity_urn": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "URN of the DataHub dataset this assertion monitors.",
+				Validators:          []validator.String{datasetURN()},
 			},
 			"description": schema.StringAttribute{
 				Optional:            true,

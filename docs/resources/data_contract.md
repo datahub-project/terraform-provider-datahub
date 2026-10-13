@@ -61,7 +61,7 @@ output "contract_urn" {
 
 ### Required
 
-- `dataset_urn` (String) URN of the dataset this contract applies to (e.g. `datahub_dataset` URN or a raw `urn:li:dataset:(...)`). Changing it forces a new resource.
+- `dataset_urn` (String) URN of the dataset this contract applies to. Must be a dataset URN of the form `urn:li:dataset:(urn:li:dataPlatform:<platform>,<name>,<ENV>)`. Changing it forces a new resource.
 
 ### Optional
 

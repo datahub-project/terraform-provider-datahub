@@ -121,8 +121,9 @@ func (r *dataContractResource) Schema(_ context.Context, _ resource.SchemaReques
 			},
 			"dataset_urn": schema.StringAttribute{
 				Required: true,
-				MarkdownDescription: "URN of the dataset this contract applies to " +
-					"(e.g. `datahub_dataset` URN or a raw `urn:li:dataset:(...)`). Changing it forces a new resource.",
+				MarkdownDescription: "URN of the dataset this contract applies to. Must be a dataset URN of the form " +
+					"`urn:li:dataset:(urn:li:dataPlatform:<platform>,<name>,<ENV>)`. Changing it forces a new resource.",
+				Validators:    []validator.String{datasetURN()},
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"state": schema.StringAttribute{
