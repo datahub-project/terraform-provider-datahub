@@ -161,10 +161,13 @@ const (
 )
 
 // datasetURNEnvPattern matches the third tuple part. It is deliberately a
-// shape (upper-case letters and underscores) rather than an allow-list of
-// FabricType values: DataHub adds values, and a stale list would reject
-// configurations the server accepts.
-var datasetURNEnvPattern = regexp.MustCompile(`^[A-Z_]+$`)
+// shape rather than an allow-list of FabricType values: DataHub adds values,
+// and a stale list would reject configurations the server accepts. The server
+// enforces the actual enum (com.linkedin.common.FabricType) when it parses the
+// URN, so a well-shaped but unknown value still fails there; this check only
+// rejects spellings no enum value could have, such as "_" or "PROD_". Every
+// current FabricType value matches (see TestCheckDatasetURN_AllFabricTypes).
+var datasetURNEnvPattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$`)
 
 // checkDatasetURN checks the SHAPE of a dataset URN, urn:li:dataset:(<platform
 // urn>,<name>,<ENV>), and returns "" when it is acceptable or a short reason
@@ -220,7 +223,7 @@ func checkDatasetURN(s string) string {
 		return "dataset name part must not be empty"
 	}
 	if !datasetURNEnvPattern.MatchString(env) {
-		return fmt.Sprintf("environment part %q must be upper case letters and underscores, e.g. PROD", env)
+		return fmt.Sprintf("environment part %q must be upper case words joined by single underscores, e.g. PROD or NON_PROD", env)
 	}
 	return ""
 }

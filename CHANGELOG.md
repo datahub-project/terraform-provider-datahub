@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A malformed dataset URN is now rejected at `terraform plan`** rather than when the apply reaches the server. This applies to `entity_urn` on `datahub_freshness_assertion`, `datahub_volume_assertion`, `datahub_sql_assertion`, `datahub_field_assertion` and `datahub_schema_assertion`, and to `dataset_urn` on `datahub_data_contract`. The check is shape-only: the `urn:li:dataset:(` prefix and closing `)`, exactly three comma-separated parts, a `urn:li:dataPlatform:<id>` platform, a non-empty name, and an environment written as upper-case words joined by single underscores (for example `PROD` or `NON_PROD`). It holds no list of platforms or environments, so it is looser than the server, which additionally requires the environment to be a DataHub `FabricType` value. **If a pipeline fails after upgrading with `Invalid dataset URN`, the URN in that configuration is not shaped like a dataset URN**, and the error names the part that is wrong. Correct the URN; if you believe a well-formed URN is being rejected, please open an issue. URNs built from another resource's output are unknown at plan time and are not checked. `datahub_custom_assertion` is unchanged because its `entity_urn` is not restricted to datasets.
+
 ## [0.26.0] - 2026-09-22
 
 ### Added
