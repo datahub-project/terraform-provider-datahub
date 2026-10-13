@@ -1,12 +1,12 @@
 [tools]
 go = "1.27.2"
-terraform = "1.16.3"
+terraform = "1.16.5"
 golangci-lint = "2.14.0"
-goreleaser = "2.18.0"
+goreleaser = "2.18.3"
 jq = "1.8.2"
-yq = "4.53.6"
+yq = "4.54.1"
 python = "3.11.15"
-uv = "0.12.17"
+uv = "0.13.0"
 
 [env]
 _.file = ".mise.env"
