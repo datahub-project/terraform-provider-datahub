@@ -28,15 +28,20 @@ jobs:
           cache: true
       - run: go build ./...
       - run: go vet ./...
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+      # golangci-lint and goreleaser come from mise.toml, the same pins `make
+      # lint` and local runs use. They used to be pinned a second time here via
+      # their own actions, and the copies drifted: a golangci-lint bump in
+      # mise.toml passed locally while CI kept the old version and failed to
+      # typecheck against the newer Go standard library. install_args limits
+      # mise to these tools so Go itself still comes from setup-go above
+      # (go.mod toolchain).
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: v2.14.0
-      - name: goreleaser check
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
-        with:
-          version: v2.18.0
-          args: check
+          install_args: golangci-lint goreleaser
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: make lint
+      - run: goreleaser check
 
   generate:
     name: Generate

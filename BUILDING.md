@@ -124,7 +124,7 @@ This target:
 |---|---|---|
 | `FRESH=1` | off | Nuke any existing Quickstart before booting a fresh one. |
 | `KEEP_QUICKSTART=1` | off | Skip the automatic nuke on exit (for post-mortem inspection). |
-| `QUICKSTART_VERSION` | `v1.7.0` | DataHub server version to boot. **Must be three numeric components** -- see below. |
+| `QUICKSTART_VERSION` | see `Makefile` | DataHub server version to boot. **Must be three numeric components** -- see below. |
 | `FORCE_LOCAL_QUICKSTART_MAPPING` | `scripts/quickstart-version-mapping.yaml` | Pins the CLI's version mapping to a checked-in file. Unset it to use upstream's. |
 
 **Two things about `QUICKSTART_VERSION` that are not guessable.**

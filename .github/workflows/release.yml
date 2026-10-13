@@ -65,14 +65,17 @@ jobs:
           fi
       - name: Extract release notes
         run: bash scripts/extract-release-notes.sh "${GITHUB_REF_NAME#v}"
+      # goreleaser comes from mise.toml so that ci.yml's `goreleaser check`
+      # and this release run are the same version by construction. It used to
+      # be pinned separately in each workflow via goreleaser-action.
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
-        with:
-          version: v2.18.0
-          args: release --clean
+        run: goreleaser release --clean
       - name: Set release body
         # GoReleaser's --release-notes flag does not reliably apply the body
         # through its draft->publish two-step (confirmed v0.4.0). Set the body
