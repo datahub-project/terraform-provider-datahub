@@ -9,10 +9,12 @@ terraform {
 
 # Provider credentials are read from environment variables by default:
 #
-#   DATAHUB_GMS_URL   - DataHub GMS URL, e.g. https://your-instance.acryl.io/gms
-#   DATAHUB_GMS_TOKEN - DataHub personal access token
+#   DATAHUB_GMS_URL   - the GMS URL, including /gms on DataHub Cloud:
+#                       Cloud:       https://your-instance.acryl.io/gms
+#                       Self-hosted: http://localhost:8080
+#   DATAHUB_GMS_TOKEN - a DataHub personal access token
 #
-# If you prefer Terraform input variables, export them via TF_VAR_* instead:
+# Or use Terraform input variables, exported via TF_VAR_*:
 #
 #   TF_VAR_datahub_gms_url   - passed as var.datahub_gms_url
 #   TF_VAR_datahub_gms_token - passed as var.datahub_gms_token
@@ -24,16 +26,16 @@ terraform {
 #     gms_token = var.datahub_gms_token
 #   }
 #
-# One of the two must be supplied, in the configuration or the environment.
-# The provider deliberately does not read the DataHub CLI's ~/.datahubenv:
-# the target instance should be determined by this configuration, not by
+# One of the two must be supplied, in configuration or environment.
+# The provider deliberately does not read the CLI's ~/.datahubenv:
+# the target instance should be set by this configuration, not by
 # whichever instance the machine's CLI was last pointed at.
 #
 # Provider-level defaults (optional) attach labels to every resource the
 # provider manages, wherever the entity type supports them - see the
-# "Provider-level defaults" guide. A managed-by = "terraform" custom property
-# is written automatically to newly created entities unless disabled with
-# auto_properties = [].
+# "Provider-level defaults" guide. A managed-by = "terraform" custom
+# property is written automatically to newly created entities unless
+# disabled with auto_properties = [].
 #
 #   provider "datahub" {
 #     defaults = {
