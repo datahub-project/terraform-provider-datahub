@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The provider page on the Terraform Registry no longer loses the `/gms` suffix from its `DATAHUB_GMS_URL` example.** The Registry renders code blocks in a horizontally scrollable box whose scrollbar is hidden on most platforms, and that comment line was 80 columns, so the last four characters -- `/gms` -- sat past the visible edge and the page read as recommending `https://your-instance.acryl.io`. The credentials comment is rewrapped with the URL on its own line, so no column exists at which the box could end on the suffix, and it now shows the self-hosted form (`http://localhost:8080`, no path) beside the DataHub Cloud one.
+- **The provider page on the Terraform Registry no longer loses the `/gms` suffix from its `DATAHUB_GMS_URL` example.** The Registry renders code blocks in a horizontally scrollable box whose scrollbar is hidden on most platforms, and that comment line was 80 columns, so the last four characters -- `/gms` -- sat past the visible edge and the page read as recommending `https://your-instance.acryl.io`. The credentials comment is rewrapped with the URL on its own line, so no column exists at which the box could end on the suffix, and it now shows the self-hosted example (`http://localhost:8080`) beside the DataHub Cloud one. The examples themselves are unchanged.
 
 ## [0.27.0] - 2026-10-14
 

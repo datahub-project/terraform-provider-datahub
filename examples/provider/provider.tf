@@ -9,7 +9,7 @@ terraform {
 
 # Provider credentials are read from environment variables by default:
 #
-#   DATAHUB_GMS_URL   - the GMS URL, including /gms on DataHub Cloud:
+#   DATAHUB_GMS_URL   - the GMS URL, for example
 #                       Cloud:       https://your-instance.acryl.io/gms
 #                       Self-hosted: http://localhost:8080
 #   DATAHUB_GMS_TOKEN - a DataHub personal access token
