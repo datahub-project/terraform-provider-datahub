@@ -63,6 +63,25 @@ module "eks" {
       min_size       = var.node_count
       max_size       = var.node_count
       desired_size   = var.node_count
+
+      # The AL2023 default root volume is 20 GiB, which the executor fills
+      # within minutes: a multi-gigabyte image plus the ingestion plugin
+      # venvs it installs on local disk. The kubelet then evicts the pod for
+      # ephemeral-storage pressure, the Deployment replaces it, and the cycle
+      # repeats forever while the Helm release waits. (The AKS example never
+      # met this because its nodes carry a 128 GiB OS disk.) The module's
+      # disk_size input is ignored with its default custom launch template,
+      # so the size is set through the block device mapping instead.
+      block_device_mappings = {
+        root = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = var.node_disk_size
+            volume_type           = "gp3"
+            delete_on_termination = true
+          }
+        }
+      }
     }
   }
 }

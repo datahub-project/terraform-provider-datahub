@@ -92,6 +92,12 @@ variable "node_count" {
   default     = 2
 }
 
+variable "node_disk_size" {
+  description = "Root volume size in GiB for each EKS worker node. The executor image is multi-gigabyte and the executor installs ingestion plugins into venvs on local disk, so the AL2023 default of 20 GiB fills within minutes and the kubelet evicts the pod for ephemeral-storage pressure; 100 GiB of gp3 costs roughly USD 8/month per node."
+  type        = number
+  default     = 100
+}
+
 variable "default_tags" {
   description = "Tags applied to every AWS resource through the provider's default_tags."
   type        = map(string)

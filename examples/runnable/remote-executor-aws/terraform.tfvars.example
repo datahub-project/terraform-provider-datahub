@@ -34,6 +34,7 @@
 # kubernetes_version = "1.35"
 # node_instance_type = "m6i.xlarge"
 # node_count         = 2
+# node_disk_size     = 100   # GiB; the 20 GiB AL2023 default evicts the executor
 
 # Tags applied to every AWS resource via the provider's default_tags.
 #
