@@ -41,8 +41,8 @@ import (
 const exampleValidateEnvVar = "TF_EXAMPLE_VALIDATE"
 
 // exampleExemptions maps a path under examples/ to the reason it cannot be
-// validated. Both current entries are properties of the example, not of the
-// provider -- neither indicates anything wrong with the snippet as published.
+// validated. Every current entry is a property of the example, not of the
+// provider -- none indicates anything wrong with the snippet as published.
 var exampleExemptions = map[string]string{
 	"resources/datahub_secret/resource.tf": "reads a caller-supplied credential " +
 		"file via file(), which terraform evaluates during validate and which is " +
@@ -50,6 +50,10 @@ var exampleExemptions = map[string]string{
 	"runnable/remote-executor-azure": "declares azurerm and kubernetes alongside " +
 		"datahub, and only datahub is dev-overridden, so resolving the others " +
 		"would require terraform init and network access",
+	"runnable/remote-executor-aws": "declares aws, kubernetes and helm alongside " +
+		"datahub and sources two registry modules, and only datahub is " +
+		"dev-overridden, so resolving the others would require terraform init " +
+		"and network access",
 }
 
 // Examples come in two shapes, and the difference decides how each is validated.

@@ -19,9 +19,9 @@ Each has its own README with prerequisites and instructions, except
 
 Entries marked **DataHub Cloud only** use resources that do not exist in
 open-source DataHub and will fail there with a clear error; everything else
-runs against OSS Quickstart and DataHub Cloud alike. Two examples --
-`remote-executor-azure/` and `financial-services/` -- are substantially
-heavier than the rest; their entries say so.
+runs against OSS Quickstart and DataHub Cloud alike. Three examples --
+`remote-executor-azure/`, `remote-executor-aws/` and `financial-services/` --
+are substantially heavier than the rest; their entries say so.
 
 All runnable examples live under `runnable/`:
 
@@ -50,4 +50,5 @@ All runnable examples live under `runnable/`:
 - `runnable/oauth-authorization-server-simple/` -- register an outbound OAuth client configuration DataHub uses to obtain tokens from an external identity provider on a user's behalf, which an Ask DataHub AI plugin in `USER_OAUTH` mode then references by URN; the client secret is supplied as a WriteOnly attribute, so Terraform 1.11 or later is required (DataHub Cloud only)
 - `runnable/org-branding-simple/` -- set the organization name, logo and brand colour every user of the instance sees, and record the previous branding through the matching data source first; **applying replaces existing branding for everyone and `terraform destroy` resets it to DataHub's defaults rather than restoring it** (DataHub Cloud only; `primary_color` needs Cloud v2.2.0 or later)
 - `runnable/remote-executor-azure/` -- full Remote Executor deployment on Azure AKS: executor pool, worker via Helm, and an ingestion source using both DataHub-managed and Key Vault CSI-mounted secrets (DataHub Cloud only; **creates billable Azure infrastructure** -- roughly USD 280/month for the AKS cluster alone, billing from `terraform apply` until `terraform destroy`)
+- `runnable/remote-executor-aws/` -- the same Remote Executor deployment on AWS EKS: executor pool, worker via Helm, and an ingestion source using both DataHub-managed and Secrets Manager CSI-mounted secrets; laid out file-for-file like the Azure example so a diff of the two directories shows exactly what differs between clouds (DataHub Cloud only; **creates billable AWS infrastructure** -- roughly USD 350/month for the EKS cluster alone, billing from `terraform apply` until `terraform destroy`)
 - `runnable/financial-services/` -- the largest example: a `make` step shallow-clones the FIBO ontology repository (~60 MB) and runs a Python/rdflib pipeline to generate a three-level domain hierarchy and matching Business Glossary, up to ~147 domains and ~1500-2000 terms unless you narrow it with `-var 'domains_filter=["SEC"]'`. An optional second layer downloads ISO 20022 XSD schemas, converts them to Avro, emits Kafka/PostgreSQL/Looker datasets with three-tier lineage, optionally tags them against FIBO via the Anthropic API, and creates five kinds of data-quality assertion (that assertion layer is DataHub Cloud only, and is skipped entirely until its generated config exists). Needs `git`, `make`, Python 3.8+ and network access; not a quick first run

@@ -470,6 +470,10 @@ var liveExampleExclusions = map[string]liveExclusion{
 		reason:    "provisions billable Azure infrastructure (roughly USD 280/month per its README) with 10-15 minutes of provisioning; also Cloud-only, and needs three credentials plus a Cloudsmith entitlement",
 		permanent: true,
 	},
+	"remote-executor-aws": {
+		reason:    "provisions billable AWS infrastructure (roughly USD 350/month per its README) with 15-20 minutes of provisioning; also Cloud-only, and needs three credentials plus a Cloudsmith entitlement",
+		permanent: true,
+	},
 	// The first exclusion whose reason is shape rather than cost or Cloud-only,
 	// which is why it is worth spelling out. This example triggers an ingestion
 	// run through a local-exec provisioner, because running a source is a verb

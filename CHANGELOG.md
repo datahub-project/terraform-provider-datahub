@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `examples/runnable/remote-executor-aws`: a runnable example standing up a complete DataHub Cloud Remote Executor deployment on AWS EKS in a single `terraform apply` - the AWS counterpart of `remote-executor-azure`. It creates a non-default Remote Executor pool, a VPC and EKS cluster with the Secrets Store CSI driver and its AWS provider, an IAM read-only user whose access key is held in Secrets Manager and file-mounted into the worker pods through EKS Pod Identity, an S3 bucket with a seeded CSV object, the `datahub-executor-worker` Helm chart, and an `s3` ingestion source whose recipe exercises both a DataHub-managed secret (resolved via GMS) and the Secrets Manager secret (file-mounted by the CSI driver). The directory is laid out file-for-file like the Azure example, so a diff of the two shows exactly what differs between clouds. Creates billable AWS infrastructure; the README carries a cost warning and destroy instructions.
+
 ## [0.27.0] - 2026-10-14
 
 ### Security
