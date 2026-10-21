@@ -54,6 +54,10 @@ var exampleExemptions = map[string]string{
 		"datahub and sources two registry modules, and only datahub is " +
 		"dev-overridden, so resolving the others would require terraform init " +
 		"and network access",
+	"runnable/remote-executor-aws-ecs": "declares aws, http and random alongside " +
+		"datahub and sources a registry module, and only datahub is " +
+		"dev-overridden, so resolving the others would require terraform init " +
+		"and network access",
 }
 
 // Examples come in two shapes, and the difference decides how each is validated.

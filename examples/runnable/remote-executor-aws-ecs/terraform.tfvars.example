@@ -1,0 +1,35 @@
+# Copy this file to terraform.tfvars and uncomment the variables you want to override.
+# terraform.tfvars is gitignored and will not be committed.
+
+# Required. The GMS URL the Remote Executor connects to (must end in /gms).
+# Easiest is to derive it from the same env var the provider uses:
+#   export TF_VAR_datahub_gms_url="$DATAHUB_GMS_URL/gms"
+#
+# datahub_gms_url = "https://your-instance.acryl.io/gms"
+
+# Required secret. WARNING: avoid putting real credentials in this file; pass
+# it via the environment instead:
+#   read -s TF_VAR_datahub_executor_token && export TF_VAR_datahub_executor_token
+#
+# datahub_executor_token = "change-me"  # DataHub PAT of type Remote Executor
+
+# Executor version and template pin. The image registry is fixed by the
+# template; only the tag is yours to set. Bump the two together.
+#
+# executor_image_tag = "v2.3.1-cloud"
+# template_git_ref   = "101bc80d5b565f99657603fca4fbe3290b58b449"
+
+# Sizing and placement. The region default is where the executor image's ECR
+# registry lives; see the variable description before changing it.
+#
+# executor_desired_count         = 1
+# executor_ephemeral_storage_gib = 50   # template default is 21; see the variable description
+# region                         = "us-west-2"
+
+# Tags applied to every AWS resource via the provider's default_tags.
+#
+# default_tags = {
+#   project    = "tf-example-datahub-remote-executor"
+#   managed_by = "terraform"
+#   owner      = "you@example.com"
+# }
