@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The provider is now built with Go 1.27.3, which fixes GO-2026-6809 (CVE-2026-111943) in `crypto/x509`, reported by `govulncheck` as reachable from this code.** Go 1.27.3 adds a denylist of intermediate certificates that are no longer trustworthy, so that `Certificate.Verify` rejects a chain through one of them even on a platform whose system trust store has not been updated to distrust it. Unlike most of the advisories fixed in 0.27.0, this one is on the client side: the provider verifies the DataHub server's TLS certificate on every request it makes, so this is the code path every HTTPS connection to DataHub goes through. **Affected versions: 0.27.0 and every earlier release.** There is nothing to rotate or reconfigure, and upgrading the provider is the whole fix.
+
+  Selected by moving the `toolchain` directive in all three `go.mod` files and the `go` pin in `mise.toml` to 1.27.3. The `go` directive is unchanged.
+
 ### Added
 
 - `examples/runnable/remote-executor-aws`: a runnable example standing up a complete DataHub Cloud Remote Executor deployment on AWS EKS in a single `terraform apply` - the AWS counterpart of `remote-executor-azure`. It creates a non-default Remote Executor pool, a VPC and EKS cluster with the Secrets Store CSI driver and its AWS provider, an IAM read-only user whose access key is held in Secrets Manager and file-mounted into the worker pods through EKS Pod Identity, an S3 bucket with a seeded CSV object, the `datahub-executor-worker` Helm chart, and an `s3` ingestion source whose recipe exercises both a DataHub-managed secret (resolved via GMS) and the Secrets Manager secret (file-mounted by the CSI driver). The directory is laid out file-for-file like the Azure example, so a diff of the two shows exactly what differs between clouds. Creates billable AWS infrastructure; the README carries a cost warning and destroy instructions.
 
 - `examples/runnable/remote-executor-aws-ecs`: a runnable example deploying the DataHub Cloud Remote Executor onto AWS ECS Fargate with no Kubernetes, by driving the CloudFormation template DataHub publishes at `acryldata/datahub-cloudformation` from an `aws_cloudformation_stack` resource - fetched at plan time pinned to a commit, since the upstream repository has no release tags and no licence under which it could be copied here. Alongside the stack it creates a non-default Remote Executor pool, a VPC with a private subnet and NAT gateway, three Secrets Manager secrets (the executor token, owned by Terraform so the template's `NoEcho` parameter is never used, and the two halves of a read-only IAM user's access key), an S3 bucket with a seeded CSV, and an `s3` ingestion source whose recipe exercises both a DataHub-managed secret (resolved via GMS) and the Secrets Manager secrets (injected as container environment variables through the template's `OptionalSecrets` parameter). Needs the AWS account allowlisted on DataHub's private executor registry. Creates billable AWS infrastructure; the README carries a cost warning and destroy instructions.
+
+### Changed
+
+- **Development tooling: Terraform is now 1.17.0.** It is the version this project develops and tests against, from `mise.toml`. Nothing here changes the provider's behaviour, and the `>= 1.11` floor the examples declare is unchanged.
 
 ### Fixed
 
