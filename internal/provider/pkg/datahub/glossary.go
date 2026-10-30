@@ -221,13 +221,18 @@ func (c *Client) CreateGlossaryTerm(ctx context.Context, in CreateGlossaryEntity
 // customProperties reaches DataHub: the GraphQL createGlossaryNode/
 // createGlossaryTerm mutations do not carry customProperties.
 //
-// The write replaces the whole info aspect, so every field the aspect owns must
-// be passed through or it is clobbered. name and definition are always sent
-// (definition is a required field of both aspects). parentNode is sent when
-// non-empty. extra carries aspect-specific required fields (glossaryTermInfo has
-// a required termSource with no GraphQL-create analog, supplied as "INTERNAL").
-// The domains aspect is separate (setDomain), so it is not touched here.
-func (c *Client) setGlossaryProperties(ctx context.Context, entityPath, aspectName, urn, name, definition, parentNode string, extra map[string]any, customProperties map[string]string) error {
+// The write replaces the whole info aspect, and the aspect also holds fields
+// this provider does not manage (id, and on terms termSource, sourceRef,
+// sourceUrl and rawSchema, which business glossary ingestion sets). The current
+// aspect is read first and only the managed fields are replaced, so those
+// fields survive an apply. name and definition are always sent (definition is a
+// required field of both aspects). parentNode is managed: it is sent when
+// non-empty and removed otherwise, matching the parent the caller has just set
+// through updateParentNode. defaults carries required fields that are written
+// only when the stored aspect has no value for them (glossaryTermInfo has a
+// required termSource with no GraphQL-create analog). The domains aspect is
+// separate (setDomain), so it is not touched here.
+func (c *Client) setGlossaryProperties(ctx context.Context, entityPath, aspectName, urn, name, definition, parentNode string, defaults map[string]any, customProperties map[string]string) error {
 	if c == nil {
 		return errors.New("client is nil")
 	}
@@ -240,17 +245,21 @@ func (c *Client) setGlossaryProperties(ctx context.Context, entityPath, aspectNa
 		return errors.New("name is required")
 	}
 
-	infoValue := map[string]any{
-		"name": name,
-		// definition is a required field of the info aspect; always send it (even
-		// empty) so the aspect write validates.
-		"definition": definition,
+	infoValue, err := c.unmanagedAspectFields(ctx, entityPath, urn, aspectName, managedGlossaryInfoFields)
+	if err != nil {
+		return err
 	}
+	infoValue["name"] = name
+	// definition is a required field of the info aspect; always send it (even
+	// empty) so the aspect write validates.
+	infoValue["definition"] = definition
 	if parentNode != "" {
 		infoValue["parentNode"] = parentNode
 	}
-	for k, v := range extra {
-		infoValue[k] = v
+	for k, v := range defaults {
+		if _, ok := infoValue[k]; !ok {
+			infoValue[k] = v
+		}
 	}
 	// Always include customProperties (even empty) so that clearing the map
 	// overwrites a previously-set value rather than leaving it in place.
@@ -287,6 +296,10 @@ func (c *Client) setGlossaryProperties(ctx context.Context, entityPath, aspectNa
 	return nil
 }
 
+// managedGlossaryInfoFields are the glossaryNodeInfo/glossaryTermInfo fields
+// setGlossaryProperties owns; every other field is carried over as read.
+var managedGlossaryInfoFields = []string{"name", "definition", "parentNode", "customProperties"}
+
 // SetGlossaryNodeProperties writes the glossaryNodeInfo aspect (carrying
 // customProperties) for a glossary node. name/definition/parentNode are passed
 // through to avoid clobbering the values the GraphQL mutations set.
@@ -296,8 +309,9 @@ func (c *Client) SetGlossaryNodeProperties(ctx context.Context, urn, name, defin
 
 // SetGlossaryTermProperties writes the glossaryTermInfo aspect (carrying
 // customProperties) for a glossary term. glossaryTermInfo has a required
-// termSource field with no GraphQL-create analog (the server defaults it to
-// INTERNAL), so it is supplied explicitly here to satisfy the full-aspect write.
+// termSource field with no GraphQL-create analog, so it defaults to INTERNAL
+// when the stored aspect has none; a stored value (EXTERNAL for terms from
+// business glossary ingestion) is kept.
 func (c *Client) SetGlossaryTermProperties(ctx context.Context, urn, name, definition, parentNode string, customProperties map[string]string) error {
 	return c.setGlossaryProperties(ctx, "glossaryterm", "glossaryTermInfo", urn, name, definition, parentNode, map[string]any{"termSource": "INTERNAL"}, customProperties)
 }
