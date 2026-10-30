@@ -189,7 +189,10 @@ func allowedValuesToAspect(avs []AllowedValue) []map[string]any {
 // pointer segments and the write fails with `/allowedValues/N/value :: field
 // is required`. The OpenAPI entity write has no patch step and stores such
 // values correctly. See Linear CAT-2551.
-func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInput) []map[string]any {
+//
+// def holds the propertyDefinition fields the provider does not manage, as
+// returned by unmanagedAspectFields; the managed fields are set on it.
+func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInput, def map[string]any) []map[string]any {
 	entityTypeURNs := make([]string, len(in.EntityTypes))
 	for i, et := range in.EntityTypes {
 		entityTypeURNs[i] = entityTypeURN(et)
@@ -200,13 +203,11 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 		cardinality = "SINGLE"
 	}
 
-	def := map[string]any{
-		"qualifiedName": in.ID,
-		"valueType":     dataTypeURN(in.ValueType),
-		"entityTypes":   entityTypeURNs,
-		"cardinality":   cardinality,
-		"immutable":     in.Immutable,
-	}
+	def["qualifiedName"] = in.ID
+	def["valueType"] = dataTypeURN(in.ValueType)
+	def["entityTypes"] = entityTypeURNs
+	def["cardinality"] = cardinality
+	def["immutable"] = in.Immutable
 	// Omitted, never sent empty: the server's PropertyDefinitionValidator
 	// requires any present version to match [0-9]{14}, so "" is rejected
 	// outright, and toElasticsearchFieldName branches on the field being null
@@ -264,8 +265,17 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 // a full-aspect upsert, and the resource's plan modifiers force replacement
 // (not update) on any list shrink or cardinality narrowing, so sending the full
 // desired state on update is always safe.
+//
+// propertyDefinition also holds fields this provider does not manage
+// (allowedPlatforms, set in the DataHub UI; searchConfiguration; the created
+// stamp), and the write replaces the whole aspect. The current aspect is read
+// first and only the managed fields are replaced, so those survive an apply.
 func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in CreateStructuredPropertyInput) error {
-	payload := structuredPropertyEntityPayload(urn, in)
+	def, err := c.unmanagedAspectFields(ctx, "structuredproperty", urn, "propertyDefinition", managedPropertyDefinitionFields)
+	if err != nil {
+		return err
+	}
+	payload := structuredPropertyEntityPayload(urn, in, def)
 	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/structuredproperty?async=false", payload)
 	if err != nil {
 		return fmt.Errorf("building structured property write request: %w", err)
@@ -285,6 +295,20 @@ func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in Cre
 			res.StatusCode, explainStructuredPropertyRejection(string(respBody)))
 	}
 	return nil
+}
+
+// managedPropertyDefinitionFields are the propertyDefinition fields
+// writeStructuredProperty owns; every other field is carried over as read.
+// Fields it omits when unset (version, displayName, description, allowedValues,
+// typeQualifier) are listed so that removing them from the configuration clears
+// them. lastModified is listed because nothing on this write path refreshes it:
+// the GraphQL resolvers set it, the OpenAPI write does not, so carrying the old
+// stamp over would date the last change before this one. The server keeps
+// systemMetadata.aspectModified, which the PDL names as its replacement.
+var managedPropertyDefinitionFields = []string{
+	"qualifiedName", "valueType", "entityTypes", "cardinality", "immutable",
+	"version", "displayName", "description", "allowedValues", "typeQualifier",
+	"lastModified",
 }
 
 // CreateStructuredProperty creates a DataHub structured property via the

@@ -51,7 +51,7 @@ func TestStructuredPropertyPayloadVersion(t *testing.T) {
 // would.
 func payloadDefinition(t *testing.T, in CreateStructuredPropertyInput) map[string]any {
 	t.Helper()
-	raw, err := json.Marshal(structuredPropertyEntityPayload(structuredPropertyURNPrefix+in.ID, in))
+	raw, err := json.Marshal(structuredPropertyEntityPayload(structuredPropertyURNPrefix+in.ID, in, map[string]any{}))
 	if err != nil {
 		t.Fatalf("marshalling payload: %v", err)
 	}

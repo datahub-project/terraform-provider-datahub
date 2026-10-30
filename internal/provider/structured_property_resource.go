@@ -276,8 +276,8 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 			"A structured property defines a typed, named custom property that can be applied to " +
 			"data assets in DataHub (e.g. a `number`-valued `retentionDays` applicable to datasets). " +
 			"This resource manages the *definition* only -- the schema object that declares the property " +
-			"type, cardinality, entity applicability, and allowed values. Applying property values to " +
-			"individual assets is per-asset enrichment and is outside the scope of this provider.\n\n" +
+			"type, cardinality, entity applicability, and allowed values. To apply property values to " +
+			"assets, use `datahub_structured_property_assignment`.\n\n" +
 			"## Naming\n\n" +
 			"`property_id` becomes both the URN suffix (`urn:li:structuredProperty:<property_id>`) and " +
 			"the `qualifiedName`. Use a dotted reverse-DNS form (e.g. `io.acme.privacy.classification`) " +
@@ -285,13 +285,16 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 			"Terraform-managed property and a Python-SDK-created property with the same `property_id` " +
 			"reference the same DataHub entity.\n\n" +
 			"## Update semantics\n\n" +
-			"DataHub's `updateStructuredProperty` mutation is append-only for `entity_types`, " +
-			"`allowed_values`, and `allowed_entity_types`, and cardinality can only widen from " +
-			"`SINGLE` to `MULTIPLE`. Additive changes (adding elements to these lists, or widening " +
+			"This resource treats `entity_types`, `allowed_values`, and `allowed_entity_types` as " +
+			"append-only and cardinality as widen-only (`SINGLE` to `MULTIPLE`), matching DataHub's own " +
+			"editing rules: the server rejects removing an allowed value or narrowing cardinality unless " +
+			"the definition `version` is raised. Additive changes (adding elements to these lists, or widening " +
 			"cardinality) are applied in-place. If you remove an element from any of these lists or " +
 			"narrow cardinality from `MULTIPLE` to `SINGLE`, Terraform will destroy and recreate the " +
 			"property. **Destroying a property hard-deletes it and removes all applied values from " +
 			"every asset.**\n\n" +
+			"Definition fields this resource does not manage, such as the allowed platforms set in the " +
+			"DataHub UI and a search configuration set through the API or SDK, are kept on update.\n\n" +
 			"## Deleting an assigned property burns its `property_id`\n\n" +
 			"Once a value for this property has been applied to any asset, DataHub creates an " +
 			"Elasticsearch field for it, and deleting the property does not release that field name. " +

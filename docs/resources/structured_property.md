@@ -5,11 +5,12 @@ subcategory: ""
 description: |-
   DataHub ✅ | DataHub Cloud ✅
   Creates and manages a DataHub structured property definition.
-  A structured property defines a typed, named custom property that can be applied to data assets in DataHub (e.g. a number-valued retentionDays applicable to datasets). This resource manages the definition only -- the schema object that declares the property type, cardinality, entity applicability, and allowed values. Applying property values to individual assets is per-asset enrichment and is outside the scope of this provider.
+  A structured property defines a typed, named custom property that can be applied to data assets in DataHub (e.g. a number-valued retentionDays applicable to datasets). This resource manages the definition only -- the schema object that declares the property type, cardinality, entity applicability, and allowed values. To apply property values to assets, use datahub_structured_property_assignment.
   Naming
   property_id becomes both the URN suffix (urn:li:structuredProperty:<property_id>) and the qualifiedName. Use a dotted reverse-DNS form (e.g. io.acme.privacy.classification) to avoid collisions and to match the convention used by the DataHub Python SDK. A Terraform-managed property and a Python-SDK-created property with the same property_id reference the same DataHub entity.
   Update semantics
-  DataHub's updateStructuredProperty mutation is append-only for entity_types, allowed_values, and allowed_entity_types, and cardinality can only widen from SINGLE to MULTIPLE. Additive changes (adding elements to these lists, or widening cardinality) are applied in-place. If you remove an element from any of these lists or narrow cardinality from MULTIPLE to SINGLE, Terraform will destroy and recreate the property. Destroying a property hard-deletes it and removes all applied values from every asset.
+  This resource treats entity_types, allowed_values, and allowed_entity_types as append-only and cardinality as widen-only (SINGLE to MULTIPLE), matching DataHub's own editing rules: the server rejects removing an allowed value or narrowing cardinality unless the definition version is raised. Additive changes (adding elements to these lists, or widening cardinality) are applied in-place. If you remove an element from any of these lists or narrow cardinality from MULTIPLE to SINGLE, Terraform will destroy and recreate the property. Destroying a property hard-deletes it and removes all applied values from every asset.
+  Definition fields this resource does not manage, such as the allowed platforms set in the DataHub UI and a search configuration set through the API or SDK, are kept on update.
   Deleting an assigned property burns its property_id
   Once a value for this property has been applied to any asset, DataHub creates an Elasticsearch field for it, and deleting the property does not release that field name. A later apply that re-creates the same qualified_name -- including the destroy-then-create Terraform performs for the list-shrink changes above -- is rejected with Elasticsearch field '...' collides with existing property mapping, and reclaiming the name otherwise needs an operator-run reindex. Set version to sidestep this: a versioned definition derives a different field name, so re-creating the same property_id succeeds. See datahub-project/datahub#18974 https://github.com/datahub-project/datahub/issues/18974.
   Value types
@@ -22,7 +23,7 @@ description: |-
 
 Creates and manages a DataHub structured property definition.
 
-A structured property defines a typed, named custom property that can be applied to data assets in DataHub (e.g. a `number`-valued `retentionDays` applicable to datasets). This resource manages the *definition* only -- the schema object that declares the property type, cardinality, entity applicability, and allowed values. Applying property values to individual assets is per-asset enrichment and is outside the scope of this provider.
+A structured property defines a typed, named custom property that can be applied to data assets in DataHub (e.g. a `number`-valued `retentionDays` applicable to datasets). This resource manages the *definition* only -- the schema object that declares the property type, cardinality, entity applicability, and allowed values. To apply property values to assets, use `datahub_structured_property_assignment`.
 
 ## Naming
 
@@ -30,7 +31,9 @@ A structured property defines a typed, named custom property that can be applied
 
 ## Update semantics
 
-DataHub's `updateStructuredProperty` mutation is append-only for `entity_types`, `allowed_values`, and `allowed_entity_types`, and cardinality can only widen from `SINGLE` to `MULTIPLE`. Additive changes (adding elements to these lists, or widening cardinality) are applied in-place. If you remove an element from any of these lists or narrow cardinality from `MULTIPLE` to `SINGLE`, Terraform will destroy and recreate the property. **Destroying a property hard-deletes it and removes all applied values from every asset.**
+This resource treats `entity_types`, `allowed_values`, and `allowed_entity_types` as append-only and cardinality as widen-only (`SINGLE` to `MULTIPLE`), matching DataHub's own editing rules: the server rejects removing an allowed value or narrowing cardinality unless the definition `version` is raised. Additive changes (adding elements to these lists, or widening cardinality) are applied in-place. If you remove an element from any of these lists or narrow cardinality from `MULTIPLE` to `SINGLE`, Terraform will destroy and recreate the property. **Destroying a property hard-deletes it and removes all applied values from every asset.**
+
+Definition fields this resource does not manage, such as the allowed platforms set in the DataHub UI and a search configuration set through the API or SDK, are kept on update.
 
 ## Deleting an assigned property burns its `property_id`
 
