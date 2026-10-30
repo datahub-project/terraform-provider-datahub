@@ -23,6 +23,12 @@
 // and cannot express "this is the complete desired state". The Python SDK
 // behaves the same way (it emits the whole FormInfo aspect on every run).
 //
+// A full replace also resets the two formInfo fields this provider does not
+// manage: createForm writes the publish state from its input and falls back to
+// DRAFT when the input names none, and it writes the actors' ownership-type
+// filter only from its input. Both are set from the UI, so UpsertForm reads the
+// current aspect first and carries them over (see preserveUnmanagedFormFields).
+//
 // The dynamic assignment is upserted via createDynamicFormAssignment and
 // cleared via the OpenAPI v3 aspect DELETE
 // (DELETE /openapi/v3/entity/form/{urn}/dynamicformassignment) -- no GraphQL
@@ -61,6 +67,9 @@ type FormActors struct {
 	Owners bool // assign to owners of matched assets
 	Users  []string
 	Groups []string
+	// OwnershipTypes narrows Owners to owners of these ownership types. Not
+	// managed by the resource: read back only so UpsertForm can preserve it.
+	OwnershipTypes []string
 }
 
 // FormInput is the desired state for an upsert of the formInfo aspect.
@@ -81,9 +90,13 @@ type Form struct {
 	Name        string
 	Description string
 	Type        string
-	Prompts     []FormPrompt
-	Actors      *FormActors
-	OrFilters   []AndFilter
+	// State is the publish state (DRAFT / PUBLISHED / UNPUBLISHED); empty when
+	// the aspect carries no status. Not managed by the resource: read back only
+	// so UpsertForm can preserve it.
+	State     string
+	Prompts   []FormPrompt
+	Actors    *FormActors
+	OrFilters []AndFilter
 }
 
 // formEntity is the OpenAPI v3 response for GET /openapi/v3/entity/form/{urn}.
@@ -110,10 +123,14 @@ type formEntity struct {
 				Required bool `json:"required"`
 			} `json:"prompts"`
 			Actors *struct {
-				Owners bool     `json:"owners"`
-				Users  []string `json:"users"`
-				Groups []string `json:"groups"`
+				Owners         bool     `json:"owners"`
+				Users          []string `json:"users"`
+				Groups         []string `json:"groups"`
+				OwnershipTypes []string `json:"ownershipTypes"`
 			} `json:"actors,omitempty"`
+			Status *struct {
+				State string `json:"state"`
+			} `json:"status,omitempty"`
 		} `json:"value"`
 	} `json:"formInfo,omitempty"`
 	Assignment *struct {
@@ -158,6 +175,8 @@ func formPromptsToGraphQL(prompts []FormPrompt) []map[string]any {
 // createForm performs no existence check server-side, so calling it for an
 // existing form is a full-aspect replace -- the caller owns the complete
 // prompts and actors lists, and anything added outside Terraform is removed.
+// The publish state and the owner ownership-type filter are the exception:
+// they are read from the existing form and written back unchanged.
 // Requires the MANAGE_FORMS ("Manage Metadata Forms") platform privilege.
 func (c *Client) UpsertForm(ctx context.Context, in FormInput) (string, error) {
 	if c == nil {
@@ -169,6 +188,14 @@ func (c *Client) UpsertForm(ctx context.Context, in FormInput) (string, error) {
 	}
 	if strings.TrimSpace(in.Name) == "" {
 		return "", errors.New("form name is required")
+	}
+
+	urn := FormURNPrefix + in.ID
+	current, err := c.GetFormByURN(ctx, urn)
+	if err != nil {
+		// Writing anyway would reset a published form to DRAFT, so fail
+		// rather than guess.
+		return urn, fmt.Errorf("reading the existing form to preserve its publish state: %w", err)
 	}
 
 	const q = `
@@ -200,8 +227,8 @@ mutation createForm($input: CreateFormInput!) {
 		}
 		input["actors"] = actors
 	}
+	preserveUnmanagedFormFields(input, current)
 
-	urn := FormURNPrefix + in.ID
 	body := map[string]any{"query": q, "variables": map[string]any{"input": input}}
 
 	var raw genericGraphQLErrors
@@ -212,6 +239,34 @@ mutation createForm($input: CreateFormInput!) {
 		return urn, fmt.Errorf("DataHub API error: %s", raw.Errors[0].Message)
 	}
 	return urn, nil
+}
+
+// preserveUnmanagedFormFields copies the publish state and the owner
+// ownership-type filter of the existing form into a createForm input, which
+// would otherwise reset them (state to DRAFT, ownership types to none).
+//
+// Each field goes on the wire only when the existing form carries it. An
+// instance whose formInfo has no status or ownership types may also lack the
+// corresponding input fields, and naming an undefined input field fails the
+// whole mutation.
+func preserveUnmanagedFormFields(input map[string]any, current *Form) {
+	if current == nil {
+		return
+	}
+	if current.State != "" {
+		input["state"] = current.State
+	}
+	if current.Actors == nil || len(current.Actors.OwnershipTypes) == 0 {
+		return
+	}
+	actors, ok := input["actors"].(map[string]any)
+	if !ok {
+		// No actors declared means the server default {owners: true}; the
+		// ownership-type filter narrows exactly that owner assignment.
+		actors = map[string]any{"owners": true}
+		input["actors"] = actors
+	}
+	actors["ownershipTypes"] = current.Actors.OwnershipTypes
 }
 
 // UpsertDynamicFormAssignment replaces the dynamicFormAssignment aspect on a
@@ -337,6 +392,9 @@ func (c *Client) GetFormByURN(ctx context.Context, urn string) (*Form, error) {
 		f.Name = v.Name
 		f.Description = v.Description
 		f.Type = v.Type
+		if v.Status != nil {
+			f.State = v.Status.State
+		}
 		for _, p := range v.Prompts {
 			prompt := FormPrompt{
 				ID:          p.ID,
@@ -352,9 +410,10 @@ func (c *Client) GetFormByURN(ctx context.Context, urn string) (*Form, error) {
 		}
 		if v.Actors != nil {
 			f.Actors = &FormActors{
-				Owners: v.Actors.Owners,
-				Users:  v.Actors.Users,
-				Groups: v.Actors.Groups,
+				Owners:         v.Actors.Owners,
+				Users:          v.Actors.Users,
+				Groups:         v.Actors.Groups,
+				OwnershipTypes: v.Actors.OwnershipTypes,
 			}
 		}
 	}

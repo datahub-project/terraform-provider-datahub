@@ -117,6 +117,9 @@ type mockServer struct {
 	inviteToken           string
 	resetTokens           map[string]string
 	ossSignUpMode         bool
+	// legacyFormSchema models an instance without form publish state or owner
+	// ownership-type filters. Toggled via /test-control/legacy-form-schema.
+	legacyFormSchema bool
 	// reformatTestDefinitions makes metadata test reads return the stored
 	// definition re-marshalled (key-sorted, compact) instead of verbatim,
 	// simulating a server that normalizes stored JSON. Toggled via the
@@ -223,6 +226,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)
 	mux.HandleFunc("/test-control/seed-assertion", s.handleSeedAssertion)
 	mux.HandleFunc("/test-control/seed-form", s.handleSeedForm)
+	mux.HandleFunc("/test-control/edit-form", s.handleEditForm)
+	mux.HandleFunc("/test-control/legacy-form-schema", s.handleLegacyFormSchema)
 	mux.HandleFunc("/test-control/seed-owner", s.handleSeedOwner)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)

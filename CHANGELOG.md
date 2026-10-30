@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`datahub_form` no longer resets a published form to draft on every apply.** The provider writes the form through the `createForm` mutation, which sets the publish state from its input and falls back to `DRAFT` when the input names none, and which also clears the owner ownership-type filter unless the input repeats it. So any change to a form published in the DataHub UI -- even to its description -- unpublished it, and dropped an "assign only owners of these types" setting along the way. Each write now reads the form first and passes its current publish state and ownership-type filter back unchanged. The resource still does not manage either, so a new form is created as a draft and is published in the UI. Both fields go on the wire only when the existing form already carries them, so instances without form publish states or ownership-type filters are unaffected.
+
 ### Changed
 
 - **Development tooling: `golang.org/x/net` is now 0.62.0 and `golang.org/x/crypto` 0.58.0 in all three Go modules.** `make deps-vulncheck-tools` had started failing on GO-2026-6860 and GO-2026-6866, two `golang.org/x/net/html` findings reachable from the `tfplugindocs` documentation server in `tools/serve`, and the same bump clears the nine unreachable `x/net` and `x/crypto` advisories the tool modules were also carrying. The provider itself never calls `x/net/html`, and `govulncheck` reported neither finding as reachable from provider code, so this is not a security fix for users: the main module moves to the same versions only so that one dependency line is tracked across the repository. The remaining `GO-2026-5932` (`x/crypto/openpgp`) has no fix in any release and stays on the accepted list.

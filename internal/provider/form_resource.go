@@ -122,6 +122,11 @@ func (r *formResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"the dynamic assignment filter are fully replaced on every apply, so prompts or actor " +
 			"assignments added outside Terraform (UI, SDK) are removed on the next apply. Omitting " +
 			"`dynamic_assignment` removes any dynamic assignment on the form.\n\n" +
+			"## Publish state\n\n" +
+			"This resource does not manage whether a form is draft, published or unpublished. A new " +
+			"form is created as a draft; publish or unpublish it in the DataHub UI, and later applies " +
+			"keep that state. The owner ownership-type filter set in the UI (assign only owners of " +
+			"given types) is likewise kept across applies.\n\n" +
 			"## Assignment is asynchronous and additive\n\n" +
 			"DataHub assigns the form to matching entities via a background hook after the filter is " +
 			"written. Narrowing or removing the filter stops *future* assignment but does not retract " +

@@ -24,6 +24,13 @@ const mockFormURNPrefix = "urn:li:form:"
 // and CreateFormResolver rejects structured-property prompts without
 // structuredPropertyParams. CreateDynamicFormAssignmentInput requires a
 // non-empty orFilters and FormService requires the form to exist.
+//
+// Publish state follows FormUtils.createFormStatus: createForm writes the
+// input's state, or DRAFT when the input names none, so a re-sent createForm
+// resets a published form unless the caller passes the state back. The
+// legacy-form-schema toggle models an instance whose CreateFormInput has no
+// state and FormActorAssignmentInput no ownershipTypes: naming either fails
+// the mutation, and formInfo is stored without a status.
 
 type mockFormPrompt struct {
 	ID                    string
@@ -35,9 +42,10 @@ type mockFormPrompt struct {
 }
 
 type mockFormActors struct {
-	Owners bool
-	Users  []string
-	Groups []string
+	Owners         bool
+	Users          []string
+	Groups         []string
+	OwnershipTypes []string
 }
 
 type mockFilterCriterion struct {
@@ -52,8 +60,10 @@ type mockForm struct {
 	Name        string
 	Description string
 	Type        string
-	Prompts     []mockFormPrompt
-	Actors      *mockFormActors
+	// State is the formInfo status; empty means the aspect has no status.
+	State   string
+	Prompts []mockFormPrompt
+	Actors  *mockFormActors
 	// Assignment holds the dynamicFormAssignment filter as OR groups of AND
 	// criteria; nil when the aspect is absent.
 	Assignment [][]mockFilterCriterion
@@ -95,7 +105,26 @@ func (s *mockServer) handleCreateForm(w http.ResponseWriter, variables map[strin
 		return
 	}
 
+	s.mu.Lock()
+	legacy := s.legacyFormSchema
+	s.mu.Unlock()
+
 	f := mockForm{ID: id, Name: name, Type: "COMPLETION"}
+	if !legacy {
+		f.State = "DRAFT"
+	}
+	if raw, present := input["state"]; present {
+		if legacy {
+			graphQLError(w, "Variable 'input' has an invalid value: Expected type 'CreateFormInput' but was 'LinkedHashMap'. Field 'state' is not present in type 'CreateFormInput'")
+			return
+		}
+		st, _ := raw.(string)
+		if st != "DRAFT" && st != "PUBLISHED" && st != "UNPUBLISHED" {
+			graphQLError(w, fmt.Sprintf("Validation error: invalid FormState %q", st))
+			return
+		}
+		f.State = st
+	}
 	if desc, ok := input["description"].(string); ok {
 		f.Description = desc
 	}
@@ -139,6 +168,13 @@ func (s *mockServer) handleCreateForm(w http.ResponseWriter, variables map[strin
 		actors.Owners, _ = rawActors["owners"].(bool)
 		actors.Users = stringSlice(rawActors["users"])
 		actors.Groups = stringSlice(rawActors["groups"])
+		if raw, present := rawActors["ownershipTypes"]; present {
+			if legacy {
+				graphQLError(w, "Variable 'input' has an invalid value: Field 'ownershipTypes' is not present in type 'FormActorAssignmentInput'")
+				return
+			}
+			actors.OwnershipTypes = stringSlice(raw)
+		}
 		f.Actors = actors
 	}
 
@@ -289,6 +325,9 @@ func (s *mockServer) handleFormItem(w http.ResponseWriter, r *http.Request) {
 			"name":    f.Name,
 			"prompts": prompts,
 		}
+		if f.State != "" {
+			info["status"] = map[string]any{"state": f.State}
+		}
 		// The stored aspect omits type when it was never set (FormInfo.type has
 		// no PDL default): a form seeded via /test-control/seed-form reads back
 		// without it, the way an SDK-written aspect does. Every mutation path
@@ -309,6 +348,9 @@ func (s *mockServer) handleFormItem(w http.ResponseWriter, r *http.Request) {
 			}
 			if len(f.Actors.Groups) > 0 {
 				actors["groups"] = f.Actors.Groups
+			}
+			if len(f.Actors.OwnershipTypes) > 0 {
+				actors["ownershipTypes"] = f.Actors.OwnershipTypes
 			}
 		}
 		info["actors"] = actors
@@ -401,6 +443,80 @@ func (s *mockServer) handleSeedForm(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.forms[body.ID] = f
 	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleEditForm changes a stored form's publish state and owner
+// ownership-type filter the way the DataHub UI does (via updateForm), without
+// touching the rest of formInfo.
+//
+//	POST /test-control/edit-form
+//	{"id":"...","state":"PUBLISHED","ownershipTypes":["urn:li:ownershipType:..."]}
+func (s *mockServer) handleEditForm(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID             string   `json:"id"`
+		State          string   `json:"state"`
+		OwnershipTypes []string `json:"ownershipTypes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.forms[body.ID]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if body.State != "" {
+		f.State = body.State
+	}
+	if body.OwnershipTypes != nil {
+		if f.Actors == nil {
+			f.Actors = &mockFormActors{Owners: true}
+		}
+		f.Actors.OwnershipTypes = body.OwnershipTypes
+	}
+	s.forms[body.ID] = f
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// EditFormAsUI applies a UI-style edit of a form's publish state and owner
+// ownership-type filter via /test-control/edit-form. Mock-only.
+func EditFormAsUI(baseURL, bodyJSON string) {
+	resp, err := http.Post(baseURL+"/test-control/edit-form", "application/json", strings.NewReader(bodyJSON)) //nolint:noctx
+	if err != nil {
+		panic(fmt.Sprintf("EditFormAsUI: %v", err))
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		panic(fmt.Sprintf("EditFormAsUI: unexpected status %d", resp.StatusCode))
+	}
+}
+
+// handleLegacyFormSchema toggles the legacy-form-schema mode described at the
+// top of this file. Default is off.
+//
+//	POST   /test-control/legacy-form-schema   (enables)
+//	DELETE /test-control/legacy-form-schema   (disables)
+func (s *mockServer) handleLegacyFormSchema(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch r.Method {
+	case http.MethodPost:
+		s.legacyFormSchema = true
+	case http.MethodDelete:
+		s.legacyFormSchema = false
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

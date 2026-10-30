@@ -4,10 +4,12 @@
 package provider_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -559,6 +561,130 @@ resource "datahub_form" "test" {
 				// The refresh reads users back as null; the config's [] then
 				// diffs against it on every plan.
 				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
+// formPreservationConfig builds a form whose description varies per step so
+// each step forces an in-place update (a full formInfo rewrite).
+func formPreservationConfig(description, actors string) string {
+	return fmt.Sprintf(`
+provider "datahub" {}
+
+resource "datahub_form" "test" {
+  form_id     = "tf-acc-form-publish"
+  name        = "TF Acc Form - Publish"
+  description = %q
+%s
+}
+`, description, actors)
+}
+
+const formPreservationURN = "urn:li:form:tf-acc-form-publish"
+
+// checkFormUnmanagedFields asserts the publish state and owner ownership-type
+// filter currently stored on the form formPreservationConfig declares.
+func checkFormUnmanagedFields(wantState string, wantOwnershipTypes []string) resource.TestCheckFunc {
+	const urn = formPreservationURN
+	return func(*terraform.State) error {
+		client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+		if err != nil {
+			return fmt.Errorf("building client: %w", err)
+		}
+		form, err := client.GetFormByURN(context.Background(), urn)
+		if err != nil {
+			return fmt.Errorf("reading form %s: %w", urn, err)
+		}
+		if form == nil {
+			return fmt.Errorf("form %s not found", urn)
+		}
+		if form.State != wantState {
+			return fmt.Errorf("form state = %q, want %q", form.State, wantState)
+		}
+		var got []string
+		if form.Actors != nil {
+			got = form.Actors.OwnershipTypes
+		}
+		if !slices.Equal(got, wantOwnershipTypes) {
+			return fmt.Errorf("form ownership types = %v, want %v", got, wantOwnershipTypes)
+		}
+		return nil
+	}
+}
+
+// TestFormResource_preservesPublishState_mock pins that an apply does not
+// undo a publish done in the UI. createForm, which the provider uses as its
+// upsert, resets the state to DRAFT and drops the owner ownership-type filter
+// unless the input carries them, so every update must pass both back.
+func TestFormResource_preservesPublishState_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	const ownershipType = "urn:li:ownershipType:__system__technical_owner"
+	const explicitActors = `
+  actors = {
+    owners = true
+    users  = ["urn:li:corpuser:tf-acc-user"]
+  }`
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.FormCheckDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: formPreservationConfig("v1", ""),
+				Check:  checkFormUnmanagedFields("DRAFT", nil),
+			},
+			{
+				// Published in the UI with an owner-type filter, then updated
+				// with actors omitted (the server-default owner assignment).
+				PreConfig: func() {
+					datahubtesting.EditFormAsUI(os.Getenv("DATAHUB_GMS_URL"),
+						`{"id":"tf-acc-form-publish","state":"PUBLISHED","ownershipTypes":["`+ownershipType+`"]}`)
+				},
+				Config: formPreservationConfig("v2", ""),
+				Check:  checkFormUnmanagedFields("PUBLISHED", []string{ownershipType}),
+			},
+			{
+				// Declaring actors replaces users/groups but keeps the filter.
+				Config: formPreservationConfig("v3", explicitActors),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					checkFormUnmanagedFields("PUBLISHED", []string{ownershipType}),
+					resource.TestCheckResourceAttr("datahub_form.test", "actors.users.0", "urn:li:corpuser:tf-acc-user"),
+				),
+			},
+		},
+	})
+}
+
+// TestFormResource_legacyFormSchema_mock pins that preservation never names
+// state or ownershipTypes on an instance whose schema lacks them: such an
+// instance stores no status, so the provider must create and update the form
+// without either field on the wire.
+func TestFormResource_legacyFormSchema_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resp, err := http.Post(server.URL+"/test-control/legacy-form-schema", "", nil) //nolint:noctx
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.FormCheckDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: formPreservationConfig("v1", ""),
+				Check:  checkFormUnmanagedFields("", nil),
+			},
+			{
+				Config: formPreservationConfig("v2", ""),
+				Check:  checkFormUnmanagedFields("", nil),
 			},
 		},
 	})
