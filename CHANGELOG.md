@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`datahub_action_pipeline`: an update no longer restarts a pipeline that was stopped in DataHub.** The `upsertActionPipeline` mutation rebuilds the pipeline's definition from its input, which has no run-state field, so every save reset the pipeline to active and restarted it: a pipeline stopped in the UI came back to life on the next `terraform apply` that touched it. The provider now reads the pipeline before an update and, if it was stopped, stops it again straight after the upsert with the same mutation the UI uses. DataHub starts the pipeline as part of saving it, so it can run briefly between the two calls. Creating a pipeline still starts it, and a running pipeline is unaffected.
+
+  The descriptions of `version` and `debug_mode` now say that DataHub accepts both but does not store them, so setting either produces a plan diff on every run. Leave them unset.
+
 ### Changed
 
 - **Development tooling: `golang.org/x/net` is now 0.62.0 and `golang.org/x/crypto` 0.58.0 in all three Go modules.** `make deps-vulncheck-tools` had started failing on GO-2026-6860 and GO-2026-6866, two `golang.org/x/net/html` findings reachable from the `tfplugindocs` documentation server in `tools/serve`, and the same bump clears the nine unreachable `x/net` and `x/crypto` advisories the tool modules were also carrying. The provider itself never calls `x/net/html`, and `govulncheck` reported neither finding as reachable from provider code, so this is not a security fix for users: the main module moves to the same versions only so that one dependency line is tracked across the repository. The remaining `GO-2026-5932` (`x/crypto/openpgp`) has no fix in any release and stays on the accepted list.

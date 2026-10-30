@@ -5658,6 +5658,88 @@ resource "datahub_action_pipeline" "test" {
 	}
 }
 
+// ActionPipelineStoppedStaysStoppedSteps returns test steps for an update to a
+// datahub_action_pipeline that was stopped outside Terraform: create, stop it
+// the way the DataHub UI does, then change the description. The upsert behind
+// the update resets the state to ACTIVE, so the pipeline reads back as INACTIVE
+// only if the provider stopped it again.
+func ActionPipelineStoppedStaysStoppedSteps() []resource.TestStep {
+	const addr = "datahub_action_pipeline.test"
+	const actionID = "tf-example-dataplex-sync-stopped"
+
+	cfg := func(description string) string {
+		return providerBlock + `
+resource "datahub_action_pipeline" "test" {
+  action_id   = "` + actionID + `"
+  name        = "TF Example - Dataplex Sync Stopped"
+  type        = "dataplex_metadata_sync"
+  description = "` + description + `"
+  recipe = jsonencode({
+    action = { type = "dataplex_metadata_sync", config = { project = "tf-example" } }
+  })
+}
+`
+	}
+	read := func() (*datahub.ActionPipelineInfo, error) {
+		client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+		if err != nil {
+			return nil, fmt.Errorf("building DataHub client: %w", err)
+		}
+		info, err := client.GetActionPipelineByID(context.Background(), actionID)
+		if err != nil {
+			return nil, fmt.Errorf("reading action pipeline %q: %w", actionID, err)
+		}
+		if info == nil {
+			return nil, fmt.Errorf("action pipeline %q not found", actionID)
+		}
+		return info, nil
+	}
+	checkStopped := func(want bool) resource.TestCheckFunc {
+		return func(*terraform.State) error {
+			info, err := read()
+			if err != nil {
+				return err
+			}
+			if got := info.Stopped(); got != want {
+				return fmt.Errorf("action pipeline %q: stopped = %t (state %q), want %t", actionID, got, info.State, want)
+			}
+			return nil
+		}
+	}
+
+	return []resource.TestStep{
+		{
+			Config: cfg("Before stop"),
+			Check:  checkStopped(false),
+		},
+		{
+			// A live server records INACTIVE before it reports whether the
+			// runtime stop succeeded, and the runtime may not be running if the
+			// recipe could not start, so only the recorded state is checked.
+			PreConfig: func() {
+				client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
+				if err != nil {
+					panic(fmt.Sprintf("ActionPipelineStoppedStaysStoppedSteps PreConfig: %v", err))
+				}
+				stopErr := client.StopActionPipeline(context.Background(), actionID)
+				if info, readErr := read(); readErr != nil || !info.Stopped() {
+					panic(fmt.Sprintf("ActionPipelineStoppedStaysStoppedSteps PreConfig: stop failed: %v (read: %v)", stopErr, readErr))
+				}
+			},
+			Config: cfg("After stop"),
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{
+					plancheck.ExpectResourceAction(addr, plancheck.ResourceActionUpdate),
+				},
+			},
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr(addr, "description", "After stop"),
+				checkStopped(true),
+			),
+		},
+	}
+}
+
 // ActionPipelineCheckDestroy verifies every datahub_action_pipeline is removed.
 func ActionPipelineCheckDestroy(s *terraform.State) error {
 	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))

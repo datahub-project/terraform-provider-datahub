@@ -12,6 +12,11 @@
 // reloads/starts the action runtime); reads use the strongly-consistent
 // OpenAPI v3 entity endpoint (GET /openapi/v3/entity/datahubaction/{urn}).
 //
+// The upsert rebuilds dataHubActionInfo from its input, which has no state
+// field, so every upsert resets the intended state to its ACTIVE default and
+// restarts the runtime. StopActionPipeline is how a caller puts a pipeline that
+// was stopped beforehand back to INACTIVE.
+//
 // The URN is `urn:li:dataHubAction:<id>`. `createActionPipeline` mints a random
 // UUID, but `upsertActionPipeline(urn, input)` creates at a caller-chosen URN
 // (verified live), so the resource derives a deterministic id client-side and
@@ -40,6 +45,10 @@ var ErrActionPipelineCloudOnly = errors.New(
 // ActionPipelineURNPrefix is the URN namespace for action pipelines.
 const ActionPipelineURNPrefix = "urn:li:dataHubAction:"
 
+// ActionPipelineStateInactive is the dataHubActionInfo.state value of a
+// pipeline that has been stopped. An absent state means ACTIVE (the PDL default).
+const ActionPipelineStateInactive = "INACTIVE"
+
 // isActionPipelineCloudOnlyError returns true when the GraphQL error indicates
 // the mutation/query or the dataHubAction type is absent from the OSS schema.
 func isActionPipelineCloudOnlyError(msg string) bool {
@@ -62,8 +71,11 @@ type ActionPipelineInput struct {
 	Description string // optional
 	Recipe      string // JSON document
 	ExecutorID  string // optional
-	Version     string // optional
-	DebugMode   *bool  // optional
+	// Version and DebugMode are accepted by UpdateActionPipelineConfigInput, but
+	// the resolver does not copy them into dataHubActionInfo (whose config has
+	// only recipe and executorId), so they are not stored.
+	Version   string // optional
+	DebugMode *bool  // optional
 }
 
 // ActionPipelineInfo is the read shape from the OpenAPI v3 entity endpoint.
@@ -77,6 +89,12 @@ type ActionPipelineInfo struct {
 	ExecutorID  string
 	Version     string
 	DebugMode   *bool
+	State       string // "ACTIVE", "INACTIVE", or empty when the aspect carries none
+}
+
+// Stopped reports whether the pipeline's intended state is INACTIVE.
+func (i *ActionPipelineInfo) Stopped() bool {
+	return i != nil && i.State == ActionPipelineStateInactive
 }
 
 // actionPipelineEntity is the OpenAPI v3 response shape for
@@ -94,6 +112,7 @@ type actionPipelineEntity struct {
 			Description string `json:"description"`
 			Type        string `json:"type"`
 			Category    string `json:"category"`
+			State       string `json:"state"`
 			Config      struct {
 				Recipe     string `json:"recipe"`
 				ExecutorID string `json:"executorId"`
@@ -226,8 +245,45 @@ func (c *Client) GetActionPipelineByID(ctx context.Context, actionID string) (*A
 		out.ExecutorID = v.Config.ExecutorID
 		out.Version = v.Config.Version
 		out.DebugMode = v.Config.DebugMode
+		out.State = v.State
 	}
 	return out, nil
+}
+
+// StopActionPipeline stops an action pipeline's runtime and records its
+// intended state as INACTIVE, via the stopActionPipeline GraphQL mutation (the
+// same call the DataHub UI makes). The server writes the INACTIVE state before
+// it reports whether the runtime stop succeeded, so on error the caller can
+// re-read the pipeline to tell a failed stop from one only the runtime refused.
+func (c *Client) StopActionPipeline(ctx context.Context, actionID string) error {
+	if c == nil {
+		return errors.New("client is nil")
+	}
+	actionID = strings.TrimSpace(actionID)
+	if actionID == "" {
+		return errors.New("action ID is required")
+	}
+
+	const q = `
+mutation stopActionPipeline($urn: String!) {
+  stopActionPipeline(urn: $urn)
+}`
+	body := map[string]any{
+		"query":     q,
+		"variables": map[string]any{"urn": ActionPipelineURNPrefix + actionID},
+	}
+	var raw genericGraphQLErrors
+	if err := c.doGraphQL(ctx, body, &raw); err != nil {
+		return err
+	}
+	if len(raw.Errors) > 0 {
+		msg := raw.Errors[0].Message
+		if isActionPipelineCloudOnlyError(msg) {
+			return ErrActionPipelineCloudOnly
+		}
+		return fmt.Errorf("DataHub API error: %s", msg)
+	}
+	return nil
 }
 
 // DeleteActionPipeline hard-deletes an action pipeline by id via the

@@ -377,6 +377,8 @@ func (s *mockServer) handleGraphQL(w http.ResponseWriter, r *http.Request) {
 		s.handleDeleteForm(w, req.Variables)
 	case strings.Contains(q, "upsertActionPipeline"):
 		s.handleUpsertActionPipeline(w, req.Variables)
+	case strings.Contains(q, "stopActionPipeline"):
+		s.handleStopActionPipeline(w, req.Variables)
 	case strings.Contains(q, "deleteActionPipeline"):
 		s.handleDeleteActionPipeline(w, req.Variables)
 	case strings.Contains(q, "listActionPipelines"):

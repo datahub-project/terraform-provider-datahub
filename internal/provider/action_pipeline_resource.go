@@ -76,7 +76,10 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"provider. Pin the provider version for client-side stability and upgrade it to pick up fixes " +
 			"(including any needed for backend changes), and please open an issue if you hit one.\n\n" +
 			"This resource manages the pipeline **definition** (name, type, recipe, executor). It does not " +
-			"model run state (running/stopped); a freshly created pipeline is started by DataHub.\n\n" +
+			"model run state (running/stopped): a freshly created pipeline is started by DataHub, and an update " +
+			"leaves a pipeline that was stopped in DataHub stopped. DataHub restarts a pipeline whenever its " +
+			"definition is saved, so the provider stops a previously stopped pipeline again straight after the " +
+			"update; it can run briefly in between.\n\n" +
 			"## Argument Reference\n\n" +
 			"- `action_id` (Optional) Unique id (URN suffix). If omitted, derived from `name` as `<sanitized-name>-<hash>`. Changing it forces a new resource.\n" +
 			"- `name` (Required) Human-friendly name shown in the DataHub UI.\n" +
@@ -85,8 +88,8 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"- `category` (Optional) UI grouping category (e.g. `Data Discovery`).\n" +
 			"- `description` (Optional) Human-readable description.\n" +
 			"- `executor_id` (Optional) Executor that runs the action (e.g. `default`).\n" +
-			"- `version` (Optional) Action package version.\n" +
-			"- `debug_mode` (Optional) Enable verbose executor logging.\n\n" +
+			"- `version` (Optional) Action package version. Not stored by DataHub; leave unset (see below).\n" +
+			"- `debug_mode` (Optional) Enable verbose executor logging. Not stored by DataHub; leave unset (see below).\n\n" +
 			"## Security Note\n\n" +
 			"**Warning:** The recipe is stored in DataHub. Do not embed credentials directly.\n\n" +
 			"**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`); placeholders are stored verbatim and resolved at execution time.\n\n" +
@@ -143,12 +146,12 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"version": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Action package version. If omitted, not sent.",
+				MarkdownDescription: "Action package version. If omitted, not sent. DataHub accepts this value but does not currently store it, so setting it produces a plan diff on every run; leave it unset.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"debug_mode": schema.BoolAttribute{
 				Optional:            true,
-				MarkdownDescription: "Enable verbose executor logging for troubleshooting.",
+				MarkdownDescription: "Enable verbose executor logging for troubleshooting. DataHub accepts this value but does not currently store it, so setting it produces a plan diff on every run; leave it unset.",
 			},
 		},
 	}
@@ -190,11 +193,11 @@ func (r *actionPipelineResource) Update(ctx context.Context, req resource.Update
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
-// upsert builds the client input from plan, calls UpsertActionPipeline, and
-// fills the computed plan fields (id/urn/action_id + effective optionals). On a
-// non-cloud-only upsert error it verifies via GetActionPipelineByID: if the
-// definition persisted (the upsert wrote metadata but the runtime reload failed),
-// it treats the create as a success with a warning; otherwise it surfaces the error.
+// upsert builds the client input from plan, calls UpsertActionPipeline,
+// re-stops a pipeline that was stopped beforehand, and fills the computed plan
+// fields (id/urn/action_id + effective optionals). On a non-cloud-only upsert
+// error it verifies via GetActionPipelineByID: if the definition persisted (the
+// upsert wrote metadata but the runtime reload failed), it treats the create as a success with a warning; otherwise it surfaces the error.
 // existingID is empty on Create and the prior action_id on Update.
 func (r *actionPipelineResource) upsert(ctx context.Context, plan *actionPipelineResourceModel, existingID string, diags *diag.Diagnostics) {
 	name := strings.TrimSpace(plan.Name.ValueString())
@@ -244,6 +247,21 @@ func (r *actionPipelineResource) upsert(ctx context.Context, plan *actionPipelin
 		in.DebugMode = &v
 	}
 
+	// The upsert resets the pipeline's state to ACTIVE and restarts it, so a
+	// pipeline stopped in DataHub has to be stopped again afterwards. Only an
+	// update can find one; on create the read would also pre-empt the upsert's
+	// clearer error on an instance without action pipelines.
+	var prior *datahub.ActionPipelineInfo
+	if existingID != "" {
+		var err error
+		prior, err = r.client.GetActionPipelineByID(ctx, actionID)
+		if err != nil {
+			diags.AddError("DataHub API Error",
+				fmt.Sprintf("Reading action pipeline %q before updating it, to preserve its run state: %s", actionID, err.Error()))
+			return
+		}
+	}
+
 	urn, err := r.client.UpsertActionPipeline(ctx, in)
 	if err != nil {
 		if errors.Is(err, datahub.ErrActionPipelineCloudOnly) {
@@ -264,6 +282,13 @@ func (r *actionPipelineResource) upsert(ctx context.Context, plan *actionPipelin
 				"Verify the recipe and executor; the definition is under Terraform management.", actionID, err.Error()))
 	}
 
+	if prior.Stopped() {
+		r.restoreStopped(ctx, actionID, diags)
+		if diags.HasError() {
+			return
+		}
+	}
+
 	plan.ActionID = types.StringValue(actionID)
 	plan.ID = types.StringValue(actionID)
 	plan.URN = types.StringValue(urn)
@@ -271,6 +296,28 @@ func (r *actionPipelineResource) upsert(ctx context.Context, plan *actionPipelin
 	plan.Description = nullIfEmpty(strVal(plan.Description))
 	plan.ExecutorID = nullIfEmpty(strVal(plan.ExecutorID))
 	plan.Version = nullIfEmpty(strVal(plan.Version))
+}
+
+// restoreStopped stops a pipeline that was stopped before the upsert restarted
+// it. The server records INACTIVE before reporting whether the runtime stop
+// succeeded, so a stop error with INACTIVE recorded is only a warning.
+func (r *actionPipelineResource) restoreStopped(ctx context.Context, actionID string, diags *diag.Diagnostics) {
+	stopErr := r.client.StopActionPipeline(ctx, actionID)
+	if stopErr == nil {
+		return
+	}
+	info, getErr := r.client.GetActionPipelineByID(ctx, actionID)
+	if getErr == nil && info.Stopped() {
+		diags.AddWarning("Action pipeline stop reported an error",
+			fmt.Sprintf("Action pipeline %q was stopped before this apply, and DataHub restarts a pipeline whenever its "+
+				"definition is saved, so the provider stopped it again. DataHub recorded it as stopped but reported an "+
+				"error from the runtime: %s. Check in DataHub that it is not running.", actionID, stopErr.Error()))
+		return
+	}
+	diags.AddError("Action pipeline restarted",
+		fmt.Sprintf("Action pipeline %q was stopped before this apply. DataHub restarts a pipeline whenever its definition "+
+			"is saved, and stopping it again failed: %s. The definition was saved; stop the pipeline in DataHub.",
+			actionID, stopErr.Error()))
 }
 
 func (r *actionPipelineResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {

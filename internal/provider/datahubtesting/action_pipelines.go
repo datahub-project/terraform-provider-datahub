@@ -20,12 +20,13 @@ type mockActionPipeline struct {
 	Description string
 	Recipe      string // stored verbatim (recipe round-trips byte-for-byte)
 	ExecutorID  string
-	Version     string
-	DebugMode   *bool
+	State       string // "" (ACTIVE by default) or "INACTIVE"
 }
 
 // handleUpsertActionPipeline handles the upsertActionPipeline GraphQL mutation.
-// The mutation returns the URN as a bare String.
+// The mutation returns the URN as a bare String. Like the server, it rebuilds
+// the aspect from the input: state falls back to its ACTIVE default, and
+// config.version / config.debugMode are accepted but not stored.
 func (s *mockServer) handleUpsertActionPipeline(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 	input, _ := variables["input"].(map[string]any)
@@ -39,10 +40,6 @@ func (s *mockServer) handleUpsertActionPipeline(w http.ResponseWriter, variables
 	if cfg, ok := input["config"].(map[string]any); ok {
 		ap.Recipe, _ = cfg["recipe"].(string)
 		ap.ExecutorID, _ = cfg["executorId"].(string)
-		ap.Version, _ = cfg["version"].(string)
-		if dm, ok := cfg["debugMode"].(bool); ok {
-			ap.DebugMode = &dm
-		}
 	}
 
 	s.mu.Lock()
@@ -51,6 +48,31 @@ func (s *mockServer) handleUpsertActionPipeline(w http.ResponseWriter, variables
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"upsertActionPipeline": urn},
+	})
+}
+
+// handleStopActionPipeline handles the stopActionPipeline GraphQL mutation,
+// which records the pipeline's intended state as INACTIVE.
+func (s *mockServer) handleStopActionPipeline(w http.ResponseWriter, variables map[string]any) {
+	urn, _ := variables["urn"].(string)
+	id := strings.TrimPrefix(urn, mockActionPipelineURNPrefix)
+
+	s.mu.Lock()
+	ap, ok := s.actionPipelines[id]
+	if ok {
+		ap.State = "INACTIVE"
+		s.actionPipelines[id] = ap
+	}
+	s.mu.Unlock()
+
+	if !ok {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"errors": []map[string]any{{"message": "No dataHubActionInfo found for action pipeline " + urn}},
+		})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"data": map[string]any{"stopActionPipeline": urn},
 	})
 }
 
@@ -108,12 +130,6 @@ func (s *mockServer) handleActionPipelineItem(w http.ResponseWriter, r *http.Req
 	if ap.ExecutorID != "" {
 		config["executorId"] = ap.ExecutorID
 	}
-	if ap.Version != "" {
-		config["version"] = ap.Version
-	}
-	if ap.DebugMode != nil {
-		config["debugMode"] = *ap.DebugMode
-	}
 	infoValue := map[string]any{
 		"name":   ap.Name,
 		"type":   ap.Type,
@@ -124,6 +140,9 @@ func (s *mockServer) handleActionPipelineItem(w http.ResponseWriter, r *http.Req
 	}
 	if ap.Description != "" {
 		infoValue["description"] = ap.Description
+	}
+	if ap.State != "" {
+		infoValue["state"] = ap.State
 	}
 
 	w.Header().Set("Content-Type", "application/json")

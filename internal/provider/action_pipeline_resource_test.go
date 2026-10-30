@@ -35,6 +35,29 @@ func TestAcc_ActionPipeline_Lifecycle(t *testing.T) {
 	})
 }
 
+func TestActionPipelineResource_stoppedStaysStopped_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.ActionPipelineCheckDestroy,
+		Steps:                    datahubtesting.ActionPipelineStoppedStaysStoppedSteps(),
+	})
+}
+
+func TestAcc_ActionPipeline_StoppedStaysStopped(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	tg.RequireCloud(t) // Cloud-only resource; skips on live OSS targets
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.ActionPipelineCheckDestroy,
+		Steps:                    datahubtesting.ActionPipelineStoppedStaysStoppedSteps(),
+	})
+}
+
 // TestAcc_ActionPipeline_OSS_RejectsWithCloudOnlyError verifies that
 // datahub_action_pipeline surfaces a "DataHub Cloud Required" diagnostic when
 // applied against an OSS DataHub instance (the entity/mutations are Cloud-only).

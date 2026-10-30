@@ -6,9 +6,9 @@ description: |-
   DataHub ❌ | DataHub Cloud ✅
   Creates and manages a DataHub Cloud action pipeline (automation) -- a packaged action that runs a recipe to propagate metadata (descriptions, tags, glossary terms) back to a platform such as BigQuery or Dataplex.
   Action pipelines are a newer DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
-  This resource manages the pipeline definition (name, type, recipe, executor). It does not model run state (running/stopped); a freshly created pipeline is started by DataHub.
+  This resource manages the pipeline definition (name, type, recipe, executor). It does not model run state (running/stopped): a freshly created pipeline is started by DataHub, and an update leaves a pipeline that was stopped in DataHub stopped. DataHub restarts a pipeline whenever its definition is saved, so the provider stops a previously stopped pipeline again straight after the update; it can run briefly in between.
   Argument Reference
-  action_id (Optional) Unique id (URN suffix). If omitted, derived from name as <sanitized-name>-<hash>. Changing it forces a new resource.name (Required) Human-friendly name shown in the DataHub UI.type (Required) Action class string, e.g. dataplex_metadata_sync or datahub_integrations.propagation.bigquery.tag_propagator.BigqueryTagPropagatorAction. The set is open and Cloud-version-dependent; not validated against an enum.recipe (Required) Action recipe as a JSON string. Build it with jsonencode({...}).category (Optional) UI grouping category (e.g. Data Discovery).description (Optional) Human-readable description.executor_id (Optional) Executor that runs the action (e.g. default).version (Optional) Action package version.debug_mode (Optional) Enable verbose executor logging.
+  action_id (Optional) Unique id (URN suffix). If omitted, derived from name as <sanitized-name>-<hash>. Changing it forces a new resource.name (Required) Human-friendly name shown in the DataHub UI.type (Required) Action class string, e.g. dataplex_metadata_sync or datahub_integrations.propagation.bigquery.tag_propagator.BigqueryTagPropagatorAction. The set is open and Cloud-version-dependent; not validated against an enum.recipe (Required) Action recipe as a JSON string. Build it with jsonencode({...}).category (Optional) UI grouping category (e.g. Data Discovery).description (Optional) Human-readable description.executor_id (Optional) Executor that runs the action (e.g. default).version (Optional) Action package version. Not stored by DataHub; leave unset (see below).debug_mode (Optional) Enable verbose executor logging. Not stored by DataHub; leave unset (see below).
   Security Note
   Warning: The recipe is stored in DataHub. Do not embed credentials directly.
   Recommended: Use DataHub Secrets / environment variable substitution (e.g. ${SECRET_NAME}); placeholders are stored verbatim and resolved at execution time.
@@ -25,7 +25,7 @@ Creates and manages a DataHub Cloud **action pipeline** (automation) -- a packag
 
 Action pipelines are a newer DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
 
-This resource manages the pipeline **definition** (name, type, recipe, executor). It does not model run state (running/stopped); a freshly created pipeline is started by DataHub.
+This resource manages the pipeline **definition** (name, type, recipe, executor). It does not model run state (running/stopped): a freshly created pipeline is started by DataHub, and an update leaves a pipeline that was stopped in DataHub stopped. DataHub restarts a pipeline whenever its definition is saved, so the provider stops a previously stopped pipeline again straight after the update; it can run briefly in between.
 
 ## Argument Reference
 
@@ -36,8 +36,8 @@ This resource manages the pipeline **definition** (name, type, recipe, executor)
 - `category` (Optional) UI grouping category (e.g. `Data Discovery`).
 - `description` (Optional) Human-readable description.
 - `executor_id` (Optional) Executor that runs the action (e.g. `default`).
-- `version` (Optional) Action package version.
-- `debug_mode` (Optional) Enable verbose executor logging.
+- `version` (Optional) Action package version. Not stored by DataHub; leave unset (see below).
+- `debug_mode` (Optional) Enable verbose executor logging. Not stored by DataHub; leave unset (see below).
 
 ## Security Note
 
@@ -95,10 +95,10 @@ resource "datahub_action_pipeline" "dataplex_glossary_sync" {
 
 - `action_id` (String) Unique id (URN suffix). If omitted, derived from `name` as `<sanitized-name>-<hash>`. Changing it forces a new resource.
 - `category` (String) UI grouping category (e.g. `Data Discovery`).
-- `debug_mode` (Boolean) Enable verbose executor logging for troubleshooting.
+- `debug_mode` (Boolean) Enable verbose executor logging for troubleshooting. DataHub accepts this value but does not currently store it, so setting it produces a plan diff on every run; leave it unset.
 - `description` (String) Human-readable description of what this action pipeline does.
 - `executor_id` (String) Executor that runs the action (e.g. `default`). If omitted, DataHub's default is used.
-- `version` (String) Action package version. If omitted, not sent.
+- `version` (String) Action package version. If omitted, not sent. DataHub accepts this value but does not currently store it, so setting it produces a plan diff on every run; leave it unset.
 
 ### Read-Only
 
