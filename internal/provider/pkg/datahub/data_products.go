@@ -67,6 +67,11 @@ type deleteDataProductResponse struct {
 // externalUrl or customProperties. Writing the aspects directly with a
 // user-supplied URN matches the DataHub Python SDK convention
 // (make_data_product_urn) and produces stable, importable URNs.
+//
+// An aspect write replaces the whole aspect, and dataProductProperties also
+// holds fields this provider does not manage (assets, parentDataProduct). The
+// current aspect is read first and only the managed fields are replaced, so
+// asset membership set in the UI, CLI or SDK survives an apply.
 func (c *Client) WriteDataProductProperties(
 	ctx context.Context,
 	urn, name, description, externalURL string,
@@ -85,9 +90,11 @@ func (c *Client) WriteDataProductProperties(
 		return errors.New("name is required")
 	}
 
-	propsValue := map[string]any{
-		"name": name,
+	propsValue, err := c.unmanagedAspectFields(ctx, "dataproduct", urn, "dataProductProperties", managedDataProductPropertiesFields)
+	if err != nil {
+		return err
 	}
+	propsValue["name"] = name
 	if description != "" {
 		propsValue["description"] = description
 	}
@@ -141,6 +148,10 @@ func (c *Client) WriteDataProductProperties(
 	}
 	return nil
 }
+
+// managedDataProductPropertiesFields are the dataProductProperties fields
+// WriteDataProductProperties owns; every other field is carried over as read.
+var managedDataProductPropertiesFields = []string{"name", "description", "externalUrl", "customProperties"}
 
 // GetDataProductByURN fetches a DataHub data product directly by URN via
 // the OpenAPI v3 entity endpoint (MySQL, strongly consistent). Returns nil
