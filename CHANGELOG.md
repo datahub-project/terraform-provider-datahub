@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`datahub_data_product` no longer removes a data product's assets on create or update.** Asset membership and the parent data product live in the same `dataProductProperties` aspect as the name, description, external URL and custom properties, and the provider wrote that aspect whole with only the fields it manages, so every `terraform apply` that touched a data product emptied its asset list. The resource documentation already said membership set in the DataHub UI, CLI or SDK is left alone; the provider now reads the aspect before writing it and replaces only the fields it manages, so `assets`, `parentDataProduct` and any other field it does not model are kept as they are. Assets already removed by an earlier apply are not restored and have to be added again.
+
 ### Changed
 
 - **Development tooling: `golang.org/x/net` is now 0.62.0 and `golang.org/x/crypto` 0.58.0 in all three Go modules.** `make deps-vulncheck-tools` had started failing on GO-2026-6860 and GO-2026-6866, two `golang.org/x/net/html` findings reachable from the `tfplugindocs` documentation server in `tools/serve`, and the same bump clears the nine unreachable `x/net` and `x/crypto` advisories the tool modules were also carrying. The provider itself never calls `x/net/html`, and `govulncheck` reported neither finding as reachable from provider code, so this is not a security fix for users: the main module moves to the same versions only so that one dependency line is tracked across the repository. The remaining `GO-2026-5932` (`x/crypto/openpgp`) has no fix in any release and stays on the accepted list.
