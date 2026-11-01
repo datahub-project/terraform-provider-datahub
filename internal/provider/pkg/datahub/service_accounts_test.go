@@ -28,6 +28,10 @@ func TestServiceAccountURNHelpers(t *testing.T) {
 func TestUpsertServiceAccount(t *testing.T) {
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		if r.URL.Path != "/openapi/v3/entity/corpuser" {
 			t.Errorf("path = %q, want /openapi/v3/entity/corpuser", r.URL.Path)
 		}
@@ -208,7 +212,11 @@ func TestListServiceAccountURNs(t *testing.T) {
 func TestUpsertServiceAccountErrors(t *testing.T) {
 	t.Run("subtype_unsupported", func(t *testing.T) {
 		// A pre-1.4.0 server rejects the subTypes aspect for corpUser.
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte("aspect subTypes is not registered for entity corpuser"))
 		}))

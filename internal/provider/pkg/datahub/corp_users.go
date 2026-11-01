@@ -185,6 +185,14 @@ func (c *Client) GetUserByURN(ctx context.Context, urn string) (*CorpUser, error
 // UpsertCorpUser creates or updates a corpUser catalog record via the OpenAPI
 // v3 entity endpoint. This is an upsert: it works for new entities and
 // pre-existing ones (e.g. created by signUp or SSO JIT).
+//
+// An aspect write replaces the whole aspect, and corpUserInfo also holds fields
+// this provider does not manage (managerUrn, departmentId, firstName,
+// countryCode and others), which SSO JIT provisioning, SCIM and identity
+// provider ingestion set. The current aspect is read first and only the managed
+// fields are replaced. active is not managed either: it defaults to true only
+// when the stored aspect has none, so an apply does not reactivate a user that
+// was deactivated outside Terraform.
 func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (string, error) {
 	if c == nil {
 		return "", errors.New("client is nil")
@@ -196,8 +204,12 @@ func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (st
 
 	urn := "urn:li:corpuser:" + in.Username
 
-	infoValue := map[string]any{
-		"active": true,
+	infoValue, err := c.unmanagedAspectFields(ctx, "corpuser", urn, "corpUserInfo", managedCorpUserInfoFields)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := infoValue["active"]; !ok {
+		infoValue["active"] = true
 	}
 	if in.DisplayName != "" {
 		infoValue["displayName"] = in.DisplayName
@@ -212,9 +224,8 @@ func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (st
 		infoValue["title"] = in.Title
 	}
 	// Always include customProperties (even empty) so that clearing the map
-	// overwrites a previously-set value rather than leaving it in place. This
-	// write owns the whole corpUserInfo aspect; only corp_user and
-	// service_account call it, and both own custom_properties.
+	// overwrites a previously-set value rather than leaving it in place. Both
+	// callers, corp_user and service_account, own custom_properties.
 	if in.CustomProperties == nil {
 		in.CustomProperties = map[string]string{}
 	}
@@ -264,6 +275,10 @@ func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (st
 
 	return urn, nil
 }
+
+// managedCorpUserInfoFields are the corpUserInfo fields UpsertCorpUser owns;
+// every other field, active included, is carried over as read.
+var managedCorpUserInfoFields = []string{"displayName", "fullName", "email", "title", "customProperties"}
 
 // DeleteUser hard-deletes a DataHub user by URN via the removeUser GraphQL
 // mutation. This removes the entity and all its aspects (including credentials

@@ -13,6 +13,10 @@ import (
 func TestUpsertCorpUser(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			if r.Method != http.MethodPost {
 				t.Errorf("method = %q, want POST", r.Method)
 			}
@@ -56,6 +60,110 @@ func TestUpsertCorpUser(t *testing.T) {
 		_, err := c.UpsertCorpUser(t.Context(), UpsertCorpUserInput{Username: "alice"})
 		if err == nil {
 			t.Fatal("expected error for 403")
+		}
+	})
+}
+
+// corpUserInfoMockServer stores the corpUserInfo value from the last POST and
+// serves it on GET. A nil stored value means the entity does not exist.
+func corpUserInfoMockServer(t *testing.T, urn string, stored *map[string]any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			var payload []struct {
+				Info struct {
+					Value map[string]any `json:"value"`
+				} `json:"corpUserInfo"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Errorf("decoding POST payload: %v", err)
+			}
+			*stored = payload[0].Info.Value
+			_, _ = w.Write([]byte("[]"))
+		case http.MethodGet:
+			if *stored == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"urn":          urn,
+				"corpUserInfo": map[string]any{"value": *stored},
+			})
+		}
+	}))
+}
+
+func TestUpsertCorpUserPreservesUnmanagedInfo(t *testing.T) {
+	const urn = "urn:li:corpuser:alice"
+
+	t.Run("preserves_unmanaged_fields", func(t *testing.T) {
+		stored := map[string]any{
+			"active":           false,
+			"displayName":      "Alice",
+			"fullName":         "Alice Example",
+			"email":            "alice@example.com",
+			"title":            "Engineer",
+			"customProperties": map[string]any{"team": "a"},
+			"managerUrn":       "urn:li:corpuser:bob",
+			"departmentId":     float64(42),
+			"departmentName":   "Data",
+			"firstName":        "Alice",
+			"lastName":         "Example",
+			"countryCode":      "GB",
+		}
+		server := corpUserInfoMockServer(t, urn, &stored)
+		defer server.Close()
+		c := newTestClient(t, server)
+
+		if _, err := c.UpsertCorpUser(t.Context(), UpsertCorpUserInput{Username: "alice", DisplayName: "Alice E."}); err != nil {
+			t.Fatalf("UpsertCorpUser() error = %v", err)
+		}
+
+		if stored["displayName"] != "Alice E." {
+			t.Errorf("displayName = %v, want Alice E.", stored["displayName"])
+		}
+		for _, k := range []string{"fullName", "email", "title"} {
+			if _, ok := stored[k]; ok {
+				t.Errorf("%s = %v, want it cleared", k, stored[k])
+			}
+		}
+		if got := mustJSON(t, stored["customProperties"]); got != "{}" {
+			t.Errorf("customProperties = %s, want {}", got)
+		}
+		want := map[string]any{
+			"managerUrn":     "urn:li:corpuser:bob",
+			"departmentId":   float64(42),
+			"departmentName": "Data",
+			"firstName":      "Alice",
+			"lastName":       "Example",
+			"countryCode":    "GB",
+		}
+		for k, v := range want {
+			if stored[k] != v {
+				t.Errorf("%s = %v, want %v preserved", k, stored[k], v)
+			}
+		}
+		if stored["active"] != false {
+			t.Errorf("active = %v, want false preserved", stored["active"])
+		}
+	})
+
+	t.Run("active_on_create", func(t *testing.T) {
+		var stored map[string]any
+		server := corpUserInfoMockServer(t, urn, &stored)
+		defer server.Close()
+		c := newTestClient(t, server)
+
+		if _, err := c.UpsertCorpUser(t.Context(), UpsertCorpUserInput{Username: "alice", Email: "alice@example.com"}); err != nil {
+			t.Fatalf("UpsertCorpUser() error = %v", err)
+		}
+		if stored["active"] != true {
+			t.Errorf("active = %v, want true on create", stored["active"])
+		}
+		if stored["email"] != "alice@example.com" {
+			t.Errorf("email = %v, want alice@example.com", stored["email"])
 		}
 	})
 }

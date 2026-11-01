@@ -6,7 +6,7 @@ description: |-
   DataHub ✅ | DataHub Cloud ✅
   Creates and manages a DataHub user catalog record (corpUser).
   This resource manages the user's profile metadata (display name, email, title). It does not create login credentials -- for native-auth login, use the datahub_local_user_login resource.
-  Uses upsert semantics: if the user entity already exists (e.g. from SSO/JIT provisioning, metadata ingestion, or a prior datahub_local_user_login), this resource adopts it and manages the profile fields going forward.
+  Uses upsert semantics: if the user entity already exists (e.g. from SSO/JIT provisioning, metadata ingestion, or a prior datahub_local_user_login), this resource adopts it and manages the profile fields going forward. Other corpUserInfo fields set by SSO/JIT provisioning, SCIM or identity provider ingestion (manager, department, first and last name, country code) are kept, and so is the user's active status: a new user is created active, and an existing user deactivated outside Terraform stays deactivated.
   Naming
   username becomes the URN suffix (urn:li:corpuser:<username>). This matches the convention used by the DataHub Python SDK (datahub CLI) and SSO/JIT provisioning, avoiding duplicate entities.
   Deletion
@@ -21,7 +21,7 @@ Creates and manages a DataHub user catalog record (`corpUser`).
 
 This resource manages the user's profile metadata (display name, email, title). It does **not** create login credentials -- for native-auth login, use the `datahub_local_user_login` resource.
 
-Uses upsert semantics: if the user entity already exists (e.g. from SSO/JIT provisioning, metadata ingestion, or a prior `datahub_local_user_login`), this resource adopts it and manages the profile fields going forward.
+Uses upsert semantics: if the user entity already exists (e.g. from SSO/JIT provisioning, metadata ingestion, or a prior `datahub_local_user_login`), this resource adopts it and manages the profile fields going forward. Other `corpUserInfo` fields set by SSO/JIT provisioning, SCIM or identity provider ingestion (manager, department, first and last name, country code) are kept, and so is the user's active status: a new user is created active, and an existing user deactivated outside Terraform stays deactivated.
 
 ## Naming
 
