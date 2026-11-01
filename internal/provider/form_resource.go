@@ -123,10 +123,15 @@ func (r *formResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 			"assignments added outside Terraform (UI, SDK) are removed on the next apply. Omitting " +
 			"`dynamic_assignment` removes any dynamic assignment on the form.\n\n" +
 			"## Publish state\n\n" +
-			"This resource does not manage whether a form is draft, published or unpublished. A new " +
-			"form is created as a draft; publish or unpublish it in the DataHub UI, and later applies " +
-			"keep that state. The owner ownership-type filter set in the UI (assign only owners of " +
-			"given types) is likewise kept across applies.\n\n" +
+			"On DataHub Cloud, this resource does not manage whether a form is draft, published or " +
+			"unpublished. A new form is created as a draft; publish or unpublish it in the DataHub UI, " +
+			"and later applies keep that state. OSS DataHub has no form publish state.\n\n" +
+			"## Owner ownership-type filter\n\n" +
+			"This resource does not manage the filter that assigns the form only to owners of given " +
+			"ownership types. A filter set outside Terraform is kept on every apply, whatever the " +
+			"`actors` block says, and cannot be cleared through Terraform. It narrows only the owner " +
+			"assignment, so it has no effect while `actors.owners` is `false` and applies again if " +
+			"`owners` is set back to `true`.\n\n" +
 			"## Assignment is asynchronous and additive\n\n" +
 			"DataHub assigns the form to matching entities via a background hook after the filter is " +
 			"written. Narrowing or removing the filter stops *future* assignment but does not retract " +

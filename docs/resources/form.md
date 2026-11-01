@@ -9,7 +9,9 @@ description: |-
   Full-state ownership
   This resource owns the complete form definition: the prompts list, the actors lists and the dynamic assignment filter are fully replaced on every apply, so prompts or actor assignments added outside Terraform (UI, SDK) are removed on the next apply. Omitting dynamic_assignment removes any dynamic assignment on the form.
   Publish state
-  This resource does not manage whether a form is draft, published or unpublished. A new form is created as a draft; publish or unpublish it in the DataHub UI, and later applies keep that state. The owner ownership-type filter set in the UI (assign only owners of given types) is likewise kept across applies.
+  On DataHub Cloud, this resource does not manage whether a form is draft, published or unpublished. A new form is created as a draft; publish or unpublish it in the DataHub UI, and later applies keep that state. OSS DataHub has no form publish state.
+  Owner ownership-type filter
+  This resource does not manage the filter that assigns the form only to owners of given ownership types. A filter set outside Terraform is kept on every apply, whatever the actors block says, and cannot be cleared through Terraform. It narrows only the owner assignment, so it has no effect while actors.owners is false and applies again if owners is set back to true.
   Assignment is asynchronous and additive
   DataHub assigns the form to matching entities via a background hook after the filter is written. Narrowing or removing the filter stops future assignment but does not retract the form from entities that already carry it; deleting the form does (asynchronously).
   Delete semantics
@@ -32,7 +34,11 @@ This resource owns the complete form definition: the prompts list, the actors li
 
 ## Publish state
 
-This resource does not manage whether a form is draft, published or unpublished. A new form is created as a draft; publish or unpublish it in the DataHub UI, and later applies keep that state. The owner ownership-type filter set in the UI (assign only owners of given types) is likewise kept across applies.
+On DataHub Cloud, this resource does not manage whether a form is draft, published or unpublished. A new form is created as a draft; publish or unpublish it in the DataHub UI, and later applies keep that state. OSS DataHub has no form publish state.
+
+## Owner ownership-type filter
+
+This resource does not manage the filter that assigns the form only to owners of given ownership types. A filter set outside Terraform is kept on every apply, whatever the `actors` block says, and cannot be cleared through Terraform. It narrows only the owner assignment, so it has no effect while `actors.owners` is `false` and applies again if `owners` is set back to `true`.
 
 ## Assignment is asynchronous and additive
 
