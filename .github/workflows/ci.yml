@@ -69,7 +69,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    timeout-minutes: 10
+    # Leaves room above COVERAGE_TIMEOUT for checkout, mise setup and the
+    # provider build, so a slow suite fails with Go's timeout panic (which
+    # names the running tests) rather than a bare job cancellation.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
@@ -79,7 +82,11 @@ jobs:
       # prerequisite builds ./bin/terraform-provider-datahub. Without it
       # TestAcc_ImportRoundtrip_E2E found no binary and skipped on every run,
       # which left the whole import pipeline untested behind a green job.
-      - run: make coverage COVERAGE_TIMEOUT=5m
+      #
+      # internal/provider alone runs for 210-300s on a hosted runner, so a
+      # 5m cap failed unrelated PRs at random with no test assertion failing.
+      # 10m restores headroom; it is a hang guard, not a performance budget.
+      - run: make coverage COVERAGE_TIMEOUT=10m
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
