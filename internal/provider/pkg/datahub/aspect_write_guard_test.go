@@ -650,9 +650,20 @@ func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
 			}
 
 			sent := g.sent()
-			for aspect := range sent {
+			for aspect, p := range sent {
 				if _, ok := w.aspects[aspect]; !ok {
 					t.Errorf("sent aspect %q, which aspectWriters does not classify for %s", aspect, name)
+				}
+				// A typed aspect struct that already wraps its value, handed
+				// to the body builder, arrives as {"value":{"value":...}}.
+				// DataHub Cloud rejects it ("field is required but not
+				// found"); OSS 1.7 derives key aspects from the URN and let
+				// it through, which is how it reached a live run unseen.
+				if len(p.Value) == 0 {
+					t.Errorf("%s was sent with an empty value: %s", aspect, p.Raw)
+				}
+				if inner, ok := p.Value["value"].(map[string]any); ok && len(p.Value) == 1 {
+					t.Errorf("%s is double-wrapped: the aspect's value is itself {\"value\": %v}; pass the record, not the aspect envelope", aspect, inner)
 				}
 			}
 			for aspect, rule := range w.aspects {

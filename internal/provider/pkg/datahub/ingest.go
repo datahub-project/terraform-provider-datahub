@@ -195,7 +195,7 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 			return nil, fmt.Errorf("encoding ingestion source info: %w", err)
 		}
 		return []aspectEntry{
-			ownedEntry("dataHubIngestionSourceKey", payload[0].DataHubIngestionSourceKey),
+			ownedEntry("dataHubIngestionSourceKey", payload[0].DataHubIngestionSourceKey.Value),
 			info.entry(),
 		}, nil
 	})
