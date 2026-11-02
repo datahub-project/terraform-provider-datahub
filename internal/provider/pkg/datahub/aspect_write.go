@@ -54,6 +54,10 @@ type aspectVersion string
 // exist; as a precondition it means "must not exist yet".
 const versionAbsent aspectVersion = "-1"
 
+// legacyAspectVersion is what DataHub's validator resolves for a stored
+// aspect that carries no systemMetadata.version (written before 0.14).
+const legacyAspectVersion = "1"
+
 // preservedAspect is one aspect as read for a read-modify-write: the fields
 // the writer does not manage, and the version they were read at.
 type preservedAspect struct {
@@ -71,6 +75,30 @@ func (p preservedAspect) entry() aspectEntry {
 
 // preservedAspects is one attempt's read, keyed by aspect name.
 type preservedAspects map[string]preservedAspect
+
+// existing reports, for a create-only write, the entity the read found,
+// as an EntityExistsError naming whether it is soft-deleted; nil when the
+// read found none of the declared aspects.
+func (p preservedAspects) existing(spec aspectWriteSpec) error {
+	found := false
+	for _, d := range spec.preserved {
+		if _, ok := p[d.aspect]; ok {
+			found = true
+		}
+	}
+	if !found {
+		return nil
+	}
+	removed := false
+	if status, ok := p[statusAspect]; ok {
+		removed, _ = status.fields["removed"].(bool)
+	}
+	return &EntityExistsError{URN: spec.urn, What: spec.what, SoftDeleted: removed}
+}
+
+// statusAspect is read alongside a create-only write's aspects so an
+// existing entity can be reported as soft-deleted.
+const statusAspect = "status"
 
 // get returns the read aspect, or, for a declared aspect the entity does not
 // hold, an empty one at versionAbsent.
@@ -115,9 +143,14 @@ type aspectWriteSpec struct {
 	// preserved is read before every attempt and must appear, versioned, in
 	// every merge result.
 	preserved []preservedSpec
-	// createOnly skips the read and sends versionAbsent for every preserved
-	// aspect: the entity must not exist. A 412 is then an EntityExistsError
-	// and is never retried.
+	// createOnly makes the write a create: every preserved aspect carries
+	// versionAbsent, so an entity that appears between the read and the
+	// write is reported, atomically on the server. The read is kept, with
+	// the status aspect, so an entity that already exists is reported
+	// before anything is sent, as soft-deleted when that is why its id is
+	// taken, and so that a server predating the precondition (which would
+	// ignore "-1" and overwrite) is covered by the same check. A 412 on a
+	// create is an EntityExistsError and is never retried.
 	createOnly bool
 	// privilege is named in the 401/403 message.
 	privilege string
@@ -168,6 +201,12 @@ func (c *Client) writeAspects(ctx context.Context, spec aspectWriteSpec, merge m
 	var last error
 	for attempt := 1; attempt <= aspectWriteRetry.maxAttempts; attempt++ {
 		prev, err := c.readPreservedAspects(ctx, spec)
+		if err == nil && spec.createOnly {
+			if exists := prev.existing(spec); exists != nil {
+				return nil, exists
+			}
+			prev = preservedAspects{}
+		}
 		if err != nil {
 			var ra *RetryAfterError
 			if errors.As(err, &ra) && waits < aspectWriteRetry.maxRetryAfterWaits {
@@ -306,12 +345,17 @@ func checkPreservedVersions(spec aspectWriteSpec, prev preservedAspects, entries
 // tie the write to the runId of whatever last wrote the aspect.
 func (c *Client) readPreservedAspects(ctx context.Context, spec aspectWriteSpec) (preservedAspects, error) {
 	out := preservedAspects{}
-	if spec.createOnly || len(spec.preserved) == 0 {
+	if len(spec.preserved) == 0 {
 		return out, nil
 	}
-	names := make([]string, 0, len(spec.preserved))
+	names := make([]string, 0, len(spec.preserved)+1)
 	for _, p := range spec.preserved {
 		names = append(names, p.aspect)
+	}
+	declared := spec.preserved
+	if spec.createOnly {
+		names = append(names, statusAspect)
+		declared = append(append([]preservedSpec(nil), spec.preserved...), preservedSpec{aspect: statusAspect})
 	}
 	path := fmt.Sprintf("/openapi/v3/entity/%s/%s?aspects=%s&systemMetadata=true",
 		spec.entityPath, url.PathEscape(spec.urn), url.QueryEscape(strings.Join(names, ",")))
@@ -343,7 +387,7 @@ func (c *Client) readPreservedAspects(ctx context.Context, spec aspectWriteSpec)
 	if err := json.NewDecoder(res.Body).Decode(&entity); err != nil {
 		return nil, fmt.Errorf("parsing %s response: %w", spec.what, err)
 	}
-	for _, p := range spec.preserved {
+	for _, p := range declared {
 		raw, ok := entity[p.aspect]
 		if !ok {
 			continue
@@ -365,13 +409,19 @@ func (c *Client) readPreservedAspects(ctx context.Context, spec aspectWriteSpec)
 		if aspect.Value == nil {
 			continue
 		}
-		if aspect.SystemMetadata.Version == "" {
-			return nil, &AspectVersionUnavailableError{URN: spec.urn, Aspect: p.aspect}
+		version := aspect.SystemMetadata.Version
+		if version == "" {
+			// A row last written before DataHub 0.14 has no stored version.
+			// The server's ConditionalWriteValidator resolves such a row
+			// to max(1, rowVersion), and the latest row is version 0, so
+			// "1" is what it will compare against. A server with no
+			// validator ignores the header, so "1" costs nothing there.
+			version = legacyAspectVersion
 		}
 		for _, k := range p.managed {
 			delete(aspect.Value, k)
 		}
-		out[p.aspect] = preservedAspect{name: p.aspect, fields: aspect.Value, version: aspectVersion(aspect.SystemMetadata.Version)}
+		out[p.aspect] = preservedAspect{name: p.aspect, fields: aspect.Value, version: aspectVersion(version)}
 	}
 	return out, nil
 }
@@ -430,11 +480,22 @@ func (c *Client) postAspects(ctx context.Context, spec aspectWriteSpec, body []m
 		return nil, fmt.Errorf("DataHub rejected the request (HTTP %d) writing %s", res.StatusCode, spec.urn)
 	case res.StatusCode == http.StatusPreconditionFailed,
 		res.StatusCode == http.StatusInternalServerError && looksLikeVersionConflict(string(respBody)):
-		message := conflictMessage(respBody)
+		// The server answers 412 whenever a precondition failure is among
+		// the validation failures, not only when it is the sole one. Only
+		// a body that names the versions is a conflict worth retrying;
+		// anything else is surfaced as it is, so a real validation error
+		// riding along with the precondition is not retried into silence.
+		// Parse the whole message: the server dumps the rejected record
+		// before the verdict, so the versions sit past any display limit.
+		full := conflictMessage(respBody)
+		expected, actual, aspect := parseVersionConflict(full, declared)
+		if expected == "" || actual == "" {
+			break
+		}
+		message := trimBody([]byte(full))
 		if spec.createOnly {
 			return nil, &EntityExistsError{URN: spec.urn, What: spec.what, Message: message}
 		}
-		expected, actual, aspect := parseVersionConflict(message, declared)
 		if aspect == "" && len(declared) == 1 {
 			aspect = declared[0]
 		}
@@ -451,20 +512,25 @@ func (c *Client) postAspects(ctx context.Context, spec aspectWriteSpec, body []m
 
 // conflictMessage pulls the server's message out of a 412 body, which is
 // {"error":"Precondition Error","message":"..."}, falling back to the body.
+// It is returned whole; callers trim what they show.
 func conflictMessage(body []byte) string {
 	var e struct {
 		Message string `json:"message"`
 	}
 	if json.Unmarshal(body, &e) == nil && e.Message != "" {
-		return trimBody([]byte(e.Message))
+		return strings.TrimSpace(e.Message)
 	}
-	return trimBody(body)
+	return strings.TrimSpace(string(body))
 }
 
+// trimBody shortens a server message for display, keeping its start and its
+// end: DataHub's validation messages put the verdict last, after a dump of
+// the rejected record.
 func trimBody(b []byte) string {
 	s := strings.TrimSpace(string(b))
-	if len(s) > 600 {
-		return s[:600] + "..."
+	const keep = 300
+	if len(s) > 2*keep+5 {
+		return s[:keep] + " ... " + s[len(s)-keep:]
 	}
 	return s
 }

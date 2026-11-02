@@ -56,12 +56,16 @@ func (e *VersionConflictError) Error() string {
 // Is lets errors.Is(err, ErrVersionConflict) match.
 func (e *VersionConflictError) Is(target error) bool { return target == ErrVersionConflict }
 
-// EntityExistsError is the 412 a create-only write receives when the entity
-// it was told must not exist already does.
+// EntityExistsError is what a create-only write returns when the entity it
+// was told must not exist already does: found by the read before the write,
+// or by the server's 412 when it appeared in between. SoftDeleted is set
+// when the read saw it soft-deleted, which is the usual reason an id is
+// taken by something the UI no longer shows.
 type EntityExistsError struct {
-	URN     string
-	What    string
-	Message string
+	URN         string
+	What        string
+	SoftDeleted bool
+	Message     string
 }
 
 func (e *EntityExistsError) Error() string {
@@ -69,24 +73,16 @@ func (e *EntityExistsError) Error() string {
 	if what == "" {
 		what = "an entity"
 	}
-	s := fmt.Sprintf("%s already exists at %s; import it with terraform import, or choose another id", what, e.URN)
+	var s string
+	if e.SoftDeleted {
+		s = fmt.Sprintf("%s already exists at %s, soft-deleted; restore it in DataHub and import it with terraform import, or choose another id", what, e.URN)
+	} else {
+		s = fmt.Sprintf("%s already exists at %s; import it with terraform import, or choose another id", what, e.URN)
+	}
 	if e.Message != "" {
 		s += ". DataHub said: " + e.Message
 	}
 	return s
-}
-
-// AspectVersionUnavailableError means the read of an aspect returned it
-// without systemMetadata.version, so no version precondition can be formed
-// and the provider refused to write it unconditionally.
-type AspectVersionUnavailableError struct {
-	URN    string
-	Aspect string
-}
-
-func (e *AspectVersionUnavailableError) Error() string {
-	return fmt.Sprintf("DataHub returned %s for %s without systemMetadata.version, so the provider cannot write it with a "+
-		"version precondition (If-Version-Match) and did not write it. Conditional writes need DataHub v1.0.0 or later", e.Aspect, e.URN)
 }
 
 // RetryAfterError is a 429 or 503 from DataHub. After is the server's

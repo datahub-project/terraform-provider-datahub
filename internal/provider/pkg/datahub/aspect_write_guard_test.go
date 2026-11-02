@@ -6,7 +6,6 @@ package datahub
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -435,6 +434,11 @@ func (g *aspectGuard) version(aspect string) string {
 	if g.absent[aspect] {
 		return "-1"
 	}
+	if g.noVersion {
+		// A row with no stored version resolves to max(1, rowVersion) on
+		// the server, and the latest row is 0.
+		return "1"
+	}
 	return strconv.Itoa(g.seededVersion(aspect))
 }
 
@@ -565,6 +569,18 @@ func (g *aspectGuard) servePost(w http.ResponseWriter, r *http.Request) {
 		failure = "forced by the guard"
 		if g.alwaysBody != "" {
 			failure = g.alwaysBody
+		} else if status == http.StatusPreconditionFailed {
+			// A forced conflict still carries the versions, as the server's
+			// does; a 412 without them is deliberately not a conflict.
+			for _, rec := range batch {
+				if want, ok := rec.Headers["If-Version-Match"]; ok {
+					n, _ := strconv.Atoi(want)
+					failure = fmt.Sprintf("Failed to validate MCP due to: ValidationExceptionCollection{EntityAspect:(%s,%s) Exceptions: "+
+						"[AspectValidationException(changeType=UPSERT, entityUrn=%s, aspectName=%s, subType=PRECONDITION, "+
+						"msg=Expected version %s, actual version %d)]}", rec.URN, rec.Aspect, rec.URN, rec.Aspect, want, n+2)
+					break
+				}
+			}
 		}
 	}
 	for i := range batch {
@@ -802,21 +818,23 @@ func TestOpenAPIAspectWritesStopOnFailedRead(t *testing.T) {
 					t.Errorf("reading %s failed, but the writer still sent it", aspect)
 				}
 			})
-			// A server that serves the aspect without systemMetadata.version
-			// cannot be written to conditionally. The writer must refuse rather
-			// than fall back to an unconditional write.
-			t.Run(name+"/"+aspect+"/no_version", func(t *testing.T) {
+			// An aspect last written before DataHub 0.14 is served without
+			// systemMetadata.version. The server's validator resolves such a
+			// row to "1" (max(1, rowVersion) with the latest row at 0), so
+			// the writer must send exactly that, not refuse and not write
+			// unconditionally.
+			t.Run(name+"/"+aspect+"/legacy_no_version", func(t *testing.T) {
 				g := newAspectGuard(t)
 				g.noVersion = true
-				err := w.write(t.Context(), newTestClient(t, g.Server))
-				var unavailable *AspectVersionUnavailableError
-				if !errors.As(err, &unavailable) {
-					t.Errorf("the read of %s carried no systemMetadata.version; want *AspectVersionUnavailableError, got %v", aspect, err)
-				} else if !strings.Contains(err.Error(), "systemMetadata.version") || !strings.Contains(err.Error(), "did not write it") {
-					t.Errorf("the refusal should say what was missing and that nothing was written: %v", err)
+				if err := w.write(t.Context(), newTestClient(t, g.Server)); err != nil {
+					t.Fatalf("a legacy aspect without a stored version must still be writable: %v", err)
 				}
-				if _, ok := g.sent()[aspect]; ok {
-					t.Errorf("the read of %s carried no version, but the writer still sent it", aspect)
+				p, ok := g.sent()[aspect]
+				if !ok {
+					t.Fatalf("%s was never sent", aspect)
+				}
+				if got := p.Headers["If-Version-Match"]; got != legacyAspectVersion {
+					t.Errorf("legacy %s sent If-Version-Match %q, want %q (the server's fallback for a row with no stored version)", aspect, got, legacyAspectVersion)
 				}
 			})
 		}

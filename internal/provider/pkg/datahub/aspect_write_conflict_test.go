@@ -5,6 +5,7 @@ package datahub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -278,11 +279,79 @@ func TestAspectWriteCreateOnlyReportsExisting(t *testing.T) {
 	if !strings.Contains(err.Error(), "already exists") || !strings.Contains(err.Error(), "terraform import") {
 		t.Errorf("error should say the property exists and how to adopt it: %v", err)
 	}
-	if posts := g.postsOf("propertyDefinition"); len(posts) != 1 || posts[0].Headers["If-Version-Match"] != "-1" {
-		t.Errorf("create-only must POST exactly once with If-Version-Match -1 and never retry: %+v", posts)
+	if posts := g.postsOf("propertyDefinition"); len(posts) != 0 {
+		t.Errorf("an existing property must be reported from the read, before anything is sent: %+v", posts)
 	}
-	if reads := g.readsOf("propertyDefinition"); len(reads) != 0 {
-		t.Errorf("create-only must not read first; the precondition is the existence check: %d reads", len(reads))
+	reads := g.readsOf("propertyDefinition")
+	if len(reads) != 1 {
+		t.Fatalf("create-only reads exactly once, got %d", len(reads))
+	}
+	if !strings.Contains(strings.Join(reads[0].Aspects, ","), "status") {
+		t.Errorf("the create-only read should ask for status too, to say whether the entity is soft-deleted: %v", reads[0].Aspects)
+	}
+	if exists.SoftDeleted || strings.Contains(err.Error(), "soft-deleted") {
+		t.Errorf("a live entity must not be reported as soft-deleted: %v", err)
+	}
+}
+
+func TestAspectWriteCreateOnlyNamesSoftDeleted(t *testing.T) {
+	g := newAspectGuard(t)
+	g.mu.Lock()
+	g.written["status"] = json.RawMessage(`{"value":{"removed":true}}`)
+	g.mu.Unlock()
+	c := newTestClient(t, g.Server)
+	_, err := c.CreateStructuredProperty(t.Context(), CreateStructuredPropertyInput{
+		ID: "io.gone", ValueType: "string", EntityTypes: []string{"dataset"},
+	})
+	var exists *EntityExistsError
+	if !errors.As(err, &exists) || !exists.SoftDeleted {
+		t.Fatalf("want *EntityExistsError with SoftDeleted, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "soft-deleted") || !strings.Contains(err.Error(), "restore it") {
+		t.Errorf("the message should say the property is soft-deleted and how to recover: %v", err)
+	}
+}
+
+// TestAspectWriteCreateOnlyRacedIsStillReported covers the window the read
+// cannot close: the entity appears between the create's read and its write,
+// so the server's "-1" precondition fails. That is the existence check that
+// a server without the validator cannot give, and it is never retried.
+func TestAspectWriteCreateOnlyRacedIsStillReported(t *testing.T) {
+	fastRetry(t)
+	g := newAspectGuard(t)
+	g.absent["propertyDefinition"] = true
+	g.absent["structuredPropertySettings"] = true
+	g.bumpOnGet["propertyDefinition"] = 1 // appears right after the read
+	c := newTestClient(t, g.Server)
+	_, err := c.CreateStructuredProperty(t.Context(), CreateStructuredPropertyInput{
+		ID: "io.raced", ValueType: "string", EntityTypes: []string{"dataset"},
+	})
+	var exists *EntityExistsError
+	if !errors.As(err, &exists) {
+		t.Fatalf("want *EntityExistsError from the 412, got %v", err)
+	}
+	if posts := g.postsOf("propertyDefinition"); len(posts) != 1 || posts[0].Status != http.StatusPreconditionFailed {
+		t.Errorf("want exactly one 412 POST and no retry: %+v", posts)
+	}
+}
+
+// TestAspectWrite412WithoutVersionsIsNotRetried pins the narrow reading of
+// 412: the server answers it whenever a precondition failure is among the
+// validation failures, so only a body naming the versions is a conflict.
+func TestAspectWrite412WithoutVersionsIsNotRetried(t *testing.T) {
+	fastRetry(t)
+	g := newAspectGuard(t)
+	g.always = http.StatusPreconditionFailed
+	g.alwaysBody = `{"error":"Precondition Error","message":"ValidationExceptionCollection{... some other validator failed ...}"}`
+	err := aspectWriters["SetDomainProperties"].write(t.Context(), newTestClient(t, g.Server))
+	if err == nil || errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("a 412 without expected/actual versions must surface as a plain error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTTP 412") || !strings.Contains(err.Error(), "some other validator failed") {
+		t.Errorf("the error should carry the status and the server's body: %v", err)
+	}
+	if posts := g.postsOf("domainProperties"); len(posts) != 1 {
+		t.Errorf("no retry on an unparseable 412; got %d POSTs", len(posts))
 	}
 }
 
@@ -296,6 +365,9 @@ func TestAspectWriteCreateOnlySucceedsWhenAbsent(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
+	}
+	if reads := g.readsOf("propertyDefinition"); len(reads) != 1 {
+		t.Errorf("create-only reads once before writing, got %d reads", len(reads))
 	}
 	if urn != "urn:li:structuredProperty:io.fresh" {
 		t.Errorf("urn = %q", urn)
@@ -404,6 +476,30 @@ func TestParseVersionConflict(t *testing.T) {
 	}
 	if !looksLikeVersionConflict(server) || looksLikeVersionConflict(`{"error":"boom"}`) {
 		t.Errorf("looksLikeVersionConflict misclassifies")
+	}
+}
+
+// TestAspectWriteConflictParsedFromLongMessage pins that the versions are
+// read from the whole server message: the real server dumps the rejected
+// record first, so for a large aspect the verdict sits well past any
+// display limit, and a conflict parsed from a trimmed message is missed.
+func TestAspectWriteConflictParsedFromLongMessage(t *testing.T) {
+	fastRetry(t)
+	g := newAspectGuard(t)
+	g.always = http.StatusPreconditionFailed
+	g.alwaysBody = `{"error":"Precondition Error","message":"Failed to validate MCP due to: ValidationExceptionCollection{EntityAspect:(urn:li:domain:guard,domainProperties) Exceptions: [AspectValidationException(item=ChangeItemImpl{changeType=UPSERT, recordTemplate={` +
+		strings.Repeat("customProperties={k=vvvvvvvvvvvvvvvvvvvvvvvv}, ", 40) +
+		`}, aspectName='domainProperties'}, changeType=UPSERT, entityUrn=urn:li:domain:guard, aspectName=domainProperties, subType=PRECONDITION, msg=Expected version 7, actual version 9)]}"}`
+	err := aspectWriters["SetDomainProperties"].write(t.Context(), newTestClient(t, g.Server))
+	var conflict *VersionConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("a long 412 message must still parse as a conflict, got %v", err)
+	}
+	if conflict.Expected != "7" || conflict.Actual != "9" {
+		t.Errorf("parsed expected=%q actual=%q", conflict.Expected, conflict.Actual)
+	}
+	if !strings.Contains(conflict.Message, "Expected version 7") || len(conflict.Message) > 700 {
+		t.Errorf("the shown message should keep the verdict and stay short: %d chars: %s", len(conflict.Message), conflict.Message)
 	}
 }
 
