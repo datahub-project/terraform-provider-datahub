@@ -6,6 +6,7 @@ package datahub
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -391,10 +392,16 @@ type aspectGuard struct {
 	// bumpOnGet maps an aspect to how many more times its version advances,
 	// and unmanagedConcurrentEdit is set, after a GET that serves it.
 	bumpOnGet map[string]int
-	// always, when non-zero, is the status every POST receives.
-	always int
-	posts  []recordedPost
-	gets   []recordedGet
+	// always, when non-zero, is the status every POST receives, with
+	// alwaysBody as its body when set and retryAfter as its Retry-After.
+	always     int
+	alwaysBody string
+	retryAfter string
+	// failGetOnce, when non-zero, is the status the next GET with
+	// systemMetadata receives instead of an answer.
+	failGetOnce int
+	posts       []recordedPost
+	gets        []recordedGet
 }
 
 // unmanagedConcurrentEdit is the field a simulated concurrent writer adds.
@@ -454,6 +461,15 @@ func (g *aspectGuard) serveGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	g.gets = append(g.gets, recordedGet{Aspects: asked, SystemMetadata: withMeta})
+	if withMeta && g.failGetOnce != 0 {
+		status := g.failGetOnce
+		g.failGetOnce = 0
+		if status == http.StatusServiceUnavailable || status == http.StatusTooManyRequests {
+			w.Header().Set("Retry-After", "0")
+		}
+		http.Error(w, "guard: injected read failure", status)
+		return
+	}
 	entity := map[string]any{"urn": "urn:li:guard:entity"}
 	if len(asked) == 0 {
 		for aspect := range g.written {
@@ -547,6 +563,9 @@ func (g *aspectGuard) servePost(w http.ResponseWriter, r *http.Request) {
 	if g.always != 0 {
 		status = g.always
 		failure = "forced by the guard"
+		if g.alwaysBody != "" {
+			failure = g.alwaysBody
+		}
 	}
 	for i := range batch {
 		batch[i].Status = status
@@ -558,10 +577,18 @@ func (g *aspectGuard) servePost(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Precondition Error", "message": failure})
 		return
 	case status >= http.StatusBadRequest:
-		if status == http.StatusServiceUnavailable {
-			w.Header().Set("Retry-After", "0")
+		if status == http.StatusServiceUnavailable || status == http.StatusTooManyRequests {
+			retryAfter := g.retryAfter
+			if retryAfter == "" {
+				retryAfter = "0"
+			}
+			w.Header().Set("Retry-After", retryAfter)
 		}
 		w.WriteHeader(status)
+		if g.alwaysBody != "" {
+			_, _ = w.Write([]byte(failure))
+			return
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": failure})
 		return
 	}
@@ -771,8 +798,11 @@ func TestOpenAPIAspectWritesStopOnFailedRead(t *testing.T) {
 				g := newAspectGuard(t)
 				g.noVersion = true
 				err := w.write(t.Context(), newTestClient(t, g.Server))
-				if err == nil {
-					t.Errorf("the read of %s carried no systemMetadata.version, but the writer wrote anyway", aspect)
+				var unavailable *AspectVersionUnavailableError
+				if !errors.As(err, &unavailable) {
+					t.Errorf("the read of %s carried no systemMetadata.version; want *AspectVersionUnavailableError, got %v", aspect, err)
+				} else if !strings.Contains(err.Error(), "systemMetadata.version") || !strings.Contains(err.Error(), "did not write it") {
+					t.Errorf("the refusal should say what was missing and that nothing was written: %v", err)
 				}
 				if _, ok := g.sent()[aspect]; ok {
 					t.Errorf("the read of %s carried no version, but the writer still sent it", aspect)

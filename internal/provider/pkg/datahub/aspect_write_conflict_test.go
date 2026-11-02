@@ -6,6 +6,7 @@ package datahub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -173,6 +174,16 @@ func TestAspectWriteConflictRetriesAreBounded(t *testing.T) {
 			posts := g.postsOf(aspect)
 			if len(posts) != aspectWriteRetry.maxAttempts {
 				t.Errorf("%d POSTs, want exactly maxAttempts (%d)", len(posts), aspectWriteRetry.maxAttempts)
+			}
+			// The diagnosis names the versions parsed from the server's message
+			// and how many retries were made.
+			if conflict.Expected == "" || conflict.Actual == "" || conflict.Expected == conflict.Actual {
+				t.Errorf("conflict versions not parsed from the 412 body: expected=%q actual=%q", conflict.Expected, conflict.Actual)
+			}
+			msg := conflict.Error()
+			want := fmt.Sprintf("read version %s but DataHub holds version %s", conflict.Expected, conflict.Actual)
+			if !strings.Contains(msg, want) || !strings.Contains(msg, fmt.Sprintf("retried %d times", aspectWriteRetry.maxAttempts-1)) {
+				t.Errorf("diagnosis lacks the versions or the retry count: %s", msg)
 			}
 			seen := map[string]bool{}
 			for _, p := range posts {
@@ -476,4 +487,155 @@ func sortedAspectNames(m map[string]aspectRule) []string {
 	}
 	sortStrings(out)
 	return out
+}
+
+// TestAspectWriteBackPressureOnReadIsRetried covers the read side of the
+// back-pressure budget: a 503 on the read-for-write is waited out and the
+// write then proceeds with the version the retried read served.
+func TestAspectWriteBackPressureOnReadIsRetried(t *testing.T) {
+	fastRetry(t)
+	g := newAspectGuard(t)
+	g.failGetOnce = http.StatusServiceUnavailable
+	if err := aspectWriters["SetDomainProperties"].write(t.Context(), newTestClient(t, g.Server)); err != nil {
+		t.Fatalf("a transient 503 on the read must be retried, got %v", err)
+	}
+	reads := 0
+	for _, get := range g.readsOf("domainProperties") {
+		if get.SystemMetadata {
+			reads++
+		}
+	}
+	if reads != 2 {
+		t.Errorf("%d reads with systemMetadata, want 2 (the failed one and the retry)", reads)
+	}
+	posts := g.postsOf("domainProperties")
+	if len(posts) != 1 || posts[0].Status != http.StatusOK {
+		t.Errorf("want exactly one successful POST after the retried read, got %+v", posts)
+	}
+}
+
+// TestBackoffHonoursRetryAfterAndCap pins the wait policy: a server's
+// Retry-After is used as given up to the cap, and without one the wait is
+// exponential from baseDelay with jitter, never above maxDelay.
+func TestBackoffHonoursRetryAfterAndCap(t *testing.T) {
+	saved := aspectWriteRetry
+	t.Cleanup(func() { aspectWriteRetry = saved })
+	aspectWriteRetry.baseDelay = 100 * time.Millisecond
+	aspectWriteRetry.maxDelay = 400 * time.Millisecond
+	aspectWriteRetry.retryAfterCap = 30 * time.Second
+
+	if got := backoff(5*time.Second, 1); got != 5*time.Second {
+		t.Errorf("Retry-After under the cap: %v, want 5s", got)
+	}
+	if got := backoff(time.Hour, 1); got != 30*time.Second {
+		t.Errorf("Retry-After over the cap: %v, want the 30s cap", got)
+	}
+	for n := 1; n <= 6; n++ {
+		for i := 0; i < 20; i++ {
+			got := backoff(0, n)
+			if got <= 0 || got > aspectWriteRetry.maxDelay {
+				t.Fatalf("attempt %d: backoff %v outside (0, %v]", n, got, aspectWriteRetry.maxDelay)
+			}
+		}
+	}
+	aspectWriteRetry.baseDelay = 0
+	if got := backoff(0, 1); got != 0 {
+		t.Errorf("zero base delay should give no wait, got %v", got)
+	}
+}
+
+// TestAspectWriteRetryAfterIsHonoured checks a real Retry-After reaches the
+// error a practitioner reads, and that 429 and 503 are described differently.
+func TestAspectWriteRetryAfterIsHonoured(t *testing.T) {
+	saved := aspectWriteRetry
+	t.Cleanup(func() { aspectWriteRetry = saved })
+	aspectWriteRetry.maxRetryAfterWaits = 1
+	aspectWriteRetry.retryAfterCap = 50 * time.Millisecond
+
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{
+		{http.StatusTooManyRequests, "rate-limited the write (HTTP 429)"},
+		{http.StatusServiceUnavailable, "temporarily unavailable (HTTP 503)"},
+	} {
+		t.Run(strconv.Itoa(tc.status), func(t *testing.T) {
+			g := newAspectGuard(t)
+			g.always = tc.status
+			g.retryAfter = "7"
+			start := time.Now()
+			err := aspectWriters["WriteOwnershipTypeInfo"].write(t.Context(), newTestClient(t, g.Server))
+			var ra *RetryAfterError
+			if !errors.As(err, &ra) {
+				t.Fatalf("want *RetryAfterError, got %v", err)
+			}
+			if ra.After != 7*time.Second {
+				t.Errorf("Retry-After parsed as %v, want 7s", ra.After)
+			}
+			if elapsed := time.Since(start); elapsed > 2*time.Second {
+				t.Errorf("the wait was not capped at retryAfterCap: %v", elapsed)
+			}
+			msg := err.Error()
+			for _, want := range []string{tc.want, "asked for 7s between retries", "waited 1 times and gave up", "Re-run terraform apply"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error lacks %q: %s", want, msg)
+				}
+			}
+		})
+	}
+}
+
+// TestAspectWriteForbiddenNamesPrivilege checks a 401/403 names the privilege
+// each writer declares, which is the only thing a practitioner can act on.
+func TestAspectWriteForbiddenNamesPrivilege(t *testing.T) {
+	privileges := map[string]string{
+		"UpsertCorpUser":             "MANAGE_USERS_AND_GROUPS",
+		"WriteDataProductProperties": "MANAGE_DATA_PRODUCTS",
+		"SetDomainProperties":        "MANAGE_DOMAINS",
+		"setGlossaryProperties":      "MANAGE_GLOSSARIES",
+		"NewDatasourceIngestion":     "MANAGE_INGESTION",
+		"WriteOwnershipTypeInfo":     "MANAGE_OWNERSHIP_TYPES",
+		"writeStructuredProperty":    "MANAGE_STRUCTURED_PROPERTIES",
+		"WriteTagProperties":         "MANAGE_TAGS",
+		"SetGlobalTags":              "", // no single privilege: it writes on many entity types
+	}
+	for _, name := range sortedWriterNames() {
+		t.Run(name, func(t *testing.T) {
+			privilege, known := privileges[name]
+			if !known {
+				t.Fatalf("%s has no entry in the privilege table; add the privilege its spec names", name)
+			}
+			g := newAspectGuard(t)
+			g.always = http.StatusForbidden
+			err := aspectWriters[name].write(t.Context(), newTestClient(t, g.Server))
+			if err == nil {
+				t.Fatal("a 403 must be an error")
+			}
+			if !strings.Contains(err.Error(), "HTTP 403") {
+				t.Errorf("error should carry the status: %v", err)
+			}
+			if privilege != "" && !strings.Contains(err.Error(), "needs the "+privilege+" privilege") {
+				t.Errorf("error should name the %s privilege: %v", privilege, err)
+			}
+		})
+	}
+}
+
+// TestAspectWriteExplainsRejection checks the per-writer rejection explainer
+// still reaches the error now that it is wired through the write spec.
+func TestAspectWriteExplainsRejection(t *testing.T) {
+	g := newAspectGuard(t)
+	g.always = http.StatusBadRequest
+	g.alwaysBody = `{"message":"Unable to verify Elasticsearch field mapping"}`
+	err := aspectWriters["writeStructuredProperty"].write(t.Context(), newTestClient(t, g.Server))
+	if err == nil || !strings.Contains(err.Error(), "What this usually means") || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Errorf("the structured property explainer did not annotate the rejection: %v", err)
+	}
+	g2 := newAspectGuard(t)
+	g2.always = http.StatusBadRequest
+	g2.alwaysBody = `{"message":"Unable to verify Elasticsearch field mapping"}`
+	err = aspectWriters["SetDomainProperties"].write(t.Context(), newTestClient(t, g2.Server))
+	if err == nil || strings.Contains(err.Error(), "What this usually means") {
+		t.Errorf("a writer without an explainer must pass the body through unchanged: %v", err)
+	}
 }
