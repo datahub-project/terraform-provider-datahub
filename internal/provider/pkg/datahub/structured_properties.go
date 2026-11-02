@@ -192,7 +192,7 @@ func allowedValuesToAspect(avs []AllowedValue) []map[string]any {
 //
 // def holds the propertyDefinition fields the provider does not manage, as
 // returned by unmanagedAspectFields; the managed fields are set on it.
-func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInput, def map[string]any) []map[string]any {
+func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInput, def, settings map[string]any) []map[string]any {
 	entityTypeURNs := make([]string, len(in.EntityTypes))
 	for i, et := range in.EntityTypes {
 		entityTypeURNs[i] = entityTypeURN(et)
@@ -245,16 +245,16 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 		if !s.ShowInAssetSummary {
 			hideWhenEmpty = false
 		}
-		entity["structuredPropertySettings"] = map[string]any{
-			"value": map[string]any{
-				"isHidden":                    s.IsHidden,
-				"showInSearchFilters":         s.ShowInSearchFilters,
-				"showInAssetSummary":          s.ShowInAssetSummary,
-				"hideInAssetSummaryWhenEmpty": hideWhenEmpty,
-				"showAsAssetBadge":            s.ShowAsAssetBadge,
-				"showInColumnsTable":          s.ShowInColumnsTable,
-			},
+		if settings == nil {
+			settings = map[string]any{}
 		}
+		settings["isHidden"] = s.IsHidden
+		settings["showInSearchFilters"] = s.ShowInSearchFilters
+		settings["showInAssetSummary"] = s.ShowInAssetSummary
+		settings["hideInAssetSummaryWhenEmpty"] = hideWhenEmpty
+		settings["showAsAssetBadge"] = s.ShowAsAssetBadge
+		settings["showInColumnsTable"] = s.ShowInColumnsTable
+		entity["structuredPropertySettings"] = map[string]any{"value": settings}
 	}
 
 	return []map[string]any{entity}
@@ -270,12 +270,21 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 // (allowedPlatforms, set in the DataHub UI; searchConfiguration; the created
 // stamp), and the write replaces the whole aspect. The current aspect is read
 // first and only the managed fields are replaced, so those survive an apply.
+// structuredPropertySettings is treated the same way when it is written: some
+// DataHub versions add settings this provider does not model.
 func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in CreateStructuredPropertyInput) error {
 	def, err := c.unmanagedAspectFields(ctx, "structuredproperty", urn, "propertyDefinition", managedPropertyDefinitionFields)
 	if err != nil {
 		return err
 	}
-	payload := structuredPropertyEntityPayload(urn, in, def)
+	var settings map[string]any
+	if in.Settings != nil {
+		settings, err = c.unmanagedAspectFields(ctx, "structuredproperty", urn, "structuredPropertySettings", managedStructuredPropertySettingsFields)
+		if err != nil {
+			return err
+		}
+	}
+	payload := structuredPropertyEntityPayload(urn, in, def, settings)
 	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/structuredproperty?async=false", payload)
 	if err != nil {
 		return fmt.Errorf("building structured property write request: %w", err)
@@ -308,6 +317,16 @@ func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in Cre
 var managedPropertyDefinitionFields = []string{
 	"qualifiedName", "valueType", "entityTypes", "cardinality", "immutable",
 	"version", "displayName", "description", "allowedValues", "typeQualifier",
+	"lastModified",
+}
+
+// managedStructuredPropertySettingsFields are the structuredPropertySettings
+// fields writeStructuredProperty owns; every other field is carried over as
+// read. lastModified is listed for the same reason as on propertyDefinition:
+// this write path does not refresh it.
+var managedStructuredPropertySettingsFields = []string{
+	"isHidden", "showInSearchFilters", "showInAssetSummary",
+	"hideInAssetSummaryWhenEmpty", "showAsAssetBadge", "showInColumnsTable",
 	"lastModified",
 }
 
