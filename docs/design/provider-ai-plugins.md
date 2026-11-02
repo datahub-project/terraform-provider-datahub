@@ -321,7 +321,7 @@ Terraform applies with `-parallelism=10` by default. Three `datahub_ai_plugin` r
 
 **Mitigation: serialise these calls in the client behind the existing `keyedMutex`, keyed on `urn:li:globalSettings:0`.** The primitive already exists (`pkg/datahub/keyedmutex.go`, added for the structured-property CAT-2568 workaround) and this is exactly its intended use. Wire it around `UpsertAiPlugin`, `DeleteAiPlugin`, and `DeleteOAuthAuthorizationServer`, and around any future `datahub_ai_settings` write.
 
-Be honest about the bound: an in-process mutex protects one `terraform apply` in one provider instance. It does **not** protect against a second concurrent apply, a concurrent UI edit, or a concurrent SDK script. Document that managing AI plugins from one place is the operating assumption, the same guidance `datahub_organization_display_preferences` gives for its singleton.
+Be honest about the bound: an in-process mutex protects one `terraform apply` in one provider instance. It does **not** protect against a second concurrent apply, a concurrent UI edit, or a concurrent SDK script. Document that managing AI plugins from one place is the operating assumption, the same guidance `datahub_organization_display_preferences` gives for its singleton. That bound applies only because these are GraphQL mutations that merge server-side; any write the provider makes itself against the aspect endpoint goes through `writeAspects` and carries `If-Version-Match`, which makes the cross-process case a hard 412 rather than a silent loss (`docs/design/conditional-writes.md`).
 
 The mutex is worth wiring regardless of what the probe shows, because the server source says the race is real and the cost is a few lines. The probe's value is a regression test, not the decision.
 
@@ -415,7 +415,7 @@ The upsert resolver overwrites `requiredScopes` only when the input list is non-
 
 **Probe.** One config with three `datahub_ai_plugin` resources, default parallelism, `terraform apply`. Then read `globalSettingsInfo.aiPluginSettings.plugins` via OpenAPI v3 and count entries. Repeat with `-parallelism=1` as a control. Repeat for concurrent destroys.
 
-**Impact.** If entries are lost, the `keyedMutex` is mandatory and the test becomes a permanent regression guard. If not observable, wire the mutex anyway (the server source documents the race; absence of observation is not absence of race) and keep the test as a canary. Either way the docs carry the "manage AI plugins from one place" guidance.
+**Impact.** If entries are lost, the `keyedMutex` is mandatory. If not observable, wire the mutex anyway (the server source documents the race; absence of observation is not absence of race). Either way the docs carry the "manage AI plugins from one place" guidance. Do not keep a timing-based probe as a CI regression guard: the in-process mock is too fast to lose a race and CI lost one exactly once (#97), so the probe is a one-off live measurement, and the permanent guard is the armed-conflict shape the mock version layer provides (`datahubtesting/aspect_versions.go`).
 
 ### 5. Do the cascades behave as the source says?
 

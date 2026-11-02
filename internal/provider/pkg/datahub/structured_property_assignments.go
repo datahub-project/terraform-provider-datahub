@@ -112,8 +112,12 @@ func ValidateStructuredPropertyValues(valueType string, values []string) error {
 // fires these mutations in parallel at its default parallelism; without
 // serialization, multi-property assignments to one entity drop values.
 // Serializing per entity URN removes the race while leaving writes to different
-// entities fully parallel. Remove this workaround once CAT-2568 is fixed
-// server-side (atomic merge or optimistic-concurrency conflict).
+// entities fully parallel. The exit is not a server fix: these writes move
+// to v3 JSON PATCH on structuredProperties (template keyed by propertyUrn,
+// applied inside the server's write transaction), which needs neither this
+// lock nor a version precondition; see docs/design/conditional-writes.md.
+// A conditional write (If-Version-Match) cannot help here, because the
+// read-modify-write happens inside the GraphQL resolver.
 func (c *Client) lockEntityStructuredProps(entityURN string) func() {
 	return c.structuredPropLocks.lock(entityURN)
 }

@@ -89,7 +89,7 @@ func corpUserInfoMockServer(t *testing.T, urn string, stored *map[string]any) *h
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"urn":          urn,
-				"corpUserInfo": map[string]any{"value": *stored},
+				"corpUserInfo": map[string]any{"value": *stored, "systemMetadata": map[string]any{"version": "1"}},
 			})
 		}
 	}))

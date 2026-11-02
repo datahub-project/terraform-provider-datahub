@@ -204,75 +204,53 @@ func (c *Client) UpsertCorpUser(ctx context.Context, in UpsertCorpUserInput) (st
 
 	urn := "urn:li:corpuser:" + in.Username
 
-	infoValue, err := c.unmanagedAspectFields(ctx, "corpuser", urn, "corpUserInfo", managedCorpUserInfoFields)
-	if err != nil {
-		return "", err
-	}
-	if _, ok := infoValue["active"]; !ok {
-		infoValue["active"] = true
-	}
-	if in.DisplayName != "" {
-		infoValue["displayName"] = in.DisplayName
-	}
-	if in.FullName != "" {
-		infoValue["fullName"] = in.FullName
-	}
-	if in.Email != "" {
-		infoValue["email"] = in.Email
-	}
-	if in.Title != "" {
-		infoValue["title"] = in.Title
-	}
 	// Always include customProperties (even empty) so that clearing the map
 	// overwrites a previously-set value rather than leaving it in place. Both
 	// callers, corp_user and service_account, own custom_properties.
 	if in.CustomProperties == nil {
 		in.CustomProperties = map[string]string{}
 	}
-	infoValue["customProperties"] = in.CustomProperties
 
-	aspects := map[string]any{
-		"urn": urn,
-		"corpUserKey": map[string]any{
-			"value": map[string]any{
-				"username": in.Username,
-			},
-		},
-		"corpUserInfo": map[string]any{
-			"value": infoValue,
-		},
+	spec := aspectWriteSpec{
+		entityPath: "corpuser",
+		urn:        urn,
+		what:       "corp user",
+		preserved:  []preservedSpec{{aspect: "corpUserInfo", managed: managedCorpUserInfoFields}},
+		privilege:  "MANAGE_USERS_AND_GROUPS",
 	}
-	// Only write the subTypes aspect when requested (service accounts). Omitting
-	// it leaves an ordinary user's subTypes untouched.
-	if len(in.SubTypes) > 0 {
-		aspects["subTypes"] = map[string]any{
-			"value": map[string]any{
-				"typeNames": in.SubTypes,
-			},
+	_, err := c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		info := prev.get("corpUserInfo")
+		if _, ok := info.fields["active"]; !ok {
+			info.fields["active"] = true
 		}
-	}
+		if in.DisplayName != "" {
+			info.fields["displayName"] = in.DisplayName
+		}
+		if in.FullName != "" {
+			info.fields["fullName"] = in.FullName
+		}
+		if in.Email != "" {
+			info.fields["email"] = in.Email
+		}
+		if in.Title != "" {
+			info.fields["title"] = in.Title
+		}
+		info.fields["customProperties"] = in.CustomProperties
 
-	entity := []map[string]any{aspects}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/corpuser?async=false", entity)
+		entries := []aspectEntry{
+			ownedEntry("corpUserKey", map[string]any{"username": in.Username}),
+			info.entry(),
+		}
+		// Only write the subTypes aspect when requested (service accounts).
+		// Omitting it leaves an ordinary user's subTypes untouched.
+		if len(in.SubTypes) > 0 {
+			entries = append(entries, ownedEntry("subTypes", map[string]any{"typeNames": in.SubTypes}))
+		}
+		return entries, nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("building corpuser upsert request: %w", err)
+		return "", err
 	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("corpuser upsert request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return "", fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_USERS_AND_GROUPS privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return "", fmt.Errorf("unexpected HTTP %d from DataHub corpuser upsert API: %s", res.StatusCode, respBody)
-	}
-
 	return urn, nil
 }
 

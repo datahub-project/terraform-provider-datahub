@@ -178,45 +178,27 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 	// The write replaces the whole info aspect, which also holds source (how
 	// the source was created: UI, CLI or system). The read keeps that and any
 	// other field this write does not manage.
-	info, err := c.unmanagedAspectFields(ctx, "datahubingestionsource", payload[0].Urn,
-		"dataHubIngestionSourceInfo", managedIngestionSourceInfoFields)
-	if err != nil {
-		return nil, err
-	}
 	managed, err := json.Marshal(payload[0].DataHubIngestionSourceInfo.Value)
 	if err != nil {
 		return nil, fmt.Errorf("encoding ingestion source info: %w", err)
 	}
-	if err := json.Unmarshal(managed, &info); err != nil {
-		return nil, fmt.Errorf("encoding ingestion source info: %w", err)
+	spec := aspectWriteSpec{
+		entityPath: "datahubingestionsource",
+		urn:        payload[0].Urn,
+		what:       "ingestion source",
+		preserved:  []preservedSpec{{aspect: "dataHubIngestionSourceInfo", managed: managedIngestionSourceInfoFields}},
+		privilege:  "MANAGE_INGESTION",
 	}
-	entity := []map[string]any{{
-		"urn":                        payload[0].Urn,
-		"dataHubIngestionSourceKey":  payload[0].DataHubIngestionSourceKey,
-		"dataHubIngestionSourceInfo": map[string]any{"value": info},
-	}}
-
-	path := "/openapi/v3/entity/datahubingestionsource?async=false"
-	req, err := c.NewRequest(ctx, http.MethodPost, path, entity)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	respBody, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response body: %w", err)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf("unexpected status %s: %s", res.Status, respBody)
-	}
-
-	return respBody, nil
+	return c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		info := prev.get("dataHubIngestionSourceInfo")
+		if err := json.Unmarshal(managed, &info.fields); err != nil {
+			return nil, fmt.Errorf("encoding ingestion source info: %w", err)
+		}
+		return []aspectEntry{
+			ownedEntry("dataHubIngestionSourceKey", payload[0].DataHubIngestionSourceKey),
+			info.entry(),
+		}, nil
+	})
 }
 
 // Datahub endpoint used: GET /openapi/v3/entity/datahubingestionsource/{urn}.

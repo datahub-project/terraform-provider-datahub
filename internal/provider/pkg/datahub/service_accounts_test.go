@@ -82,7 +82,7 @@ func TestGetServiceAccountByURN(t *testing.T) {
 				"corpUserKey": map[string]any{"value": map[string]any{"username": "service_ci-bot"}},
 				"corpUserInfo": map[string]any{"value": map[string]any{
 					"displayName": "CI Bot", "title": "Automation", "active": true,
-				}},
+				}, "systemMetadata": map[string]any{"version": "1"}},
 			}
 			if len(subTypes) > 0 {
 				entity["subTypes"] = map[string]any{"value": map[string]any{"typeNames": subTypes}}
@@ -297,7 +297,13 @@ func TestServiceAccountSubtypePreservedAcrossCorpUserUpdate(t *testing.T) {
 		}
 		out := map[string]any{"urn": urn}
 		for k, v := range cur {
-			out[k] = v
+			// Serve the stored aspect as DataHub would: its value, at a
+			// version, without the headers the write carried.
+			var a map[string]any
+			_ = json.Unmarshal(v, &a)
+			delete(a, "headers")
+			a["systemMetadata"] = map[string]any{"version": "1"}
+			out[k] = a
 		}
 		_ = json.NewEncoder(w).Encode(out)
 	}))

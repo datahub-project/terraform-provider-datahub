@@ -191,8 +191,26 @@ func allowedValuesToAspect(avs []AllowedValue) []map[string]any {
 // values correctly. See Linear CAT-2551.
 //
 // def holds the propertyDefinition fields the provider does not manage, as
-// returned by unmanagedAspectFields; the managed fields are set on it.
+// read before the write; the managed fields are set on it. settings is the
+// same for structuredPropertySettings and is ignored when in.Settings is nil.
 func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInput, def, settings map[string]any) []map[string]any {
+	entity := map[string]any{
+		"urn":                urn,
+		"propertyDefinition": map[string]any{"value": def},
+	}
+	if in.Settings != nil {
+		if settings == nil {
+			settings = map[string]any{}
+		}
+		entity["structuredPropertySettings"] = map[string]any{"value": settings}
+	}
+	fillStructuredPropertyAspects(in, def, settings)
+	return []map[string]any{entity}
+}
+
+// fillStructuredPropertyAspects sets the managed propertyDefinition fields on
+// def and, when in.Settings is set, the managed settings fields on settings.
+func fillStructuredPropertyAspects(in CreateStructuredPropertyInput, def, settings map[string]any) {
 	entityTypeURNs := make([]string, len(in.EntityTypes))
 	for i, et := range in.EntityTypes {
 		entityTypeURNs[i] = entityTypeURN(et)
@@ -232,12 +250,7 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 		def["typeQualifier"] = map[string]any{"allowedTypes": allowedTypeURNs}
 	}
 
-	entity := map[string]any{
-		"urn":                urn,
-		"propertyDefinition": map[string]any{"value": def},
-	}
-
-	if in.Settings != nil {
+	if in.Settings != nil && settings != nil {
 		s := in.Settings
 		// Dependent field: when the property is not shown in the asset summary,
 		// hideInAssetSummaryWhenEmpty must be false (mirrors the server resolver).
@@ -245,19 +258,13 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 		if !s.ShowInAssetSummary {
 			hideWhenEmpty = false
 		}
-		if settings == nil {
-			settings = map[string]any{}
-		}
 		settings["isHidden"] = s.IsHidden
 		settings["showInSearchFilters"] = s.ShowInSearchFilters
 		settings["showInAssetSummary"] = s.ShowInAssetSummary
 		settings["hideInAssetSummaryWhenEmpty"] = hideWhenEmpty
 		settings["showAsAssetBadge"] = s.ShowAsAssetBadge
 		settings["showInColumnsTable"] = s.ShowInColumnsTable
-		entity["structuredPropertySettings"] = map[string]any{"value": settings}
 	}
-
-	return []map[string]any{entity}
 }
 
 // writeStructuredProperty writes the definition (and settings) aspect(s) via
@@ -272,38 +279,36 @@ func structuredPropertyEntityPayload(urn string, in CreateStructuredPropertyInpu
 // first and only the managed fields are replaced, so those survive an apply.
 // structuredPropertySettings is treated the same way when it is written: some
 // DataHub versions add settings this provider does not model.
-func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in CreateStructuredPropertyInput) error {
-	def, err := c.unmanagedAspectFields(ctx, "structuredproperty", urn, "propertyDefinition", managedPropertyDefinitionFields)
-	if err != nil {
-		return err
+//
+// createOnly makes the write a create: no read, and the write carries
+// If-Version-Match "-1" on both aspects, so an existing property is reported
+// (EntityExistsError) rather than overwritten, atomically on the server.
+func (c *Client) writeStructuredProperty(ctx context.Context, urn string, in CreateStructuredPropertyInput, createOnly bool) error {
+	spec := aspectWriteSpec{
+		entityPath: "structuredproperty",
+		urn:        urn,
+		what:       "structured property",
+		preserved:  []preservedSpec{{aspect: "propertyDefinition", managed: managedPropertyDefinitionFields}},
+		createOnly: createOnly,
+		privilege:  "MANAGE_STRUCTURED_PROPERTIES",
+		explain:    explainStructuredPropertyRejection,
 	}
-	var settings map[string]any
 	if in.Settings != nil {
-		settings, err = c.unmanagedAspectFields(ctx, "structuredproperty", urn, "structuredPropertySettings", managedStructuredPropertySettingsFields)
-		if err != nil {
-			return err
+		spec.preserved = append(spec.preserved, preservedSpec{aspect: "structuredPropertySettings", managed: managedStructuredPropertySettingsFields})
+	}
+	_, err := c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		def := prev.get("propertyDefinition")
+		entries := []aspectEntry{def.entry()}
+		var settingsFields map[string]any
+		if in.Settings != nil {
+			settings := prev.get("structuredPropertySettings")
+			settingsFields = settings.fields
+			entries = append(entries, settings.entry())
 		}
-	}
-	payload := structuredPropertyEntityPayload(urn, in, def, settings)
-	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/structuredproperty?async=false", payload)
-	if err != nil {
-		return fmt.Errorf("building structured property write request: %w", err)
-	}
-	res, err := c.Do(req)
-	if err != nil {
-		return fmt.Errorf("structured property write request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_STRUCTURED_PROPERTIES privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub structured property write API: %s",
-			res.StatusCode, explainStructuredPropertyRejection(string(respBody)))
-	}
-	return nil
+		fillStructuredPropertyAspects(in, def.fields, settingsFields)
+		return entries, nil
+	})
+	return err
 }
 
 // managedPropertyDefinitionFields are the propertyDefinition fields
@@ -349,18 +354,11 @@ func (c *Client) CreateStructuredProperty(ctx context.Context, in CreateStructur
 
 	urn := structuredPropertyURNPrefix + in.ID
 
-	// The OpenAPI write is an upsert, so guard against silently overwriting a
-	// property that already exists out-of-band (the GraphQL create used to
-	// reject this server-side).
-	existing, err := c.GetStructuredPropertyByURN(ctx, urn)
-	if err != nil {
-		return "", err
-	}
-	if existing != nil {
-		return "", fmt.Errorf("a structured property already exists with URN %s", urn)
-	}
-
-	if err := c.writeStructuredProperty(ctx, urn, in); err != nil {
+	// The OpenAPI write is an upsert, so the create carries a "must not
+	// exist" precondition: a property that already exists out-of-band is
+	// reported, not overwritten, and the check is atomic on the server (the
+	// GraphQL create used to reject this server-side).
+	if err := c.writeStructuredProperty(ctx, urn, in, true); err != nil {
 		return "", err
 	}
 	return urn, nil
@@ -493,7 +491,7 @@ func (c *Client) UpdateStructuredProperty(ctx context.Context, urn string, in Cr
 	if len(in.EntityTypes) == 0 {
 		return errors.New("entity_types is required and must not be empty")
 	}
-	return c.writeStructuredProperty(ctx, urn, in)
+	return c.writeStructuredProperty(ctx, urn, in, false)
 }
 
 // Settle-barrier tunables for DeleteStructuredProperty. Variables (not

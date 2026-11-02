@@ -29,6 +29,13 @@ type Client struct {
 	httpClient     *http.Client
 	cachedIdentity *MeIdentity
 
+	// The three keyed mutexes below guard GraphQL mutations that
+	// read-modify-write an aspect inside the server, which no client-side
+	// precondition can reach. Writes this client makes itself against the
+	// OpenAPI v3 aspect endpoint need no mutex: they go through writeAspects,
+	// which carries If-Version-Match and retries on a conflict (see
+	// aspect_write.go and docs/design/conditional-writes.md).
+	//
 	// structuredPropLocks serializes structuredProperties-aspect writes per
 	// target entity URN (CAT-2568 workaround; see lockEntityStructuredProps).
 	// The zero value is ready to use, so NewClient needs no explicit init.

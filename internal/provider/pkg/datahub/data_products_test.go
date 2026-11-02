@@ -36,7 +36,7 @@ func dataProductMockServer(t *testing.T, urn string, stored *map[string]any) *ht
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"urn":                   urn,
-				"dataProductProperties": map[string]any{"value": *stored},
+				"dataProductProperties": map[string]any{"value": *stored, "systemMetadata": map[string]any{"version": "1"}},
 			})
 		}
 	}))
@@ -149,12 +149,12 @@ func TestWriteDataProductPropertiesReadFailure(t *testing.T) {
 		hangup  bool // drop the connection instead of answering the GET
 		wantErr string
 	}{
-		{name: "connection_dropped", hangup: true, wantErr: "dataProductProperties read request failed"},
+		{name: "connection_dropped", hangup: true, wantErr: "data product read request failed"},
 		{name: "server_error", status: http.StatusInternalServerError, body: `{"error":"boom"}`, wantErr: "HTTP 500"},
 		{name: "bad_gateway", status: http.StatusBadGateway, body: "upstream down", wantErr: "HTTP 502"},
 		{name: "unauthorized", status: http.StatusUnauthorized, wantErr: "HTTP 401"},
 		{name: "forbidden", status: http.StatusForbidden, wantErr: "HTTP 403"},
-		{name: "malformed_body", status: http.StatusOK, body: `{"urn":`, wantErr: "parsing dataProductProperties response"},
+		{name: "malformed_body", status: http.StatusOK, body: `{"urn":`, wantErr: "parsing data product response"},
 		{name: "aspect_not_an_object", status: http.StatusOK, body: `{"urn":"` + urn + `","dataProductProperties":{"value":"oops"}}`, wantErr: "parsing dataProductProperties aspect"},
 	}
 

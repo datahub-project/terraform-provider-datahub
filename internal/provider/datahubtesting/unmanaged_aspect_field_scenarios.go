@@ -28,6 +28,10 @@ type UnmanagedFieldCase struct {
 // every field the provider does not model.
 const unmanagedSentinelField = "tfUnmanagedFieldSentinel"
 
+// concurrentEditField is the field a simulated concurrent writer adds between
+// the provider's read of an aspect and its write of it.
+const concurrentEditField = "tfConcurrentEditSentinel"
+
 // UnmanagedFieldCases returns one case per resource that preserves the fields
 // it does not manage on an OpenAPI v3 aspect write. base must already be
 // target-scoped (tg.Name). It mirrors the preserved aspects classified in
@@ -145,9 +149,12 @@ resource "datahub_ingestion_source" "test" {
 
 // UnmanagedFieldSurvivesUpdateSteps creates the resource, seeds a field it
 // does not manage on its aspect, then applies a change that makes it write
-// the aspect again, and asserts the field survived. The second step's
-// automatic empty-plan check also proves the seeded field causes no drift.
-// Mock-only: it seeds through /test-control/seed-unmanaged-field.
+// the aspect again, and asserts the field survived and that the write carried
+// the version it read. A third step arms a concurrent edit of the aspect
+// between the provider's next read and write: the write must meet a 412,
+// re-read, and retry, so that both the concurrent edit and the seeded field
+// survive. Each step's automatic empty-plan check also proves the foreign
+// fields cause no drift. Mock-only: it seeds and arms through /test-control.
 func UnmanagedFieldSurvivesUpdateSteps(c UnmanagedFieldCase) []resource.TestStep {
 	return []resource.TestStep{
 		{Config: c.Create},
@@ -156,7 +163,21 @@ func UnmanagedFieldSurvivesUpdateSteps(c UnmanagedFieldCase) []resource.TestStep
 				SeedUnmanagedAspectField(os.Getenv("DATAHUB_GMS_URL"), c.URN, c.Aspect, unmanagedSentinelField, "keep-me")
 			},
 			Config: c.Update,
-			Check:  CheckUnmanagedAspectField(c.URN, c.Aspect, unmanagedSentinelField, "keep-me"),
+			Check: resource.ComposeTestCheckFunc(
+				CheckUnmanagedAspectField(c.URN, c.Aspect, unmanagedSentinelField, "keep-me"),
+				CheckAspectWriteVersioned(c.URN, c.Aspect),
+			),
+		},
+		{
+			PreConfig: func() {
+				ArmConcurrentAspectWrite(os.Getenv("DATAHUB_GMS_URL"), c.URN, c.Aspect, concurrentEditField, "theirs")
+			},
+			Config: c.Create,
+			Check: resource.ComposeTestCheckFunc(
+				CheckAspectWriteRecovered(c.URN, c.Aspect),
+				CheckUnmanagedAspectField(c.URN, c.Aspect, concurrentEditField, "theirs"),
+				CheckUnmanagedAspectField(c.URN, c.Aspect, unmanagedSentinelField, "keep-me"),
+			),
 		},
 	}
 }

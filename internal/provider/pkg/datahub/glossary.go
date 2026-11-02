@@ -245,55 +245,37 @@ func (c *Client) setGlossaryProperties(ctx context.Context, entityPath, aspectNa
 		return errors.New("name is required")
 	}
 
-	infoValue, err := c.unmanagedAspectFields(ctx, entityPath, urn, aspectName, managedGlossaryInfoFields)
-	if err != nil {
-		return err
-	}
-	infoValue["name"] = name
-	// definition is a required field of the info aspect; always send it (even
-	// empty) so the aspect write validates.
-	infoValue["definition"] = definition
-	if parentNode != "" {
-		infoValue["parentNode"] = parentNode
-	}
-	for k, v := range defaults {
-		if _, ok := infoValue[k]; !ok {
-			infoValue[k] = v
-		}
-	}
 	// Always include customProperties (even empty) so that clearing the map
 	// overwrites a previously-set value rather than leaving it in place.
 	if customProperties == nil {
 		customProperties = map[string]string{}
 	}
-	infoValue["customProperties"] = customProperties
 
-	entity := map[string]any{
-		"urn":      urn,
-		aspectName: map[string]any{"value": infoValue},
+	spec := aspectWriteSpec{
+		entityPath: entityPath,
+		urn:        urn,
+		what:       "glossary " + strings.TrimPrefix(entityPath, "glossary"),
+		preserved:  []preservedSpec{{aspect: aspectName, managed: managedGlossaryInfoFields}},
+		privilege:  "MANAGE_GLOSSARIES",
 	}
-	payload := []map[string]any{entity}
-
-	path := fmt.Sprintf("/openapi/v3/entity/%s?async=false", entityPath)
-	req, err := c.NewRequest(ctx, http.MethodPost, path, payload)
-	if err != nil {
-		return fmt.Errorf("building glossary properties write request: %w", err)
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return fmt.Errorf("glossary properties write request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_GLOSSARIES privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub glossary write API: %s", res.StatusCode, respBody)
-	}
-	return nil
+	_, err := c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		info := prev.get(aspectName)
+		info.fields["name"] = name
+		// definition is a required field of the info aspect; always send it
+		// (even empty) so the aspect write validates.
+		info.fields["definition"] = definition
+		if parentNode != "" {
+			info.fields["parentNode"] = parentNode
+		}
+		for k, v := range defaults {
+			if _, ok := info.fields[k]; !ok {
+				info.fields[k] = v
+			}
+		}
+		info.fields["customProperties"] = customProperties
+		return []aspectEntry{info.entry()}, nil
+	})
+	return err
 }
 
 // managedGlossaryInfoFields are the glossaryNodeInfo/glossaryTermInfo fields

@@ -37,7 +37,7 @@ func glossaryInfoMockServer(t *testing.T, urn, aspectName string, stored *map[st
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"urn":      urn,
-				aspectName: map[string]any{"value": *stored},
+				aspectName: map[string]any{"value": *stored, "systemMetadata": map[string]any{"version": "1"}},
 			})
 		}
 	}))

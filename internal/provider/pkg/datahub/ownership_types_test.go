@@ -32,7 +32,7 @@ func TestWriteOwnershipTypeInfoCreated(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.Method == http.MethodGet {
 					_ = json.NewEncoder(w).Encode(map[string]any{
-						"ownershipTypeInfo": map[string]any{"value": tc.info},
+						"ownershipTypeInfo": map[string]any{"value": tc.info, "systemMetadata": map[string]any{"version": "1"}},
 					})
 					return
 				}
