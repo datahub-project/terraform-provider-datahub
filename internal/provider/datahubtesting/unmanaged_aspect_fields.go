@@ -204,18 +204,7 @@ func (u *unmanagedAspectFields) handleSeedUnmanagedField(w http.ResponseWriter, 
 			http.Error(w, "urn, aspect and field are required", http.StatusBadRequest)
 			return
 		}
-		u.mu.Lock()
-		if u.fields == nil {
-			u.fields = map[string]map[string]map[string]any{}
-		}
-		if u.fields[req.URN] == nil {
-			u.fields[req.URN] = map[string]map[string]any{}
-		}
-		if u.fields[req.URN][req.Aspect] == nil {
-			u.fields[req.URN][req.Aspect] = map[string]any{}
-		}
-		u.fields[req.URN][req.Aspect][req.Field] = req.Value
-		u.mu.Unlock()
+		u.seed(req.URN, req.Aspect, req.Field, req.Value)
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodGet:
 		q := r.URL.Query()
@@ -231,6 +220,23 @@ func (u *unmanagedAspectFields) handleSeedUnmanagedField(w http.ResponseWriter, 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// seed records field=value on the aspect of urn, as the test-control endpoint
+// does, for other overlays that stand in for a concurrent writer.
+func (u *unmanagedAspectFields) seed(urn, aspect, field string, value any) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.fields == nil {
+		u.fields = map[string]map[string]map[string]any{}
+	}
+	if u.fields[urn] == nil {
+		u.fields[urn] = map[string]map[string]any{}
+	}
+	if u.fields[urn][aspect] == nil {
+		u.fields[urn][aspect] = map[string]any{}
+	}
+	u.fields[urn][aspect][field] = value
 }
 
 // SeedUnmanagedAspectField seeds field on the aspect of urn in the mock at

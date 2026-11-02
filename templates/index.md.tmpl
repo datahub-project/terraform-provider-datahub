@@ -11,6 +11,14 @@ description: |-
 
 **Release notes:** per-version changes are published on [GitHub Releases](https://github.com/datahub-project/terraform-provider-datahub/releases).
 
+## Concurrent Edits
+
+A resource owns what it declares: a list attribute such as a resource's tags is written whole, and anything added to it outside Terraform is removed on the next apply, as its documentation says. Fields a resource does not model are left as they are: the provider reads the aspect before writing it and replaces only the fields it manages.
+
+That read-and-write is protected against edits made in between. The write carries the version the provider read, and DataHub refuses it (HTTP 412) if the aspect changed since, whether from the DataHub UI, the CLI, an ingestion run or another Terraform run; the provider then re-reads, merges again and retries. If the aspect keeps changing, the apply fails with a message naming the aspect and the versions involved; nothing is written in that case and running `terraform apply` again is safe. DataHub enforces this check from v0.14.0 (DataHub Cloud v0.3.5); before v1.0.0 the refusal arrives as a generic server error, which is still a failed write, never a silent one.
+
+The two resources that merge into a shared list rather than own it, `datahub_structured_property_assignment` and `datahub_entity_ownership`, use DataHub mutations that merge on the server, and the provider serialises its own writes to one entity; edits to the same entity from another process at the same moment are last-writer-wins there, as they are for the DataHub UI itself.
+
 {{ if .HasExamples -}}
 ## Example Usage
 

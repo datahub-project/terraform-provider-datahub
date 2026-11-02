@@ -11,8 +11,11 @@ import "sync"
 //
 // This is the minimal, standard "mutex-per-key" pattern -- equivalent to the
 // SDKv2 helper/mutexkv.MutexKV, which terraform-plugin-framework does not
-// provide -- and is used here to serialize structured-property writes per target
-// entity (CAT-2568 workaround; see Client.lockEntityStructuredProps).
+// provide -- and is used here to serialize, within one provider process, the
+// GraphQL mutations that read-modify-write an aspect server-side (see
+// Client.lockEntityStructuredProps). It is an interim guard for those paths
+// only: OpenAPI v3 aspect writes are protected across processes by
+// If-Version-Match instead (aspect_write.go).
 type keyedMutex struct {
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex

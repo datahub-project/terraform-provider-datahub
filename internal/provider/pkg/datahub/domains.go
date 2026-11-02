@@ -240,53 +240,34 @@ func (c *Client) SetDomainProperties(ctx context.Context, urn, name, description
 		return errors.New("name is required")
 	}
 
-	// The read keeps fields this write does not manage, such as the created
-	// stamp the server sets when the domain is made.
-	propsValue, err := c.unmanagedAspectFields(ctx, "domain", urn, "domainProperties", managedDomainPropertiesFields)
-	if err != nil {
-		return err
-	}
-	propsValue["name"] = name
-	if description != "" {
-		propsValue["description"] = description
-	}
-	if parentDomain != "" {
-		propsValue["parentDomain"] = parentDomain
-	}
 	// Always include customProperties (even empty) so that clearing the map
 	// overwrites a previously-set value rather than leaving it in place.
 	if customProperties == nil {
 		customProperties = map[string]string{}
 	}
-	propsValue["customProperties"] = customProperties
 
-	entity := map[string]any{
-		"urn": urn,
-		"domainProperties": map[string]any{
-			"value": propsValue,
-		},
+	// The read keeps fields this write does not manage, such as the created
+	// stamp the server sets when the domain is made.
+	spec := aspectWriteSpec{
+		entityPath: "domain",
+		urn:        urn,
+		what:       "domain",
+		preserved:  []preservedSpec{{aspect: "domainProperties", managed: managedDomainPropertiesFields}},
+		privilege:  "MANAGE_DOMAINS",
 	}
-	payload := []map[string]any{entity}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/domain?async=false", payload)
-	if err != nil {
-		return fmt.Errorf("building domain properties write request: %w", err)
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return fmt.Errorf("domain properties write request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_DOMAINS privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub domain write API: %s", res.StatusCode, respBody)
-	}
-	return nil
+	_, err := c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		props := prev.get("domainProperties")
+		props.fields["name"] = name
+		if description != "" {
+			props.fields["description"] = description
+		}
+		if parentDomain != "" {
+			props.fields["parentDomain"] = parentDomain
+		}
+		props.fields["customProperties"] = customProperties
+		return []aspectEntry{props.entry()}, nil
+	})
+	return err
 }
 
 // MoveDomain reparents a domain via the moveDomain mutation. Pass "" for

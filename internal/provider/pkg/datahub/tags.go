@@ -223,34 +223,11 @@ func (c *Client) WriteTagProperties(ctx context.Context, urn, name, description,
 		propsValue["colorHex"] = colorHex
 	}
 
-	payload := []map[string]any{
-		{
-			"urn": urn,
-			"tagProperties": map[string]any{
-				"value": propsValue,
-			},
-		},
-	}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/tag?async=false", payload)
-	if err != nil {
-		return fmt.Errorf("building tag properties write request: %w", err)
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return fmt.Errorf("tag properties write request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_TAGS privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub tag properties write API: %s", res.StatusCode, respBody)
-	}
-	return nil
+	spec := aspectWriteSpec{entityPath: "tag", urn: urn, what: "tag properties", privilege: "MANAGE_TAGS"}
+	_, err := c.writeAspects(ctx, spec, func(preservedAspects) ([]aspectEntry, error) {
+		return []aspectEntry{ownedEntry("tagProperties", propsValue)}, nil
+	})
+	return err
 }
 
 // DeleteTag hard-deletes a DataHub tag by URN via the deleteTag GraphQL

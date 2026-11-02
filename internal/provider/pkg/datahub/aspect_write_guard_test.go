@@ -6,6 +6,7 @@ package datahub
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -153,7 +154,7 @@ var aspectWriters = map[string]aspectWriter{
 			return c.writeStructuredProperty(ctx, "urn:li:structuredProperty:io.guard", CreateStructuredPropertyInput{
 				ID: "io.guard", ValueType: "string", EntityTypes: []string{"dataset"},
 				Settings: &StructuredPropertySettings{},
-			})
+			}, false)
 		},
 	},
 	"WriteTagProperties": {
@@ -266,23 +267,77 @@ func isPathVar(e ast.Expr, vars map[string]bool) bool {
 	return ok && vars[id.Name]
 }
 
-func TestEveryOpenAPIAspectWriteIsClassified(t *testing.T) {
+// aspectWriteCallers returns the name of every function in this package's
+// non-test sources that calls writeAspects, which is where every aspect
+// write must go through.
+func aspectWriteCallers(t *testing.T) map[string]string {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("listing package sources: %v", err)
+	}
+	fset := token.NewFileSet()
+	found := map[string]string{}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		f, err := parser.ParseFile(fset, name, src, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", name, err)
+		}
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "writeAspects" {
+					found[fn.Name.Name] = fset.Position(call.Pos()).String()
+				}
+				return true
+			})
+		}
+	}
+	return found
+}
+
+// TestOnlyTheSharedBuilderPostsAspects pins the one function that may POST to
+// the OpenAPI v3 entity endpoint. Any other is a write that bypasses the
+// version precondition and the retry.
+func TestOnlyTheSharedBuilderPostsAspects(t *testing.T) {
 	found := openAPIAspectWriteFuncs(t)
+	delete(found, "postAspects")
+	for name, pos := range found {
+		t.Errorf("%s (%s) POSTs to the OpenAPI v3 entity endpoint directly; route it through "+
+			"writeAspects, which carries If-Version-Match for every aspect it read and retries on a conflict", name, pos)
+	}
+}
+
+func TestEveryOpenAPIAspectWriteIsClassified(t *testing.T) {
+	found := aspectWriteCallers(t)
 	if len(found) == 0 {
-		t.Fatal("found no OpenAPI aspect writes at all; the source scan is broken, not the package clean")
+		t.Fatal("found no writeAspects callers at all; the source scan is broken, not the package clean")
 	}
 	for name, pos := range found {
 		if _, ok := aspectWriters[name]; !ok {
-			t.Errorf("%s (%s) POSTs to the OpenAPI v3 entity endpoint but is not in aspectWriters. "+
+			t.Errorf("%s (%s) writes aspects but is not in aspectWriters. "+
 				"An aspect write replaces the whole stored aspect: classify each aspect it sends as "+
-				"preserved (read it with unmanagedAspectFields and replace only the managed fields) "+
+				"preserved (declared in the spec, so it is read and written with its version) "+
 				"or ownedWhole, with the reason nothing else can be lost.", name, pos)
 		}
 	}
 	for name := range aspectWriters {
 		if _, ok := found[name]; !ok {
-			t.Errorf("aspectWriters classifies %s, which no longer POSTs to the OpenAPI v3 entity "+
-				"endpoint; remove the entry", name)
+			t.Errorf("aspectWriters classifies %s, which no longer calls writeAspects; remove the entry", name)
 		}
 	}
 }
@@ -291,69 +346,312 @@ func TestEveryOpenAPIAspectWriteIsClassified(t *testing.T) {
 // field the provider does not model.
 const unmanagedSentinel = "tfAspectWriteGuardSentinel"
 
-// aspectWriteGuardServer records the body of every POST and serves each
-// written aspect back on GET, as DataHub does, so writers that read their write
-// back to confirm it are satisfied. An aspect not yet written holds only
-// unmanagedSentinel. Anything else gets an empty JSON array, which every writer
-// accepts as a successful write.
-func aspectWriteGuardServer(t *testing.T, posts *[][]map[string]json.RawMessage) *httptest.Server {
-	t.Helper()
-	var mu sync.Mutex
-	written := map[string]json.RawMessage{}
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.Method {
-		case http.MethodGet:
-			mu.Lock()
-			entity := map[string]any{}
-			if r.URL.Query().Get("aspects") == "" {
-				// A whole-entity read returns everything written so far.
-				for aspect, raw := range written {
-					entity[aspect] = raw
-				}
-			}
-			for _, aspect := range strings.Split(r.URL.Query().Get("aspects"), ",") {
-				if aspect == "" {
-					continue
-				}
-				if raw, ok := written[aspect]; ok {
-					entity[aspect] = raw
-				} else {
-					entity[aspect] = map[string]any{"value": map[string]any{unmanagedSentinel: "keep-me"}}
-				}
-			}
-			mu.Unlock()
-			_ = json.NewEncoder(w).Encode(entity)
-		case http.MethodPost:
-			var body []map[string]json.RawMessage
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Errorf("decoding POST %s: %v", r.URL.Path, err)
-			}
-			mu.Lock()
-			*posts = append(*posts, body)
-			for _, entity := range body {
-				for aspect, raw := range entity {
-					if aspect != "urn" {
-						written[aspect] = raw
-					}
-				}
-			}
-			mu.Unlock()
-			_, _ = w.Write([]byte("[]"))
-		default:
-			_, _ = w.Write([]byte("[]"))
-		}
-	}))
+// recordedPost is one aspect of one POST the guard server received.
+type recordedPost struct {
+	URN    string
+	Aspect string
+	Raw    json.RawMessage
+	Value  map[string]any
+	// Headers is the per-aspect "headers" object, nil when absent.
+	Headers map[string]string
+	// HasSystemMetadata reports whether the aspect echoed a systemMetadata
+	// object, which a writer must never do: the server keeps a sent runId,
+	// which would tie the provider's write to an ingestion run.
+	HasSystemMetadata bool
+	// Status is what the guard answered.
+	Status int
 }
 
-func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
+// recordedGet is one entity GET the guard server received.
+type recordedGet struct {
+	Aspects        []string
+	SystemMetadata bool
+}
+
+// aspectGuard is the server every aspect writer is run against. It behaves
+// like DataHub for the parts of the OpenAPI v3 surface the writers use: GET
+// serves each stored aspect, with systemMetadata.version when asked; POST
+// checks each aspect's If-Version-Match against the stored version, answers
+// 412 in the server's shape and stores nothing from the batch on a mismatch,
+// and otherwise stores every aspect and advances its version. An aspect
+// nothing has written yet holds only unmanagedSentinel, at a version seeded
+// distinct from every other aspect's, so a writer that sends a constant or
+// cross-wires the versions of a two-aspect POST is caught.
+type aspectGuard struct {
+	*httptest.Server
+	mu       sync.Mutex
+	versions map[string]int
+	written  map[string]json.RawMessage
+	// absent aspects are left out of GET bodies (404 when nothing else was
+	// asked for) and expected at version "-1" on POST.
+	absent map[string]bool
+	// noVersion serves aspects without systemMetadata, as a server that
+	// predates aspect versions would.
+	noVersion bool
+	// bumpOnGet maps an aspect to how many more times its version advances,
+	// and unmanagedConcurrentEdit is set, after a GET that serves it.
+	bumpOnGet map[string]int
+	// always, when non-zero, is the status every POST receives, with
+	// alwaysBody as its body when set and retryAfter as its Retry-After.
+	always     int
+	alwaysBody string
+	retryAfter string
+	// failGetOnce, when non-zero, is the status the next GET with
+	// systemMetadata receives instead of an answer.
+	failGetOnce int
+	posts       []recordedPost
+	gets        []recordedGet
+}
+
+// unmanagedConcurrentEdit is the field a simulated concurrent writer adds.
+const unmanagedConcurrentEdit = "tfConcurrentEditSentinel"
+
+func newAspectGuard(t *testing.T) *aspectGuard {
+	t.Helper()
+	g := &aspectGuard{
+		versions:  map[string]int{},
+		written:   map[string]json.RawMessage{},
+		absent:    map[string]bool{},
+		bumpOnGet: map[string]int{},
+	}
+	g.Server = httptest.NewServer(http.HandlerFunc(g.serve))
+	t.Cleanup(g.Close)
+	return g
+}
+
+// seededVersion gives each aspect a distinct, non-trivial version the first
+// time it is asked about.
+func (g *aspectGuard) seededVersion(aspect string) int {
+	if v, ok := g.versions[aspect]; ok {
+		return v
+	}
+	v := 7 + 2*len(g.versions)
+	g.versions[aspect] = v
+	return v
+}
+
+func (g *aspectGuard) version(aspect string) string {
+	if g.absent[aspect] {
+		return "-1"
+	}
+	if g.noVersion {
+		// A row with no stored version resolves to max(1, rowVersion) on
+		// the server, and the latest row is 0.
+		return "1"
+	}
+	return strconv.Itoa(g.seededVersion(aspect))
+}
+
+func (g *aspectGuard) serve(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		g.serveGet(w, r)
+	case http.MethodPost:
+		g.servePost(w, r)
+	default:
+		_, _ = w.Write([]byte("[]"))
+	}
+}
+
+func (g *aspectGuard) serveGet(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	withMeta := r.URL.Query().Get("systemMetadata") == "true"
+	var asked []string
+	for _, aspect := range strings.Split(r.URL.Query().Get("aspects"), ",") {
+		if aspect != "" {
+			asked = append(asked, aspect)
+		}
+	}
+	g.gets = append(g.gets, recordedGet{Aspects: asked, SystemMetadata: withMeta})
+	if withMeta && g.failGetOnce != 0 {
+		status := g.failGetOnce
+		g.failGetOnce = 0
+		if status == http.StatusServiceUnavailable || status == http.StatusTooManyRequests {
+			w.Header().Set("Retry-After", "0")
+		}
+		http.Error(w, "guard: injected read failure", status)
+		return
+	}
+	entity := map[string]any{"urn": "urn:li:guard:entity"}
+	if len(asked) == 0 {
+		for aspect := range g.written {
+			asked = append(asked, aspect)
+		}
+	}
+	served := 0
+	for _, aspect := range asked {
+		if g.absent[aspect] {
+			continue
+		}
+		a := map[string]any{}
+		if raw, ok := g.written[aspect]; ok {
+			_ = json.Unmarshal(raw, &a)
+			delete(a, "headers")
+		} else {
+			a["value"] = map[string]any{unmanagedSentinel: "keep-me"}
+		}
+		if withMeta && !g.noVersion {
+			a["systemMetadata"] = map[string]any{"version": g.version(aspect)}
+		}
+		entity[aspect] = a
+		served++
+	}
+	if served == 0 && len(asked) > 0 {
+		http.NotFound(w, r)
+		return
+	}
+	for _, aspect := range asked {
+		if g.bumpOnGet[aspect] > 0 {
+			g.bumpOnGet[aspect]--
+			g.versions[aspect] = g.seededVersion(aspect) + 1
+			g.absent[aspect] = false
+			var a map[string]any
+			if raw, ok := g.written[aspect]; ok {
+				_ = json.Unmarshal(raw, &a)
+			} else {
+				a = map[string]any{"value": map[string]any{unmanagedSentinel: "keep-me"}}
+			}
+			value, _ := a["value"].(map[string]any)
+			value[unmanagedConcurrentEdit] = "theirs"
+			a["value"] = value
+			delete(a, "headers")
+			raw, _ := json.Marshal(a)
+			g.written[aspect] = raw
+		}
+	}
+	_ = json.NewEncoder(w).Encode(entity)
+}
+
+func (g *aspectGuard) servePost(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("async") != "false" {
+		http.Error(w, `{"error":"guard: every aspect POST must carry async=false, or a precondition failure arrives on a Kafka topic instead of this response"}`, http.StatusBadRequest)
+		return
+	}
+	var body []map[string]json.RawMessage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "decoding POST: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var batch []recordedPost
+	status := http.StatusOK
+	var failure string
+	for _, entity := range body {
+		var urn string
+		_ = json.Unmarshal(entity["urn"], &urn)
+		for aspect, raw := range entity {
+			if aspect == "urn" {
+				continue
+			}
+			var a struct {
+				Value          map[string]any    `json:"value"`
+				Headers        map[string]string `json:"headers"`
+				SystemMetadata json.RawMessage   `json:"systemMetadata"`
+			}
+			_ = json.Unmarshal(raw, &a)
+			rec := recordedPost{URN: urn, Aspect: aspect, Raw: raw, Value: a.Value, Headers: a.Headers, HasSystemMetadata: len(a.SystemMetadata) > 0}
+			if want, ok := a.Headers["If-Version-Match"]; ok && status == http.StatusOK {
+				if actual := g.version(aspect); want != actual {
+					status = http.StatusPreconditionFailed
+					failure = fmt.Sprintf("Failed to validate MCP due to: ValidationExceptionCollection{EntityAspect:(%s,%s) Exceptions: "+
+						"[AspectValidationException(item=ChangeItemImpl{changeType=UPSERT}, changeType=UPSERT, entityUrn=%s, aspectName=%s, "+
+						"subType=PRECONDITION, msg=Expected version %s, actual version %s)]}", urn, aspect, urn, aspect, want, actual)
+				}
+			}
+			batch = append(batch, rec)
+		}
+	}
+	if g.always != 0 {
+		status = g.always
+		failure = "forced by the guard"
+		if g.alwaysBody != "" {
+			failure = g.alwaysBody
+		} else if status == http.StatusPreconditionFailed {
+			// A forced conflict still carries the versions, as the server's
+			// does; a 412 without them is deliberately not a conflict.
+			for _, rec := range batch {
+				if want, ok := rec.Headers["If-Version-Match"]; ok {
+					n, _ := strconv.Atoi(want)
+					failure = fmt.Sprintf("Failed to validate MCP due to: ValidationExceptionCollection{EntityAspect:(%s,%s) Exceptions: "+
+						"[AspectValidationException(changeType=UPSERT, entityUrn=%s, aspectName=%s, subType=PRECONDITION, "+
+						"msg=Expected version %s, actual version %d)]}", rec.URN, rec.Aspect, rec.URN, rec.Aspect, want, n+2)
+					break
+				}
+			}
+		}
+	}
+	for i := range batch {
+		batch[i].Status = status
+	}
+	g.posts = append(g.posts, batch...)
+	switch {
+	case status == http.StatusPreconditionFailed:
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "Precondition Error", "message": failure})
+		return
+	case status >= http.StatusBadRequest:
+		if status == http.StatusServiceUnavailable || status == http.StatusTooManyRequests {
+			retryAfter := g.retryAfter
+			if retryAfter == "" {
+				retryAfter = "0"
+			}
+			w.Header().Set("Retry-After", retryAfter)
+		}
+		w.WriteHeader(status)
+		if g.alwaysBody != "" {
+			_, _ = w.Write([]byte(failure))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": failure})
+		return
+	}
+	for _, rec := range batch {
+		g.written[rec.Aspect] = rec.Raw
+		g.versions[rec.Aspect] = g.seededVersion(rec.Aspect) + 1
+		g.absent[rec.Aspect] = false
+	}
+	_, _ = w.Write([]byte("[]"))
+}
+
+// sent returns the last recorded POST of each aspect.
+func (g *aspectGuard) sent() map[string]recordedPost {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := map[string]recordedPost{}
+	for _, p := range g.posts {
+		out[p.Aspect] = p
+	}
+	return out
+}
+
+func (g *aspectGuard) readsOf(aspect string) []recordedGet {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []recordedGet
+	for _, get := range g.gets {
+		for _, a := range get.Aspects {
+			if a == aspect {
+				out = append(out, get)
+			}
+		}
+	}
+	return out
+}
+
+func sortedWriterNames() []string {
 	names := make([]string, 0, len(aspectWriters))
 	for name := range aspectWriters {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	return names
+}
 
-	for _, name := range names {
+func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
+	for _, name := range sortedWriterNames() {
 		w := aspectWriters[name]
 		t.Run(name, func(t *testing.T) {
 			for aspect, rule := range w.aspects {
@@ -362,30 +660,30 @@ func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
 				}
 			}
 
-			var posts [][]map[string]json.RawMessage
-			server := aspectWriteGuardServer(t, &posts)
-			defer server.Close()
-			if err := w.write(t.Context(), newTestClient(t, server)); err != nil {
+			g := newAspectGuard(t)
+			if err := w.write(t.Context(), newTestClient(t, g.Server)); err != nil {
 				t.Fatalf("writer failed: %v", err)
 			}
 
-			sent := map[string]json.RawMessage{}
-			for _, body := range posts {
-				for _, entity := range body {
-					for aspect, raw := range entity {
-						if aspect != "urn" {
-							sent[aspect] = raw
-						}
-					}
-				}
-			}
-			for aspect := range sent {
+			sent := g.sent()
+			for aspect, p := range sent {
 				if _, ok := w.aspects[aspect]; !ok {
 					t.Errorf("sent aspect %q, which aspectWriters does not classify for %s", aspect, name)
 				}
+				// A typed aspect struct that already wraps its value, handed
+				// to the body builder, arrives as {"value":{"value":...}}.
+				// DataHub Cloud rejects it ("field is required but not
+				// found"); OSS 1.7 derives key aspects from the URN and let
+				// it through, which is how it reached a live run unseen.
+				if len(p.Value) == 0 {
+					t.Errorf("%s was sent with an empty value: %s", aspect, p.Raw)
+				}
+				if inner, ok := p.Value["value"].(map[string]any); ok && len(p.Value) == 1 {
+					t.Errorf("%s is double-wrapped: the aspect's value is itself {\"value\": %v}; pass the record, not the aspect envelope", aspect, inner)
+				}
 			}
 			for aspect, rule := range w.aspects {
-				raw, ok := sent[aspect]
+				p, ok := sent[aspect]
 				if !ok {
 					t.Errorf("classified aspect %q was never sent; update the invocation or the classification", aspect)
 					continue
@@ -393,19 +691,101 @@ func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
 				if rule.ownership != preserveUnmanaged {
 					continue
 				}
-				var a struct {
-					Value map[string]any `json:"value"`
-				}
-				if err := json.Unmarshal(raw, &a); err != nil {
-					t.Errorf("decoding sent %s: %v", aspect, err)
-					continue
-				}
-				if a.Value[unmanagedSentinel] != "keep-me" {
+				if p.Value[unmanagedSentinel] != "keep-me" {
 					t.Errorf("%s is classified preserved, but the write dropped a field the provider does not "+
-						"manage: the stored aspect carried %q and the POST sent %s", aspect, unmanagedSentinel, raw)
+						"manage: the stored aspect carried %q and the POST sent %s", aspect, unmanagedSentinel, p.Raw)
 				}
 			}
 		})
+	}
+}
+
+// TestOpenAPIAspectWritesCarryVersionPrecondition checks that every preserved
+// aspect is written with If-Version-Match equal to the version the writer
+// read, and nothing else is: an owned-whole or key aspect carries no
+// precondition, and no aspect echoes the systemMetadata it read. A preserved
+// write without the version it read can overwrite a change made between its
+// read and its write, with HTTP 200 and no trace.
+func TestOpenAPIAspectWritesCarryVersionPrecondition(t *testing.T) {
+	for _, name := range sortedWriterNames() {
+		w := aspectWriters[name]
+		t.Run(name, func(t *testing.T) {
+			g := newAspectGuard(t)
+			// The versions the reads will serve; the successful write then
+			// advances them, so they are captured first.
+			served := map[string]string{}
+			g.mu.Lock()
+			for aspect := range w.aspects {
+				served[aspect] = strconv.Itoa(g.seededVersion(aspect))
+			}
+			g.mu.Unlock()
+			if err := w.write(t.Context(), newTestClient(t, g.Server)); err != nil {
+				t.Fatalf("writer failed: %v", err)
+			}
+			for aspect, p := range g.sent() {
+				if p.HasSystemMetadata {
+					t.Errorf("%s echoed systemMetadata back on the write; the server keeps a sent runId, which "+
+						"would tie the provider's write to an ingestion run and revert it with that run", aspect)
+				}
+				rule, ok := w.aspects[aspect]
+				if !ok {
+					continue
+				}
+				header, present := p.Headers["If-Version-Match"]
+				if rule.ownership != preserveUnmanaged {
+					if present {
+						t.Errorf("%s is owned whole but carried If-Version-Match %q; only aspects the writer read carry a precondition", aspect, header)
+					}
+					continue
+				}
+				want := served[aspect]
+				if !present {
+					t.Errorf("%s is preserved but the POST carried no If-Version-Match: sent %s", aspect, p.Raw)
+					continue
+				}
+				if header != want {
+					t.Errorf("%s carried If-Version-Match %q but the read served version %q", aspect, header, want)
+				}
+				read := false
+				for _, get := range g.readsOf(aspect) {
+					if get.SystemMetadata {
+						read = true
+					}
+				}
+				if !read {
+					t.Errorf("%s was written with a version but never read with systemMetadata=true; the version did not come from the aspect", aspect)
+				}
+			}
+		})
+	}
+}
+
+// TestOpenAPIAspectWritesSendAbsentSentinel makes each preserved aspect absent
+// in turn and checks the writer creates it with If-Version-Match "-1", which
+// the server reads as "must not exist yet": two creators racing for one URN
+// then produce one success and one 412, never two overwrites.
+func TestOpenAPIAspectWritesSendAbsentSentinel(t *testing.T) {
+	for _, name := range sortedWriterNames() {
+		w := aspectWriters[name]
+		for aspect, rule := range w.aspects {
+			if rule.ownership != preserveUnmanaged {
+				continue
+			}
+			t.Run(name+"/"+aspect, func(t *testing.T) {
+				g := newAspectGuard(t)
+				g.absent[aspect] = true
+				if err := w.write(t.Context(), newTestClient(t, g.Server)); err != nil {
+					t.Fatalf("writer failed against an absent %s: %v", aspect, err)
+				}
+				p, ok := g.sent()[aspect]
+				if !ok {
+					t.Fatalf("%s was never sent", aspect)
+				}
+				if got := p.Headers["If-Version-Match"]; got != "-1" {
+					t.Errorf("creating absent %s sent If-Version-Match %q, want \"-1\"", aspect, got)
+				}
+			})
+		}
 	}
 }
 
@@ -414,40 +794,47 @@ func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
 // aspect. A writer that carried on after a failed read would POST only the
 // fields it manages, which is the wipe the read exists to prevent.
 func TestOpenAPIAspectWritesStopOnFailedRead(t *testing.T) {
-	names := make([]string, 0, len(aspectWriters))
-	for name := range aspectWriters {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
+	for _, name := range sortedWriterNames() {
 		w := aspectWriters[name]
 		for aspect, rule := range w.aspects {
 			if rule.ownership != preserveUnmanaged {
 				continue
 			}
-			t.Run(name+"/"+aspect, func(t *testing.T) {
-				var posts [][]map[string]json.RawMessage
-				guard := aspectWriteGuardServer(t, &posts)
-				defer guard.Close()
+			t.Run(name+"/"+aspect+"/read_500", func(t *testing.T) {
+				g := newAspectGuard(t)
 				server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodGet && r.URL.Query().Get("aspects") == aspect {
+					if r.Method == http.MethodGet && strings.Contains(r.URL.Query().Get("aspects"), aspect) {
 						http.Error(rw, "injected read failure", http.StatusInternalServerError)
 						return
 					}
-					guard.Config.Handler.ServeHTTP(rw, r)
+					g.serve(rw, r)
 				}))
 				defer server.Close()
 
 				if err := w.write(t.Context(), newTestClient(t, server)); err == nil {
 					t.Errorf("reading %s failed with HTTP 500, but the writer returned no error", aspect)
 				}
-				for _, body := range posts {
-					for _, entity := range body {
-						if _, ok := entity[aspect]; ok {
-							t.Errorf("reading %s failed, but the writer still sent it: %v", aspect, entity)
-						}
-					}
+				if _, ok := g.sent()[aspect]; ok {
+					t.Errorf("reading %s failed, but the writer still sent it", aspect)
+				}
+			})
+			// An aspect last written before DataHub 0.14 is served without
+			// systemMetadata.version. The server's validator resolves such a
+			// row to "1" (max(1, rowVersion) with the latest row at 0), so
+			// the writer must send exactly that, not refuse and not write
+			// unconditionally.
+			t.Run(name+"/"+aspect+"/legacy_no_version", func(t *testing.T) {
+				g := newAspectGuard(t)
+				g.noVersion = true
+				if err := w.write(t.Context(), newTestClient(t, g.Server)); err != nil {
+					t.Fatalf("a legacy aspect without a stored version must still be writable: %v", err)
+				}
+				p, ok := g.sent()[aspect]
+				if !ok {
+					t.Fatalf("%s was never sent", aspect)
+				}
+				if got := p.Headers["If-Version-Match"]; got != legacyAspectVersion {
+					t.Errorf("legacy %s sent If-Version-Match %q, want %q (the server's fallback for a row with no stored version)", aspect, got, legacyAspectVersion)
 				}
 			})
 		}

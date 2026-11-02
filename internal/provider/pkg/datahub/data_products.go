@@ -90,63 +90,38 @@ func (c *Client) WriteDataProductProperties(
 		return errors.New("name is required")
 	}
 
-	propsValue, err := c.unmanagedAspectFields(ctx, "dataproduct", urn, "dataProductProperties", managedDataProductPropertiesFields)
-	if err != nil {
-		return err
-	}
-	propsValue["name"] = name
-	if description != "" {
-		propsValue["description"] = description
-	}
-	if externalURL != "" {
-		propsValue["externalUrl"] = externalURL
-	}
-	if len(customProperties) > 0 {
-		propsValue["customProperties"] = customProperties
-	}
-
 	// Always include the domains aspect so that clearing domain = "" overwrites
 	// a previously-set domain rather than leaving the old value in place.
-	var domainList []string
+	domainList := []string{}
 	if domain != "" {
 		domainList = []string{domain}
-	} else {
-		domainList = []string{}
 	}
 
-	entity := map[string]any{
-		"urn": urn,
-		"dataProductProperties": map[string]any{
-			"value": propsValue,
-		},
-		"domains": map[string]any{
-			"value": map[string]any{
-				"domains": domainList,
-			},
-		},
+	spec := aspectWriteSpec{
+		entityPath: "dataproduct",
+		urn:        urn,
+		what:       "data product",
+		preserved:  []preservedSpec{{aspect: "dataProductProperties", managed: managedDataProductPropertiesFields}},
+		privilege:  "MANAGE_DATA_PRODUCTS",
 	}
-
-	payload := []map[string]any{entity}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/dataproduct?async=false", payload)
-	if err != nil {
-		return fmt.Errorf("building data product write request: %w", err)
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return fmt.Errorf("data product write request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_DATA_PRODUCTS privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub data product write API: %s", res.StatusCode, respBody)
-	}
-	return nil
+	_, err := c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		props := prev.get("dataProductProperties")
+		props.fields["name"] = name
+		if description != "" {
+			props.fields["description"] = description
+		}
+		if externalURL != "" {
+			props.fields["externalUrl"] = externalURL
+		}
+		if len(customProperties) > 0 {
+			props.fields["customProperties"] = customProperties
+		}
+		return []aspectEntry{
+			props.entry(),
+			ownedEntry("domains", map[string]any{"domains": domainList}),
+		}, nil
+	})
+	return err
 }
 
 // managedDataProductPropertiesFields are the dataProductProperties fields

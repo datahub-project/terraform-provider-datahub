@@ -80,53 +80,32 @@ func (c *Client) WriteOwnershipTypeInfo(ctx context.Context, urn, name, descript
 		return errors.New("name is required")
 	}
 
-	nowMs := time.Now().UnixMilli()
-	auditStamp := map[string]any{
-		"time":  nowMs,
-		"actor": "urn:li:corpuser:__datahub_system",
+	spec := aspectWriteSpec{
+		entityPath: "ownershiptype",
+		urn:        urn,
+		what:       "ownership type",
+		preserved:  []preservedSpec{{aspect: "ownershipTypeInfo", managed: managedOwnershipTypeInfoFields}},
+		privilege:  "MANAGE_OWNERSHIP_TYPES",
 	}
-
-	infoValue, err := c.unmanagedAspectFields(ctx, "ownershiptype", urn, "ownershipTypeInfo", managedOwnershipTypeInfoFields)
-	if err != nil {
-		return err
-	}
-	infoValue["name"] = name
-	infoValue["lastModified"] = auditStamp
-	if created, ok := infoValue["created"]; !ok || created == nil {
-		infoValue["created"] = auditStamp
-	}
-	if description != "" {
-		infoValue["description"] = description
-	}
-
-	payload := []map[string]any{
-		{
-			"urn": urn,
-			"ownershipTypeInfo": map[string]any{
-				"value": infoValue,
-			},
-		},
-	}
-
-	req, err := c.NewRequest(ctx, http.MethodPost, "/openapi/v3/entity/ownershiptype?async=false", payload)
-	if err != nil {
-		return fmt.Errorf("building ownership type write request: %w", err)
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return fmt.Errorf("ownership type write request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("DataHub rejected the request (HTTP %d): the calling principal needs the MANAGE_OWNERSHIP_TYPES privilege", res.StatusCode)
-	}
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d from DataHub ownership type write API: %s", res.StatusCode, respBody)
-	}
-	return nil
+	_, err := c.writeAspects(ctx, spec, func(prev preservedAspects) ([]aspectEntry, error) {
+		// Stamped inside the merge so a retry after a conflict records the
+		// time of the write that landed.
+		auditStamp := map[string]any{
+			"time":  time.Now().UnixMilli(),
+			"actor": "urn:li:corpuser:__datahub_system",
+		}
+		info := prev.get("ownershipTypeInfo")
+		info.fields["name"] = name
+		info.fields["lastModified"] = auditStamp
+		if created, ok := info.fields["created"]; !ok || created == nil {
+			info.fields["created"] = auditStamp
+		}
+		if description != "" {
+			info.fields["description"] = description
+		}
+		return []aspectEntry{info.entry()}, nil
+	})
+	return err
 }
 
 // GetOwnershipTypeByURN fetches a DataHub ownership type directly by URN via

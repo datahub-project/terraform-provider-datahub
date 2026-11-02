@@ -36,7 +36,7 @@ func structuredPropertyMockServer(t *testing.T, urn string, stored *map[string]a
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"urn":                urn,
-				"propertyDefinition": map[string]any{"value": *stored},
+				"propertyDefinition": map[string]any{"value": *stored, "systemMetadata": map[string]any{"version": "1"}},
 			})
 		}
 	}))

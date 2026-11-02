@@ -100,30 +100,11 @@ func (c *Client) SetGlobalTags(ctx context.Context, entityPath, urn string, tagU
 	for _, t := range want {
 		tags = append(tags, map[string]any{"tag": t})
 	}
-	payload := []map[string]any{
-		{
-			"urn": urn,
-			"globalTags": map[string]any{
-				"value": map[string]any{"tags": tags},
-			},
-		},
-	}
-
-	path := fmt.Sprintf("/openapi/v3/entity/%s?async=false", entityPath)
-	req, err := c.NewRequest(ctx, http.MethodPost, path, payload)
-	if err != nil {
+	spec := aspectWriteSpec{entityPath: entityPath, urn: urn, what: "globalTags"}
+	if _, err := c.writeAspects(ctx, spec, func(preservedAspects) ([]aspectEntry, error) {
+		return []aspectEntry{ownedEntry("globalTags", map[string]any{"tags": tags})}, nil
+	}); err != nil {
 		return err
-	}
-
-	res, err := c.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode >= http.StatusBadRequest {
-		respBody, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("unexpected HTTP %d writing globalTags for %s: %s", res.StatusCode, urn, respBody)
 	}
 
 	got, found, err := c.GetGlobalTags(ctx, entityPath, urn)

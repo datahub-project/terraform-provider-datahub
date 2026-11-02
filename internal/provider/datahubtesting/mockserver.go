@@ -132,6 +132,9 @@ type mockServer struct {
 	// unmanaged gives seeded aspect fields the server's whole-aspect replace
 	// semantics; see unmanaged_aspect_fields.go.
 	unmanaged unmanagedAspectFields
+	// versions gives every aspect a version and enforces If-Version-Match;
+	// see aspect_versions.go.
+	versions aspectVersions
 	// failMonitorLookup makes the getAssertionMonitor GraphQL query return an
 	// error while set, simulating the transient graph/search failures the live
 	// query can produce. Toggled via /test-control/fail-monitor-lookup.
@@ -236,7 +239,13 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
 	mux.HandleFunc("/test-control/seed-unmanaged-field", s.unmanaged.handleSeedUnmanagedField)
-	srv := httptest.NewServer(s.unmanaged.wrap(mux))
+	mux.HandleFunc("/test-control/arm-aspect-conflict", s.versions.handleArmConflict)
+	mux.HandleFunc("/test-control/aspect-write-ledger", s.versions.handleLedger)
+	// versions must stay outermost: it stamps systemMetadata.version on the
+	// GET body every other overlay has finished shaping, and checks
+	// If-Version-Match on the POST body before any handler consumes it.
+	s.versions.unmanaged = &s.unmanaged
+	srv := httptest.NewServer(s.versions.wrap(s.unmanaged.wrap(mux)))
 	t.Cleanup(srv.Close)
 	return srv
 }
