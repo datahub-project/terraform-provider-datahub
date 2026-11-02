@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-02
+
 ### Added
 
 - **New runnable example `domain-scoped-write-access`, and the first published use of a `DOMAIN` policy criterion anywhere in the docs.** It answers a recurring field question -- can everyone read all of DataHub while write privileges stay confined to one domain? -- with the two pieces DataHub actually supports: the built-in Reader role for catalog-wide read, and a domain-scoped `METADATA` policy carrying an eleven-privilege steward set (deliberately excluding `EDIT_ENTITY_DOMAINS`, which would let a steward move an asset out of the very domain that grants the right). The example builds the domain hierarchy, steward group, login user, role assignment and policy, and its outputs emit the whole verification walkthrough as copy-paste commands run *as* the test user: the sub-domain cascade, the other-domain deny, the no-domain gap, and the platform-scoped tag-creation right a domain policy cannot grant. The `datahub_policy` registry page gains a matching domain-scoped snippet, and a live acceptance test checks that the policy really grants and denies these edits as described.
@@ -17,15 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- **`version` and `debug_mode` on `datahub_action_pipeline` are deprecated, because they have never had any effect.** They mirror two inputs of DataHub's `upsertActionPipeline` mutation that DataHub accepts but has never stored or used, so a configuration that sets either one gets a plan diff on every run and nothing else. Setting them now also produces a deprecation warning. Remove them from your configuration; they will be removed in a future release. The DataHub side is tracked as PFP-7564.
+- **`version` and `debug_mode` on `datahub_action_pipeline` are deprecated, because they have never had any effect.** They mirror two inputs of DataHub's `upsertActionPipeline` mutation that DataHub accepts but has never stored or used, so a configuration that sets either one gets a plan diff on every run and nothing else. Setting them now also produces a deprecation warning. Remove them from your configuration; they will be removed in a future release.
 
 ### Fixed
 
 - **`datahub_form` no longer resets a published form to draft on every apply.** The provider writes the form through the `createForm` mutation, which sets the publish state from its input and falls back to `DRAFT` when the input names none, and which also clears the owner ownership-type filter unless the input repeats it. So any change to a form published in the DataHub UI -- even to its description -- unpublished it, and dropped an "assign only owners of these types" setting along the way. Each write now reads the form first and passes its current publish state and ownership-type filter back unchanged. The resource still does not manage either, so a new form is created as a draft and is published in the UI. Both fields go on the wire only when the existing form already carries them, so instances without form publish states (OSS DataHub has none) or ownership-type filters are unaffected.
 
 - **`datahub_action_pipeline`: an update no longer restarts a pipeline that was stopped in DataHub.** The `upsertActionPipeline` mutation rebuilds the pipeline's definition from its input, which has no run-state field, so every save reset the pipeline to active and restarted it: a pipeline stopped in the UI came back to life on the next `terraform apply` that touched it. The provider now reads the pipeline before an update and, if it was stopped, stops it again straight after the upsert with the same mutation the UI uses. DataHub starts the pipeline as part of saving it, so it can run briefly between the two calls. Creating a pipeline still starts it, and a running pipeline is unaffected.
-
-  The descriptions of `version` and `debug_mode` now say that DataHub accepts both but does not store them, so setting either produces a plan diff on every run. Leave them unset.
 
 - **`datahub_data_product` no longer removes a data product's assets on create or update.** Asset membership and the parent data product live in the same `dataProductProperties` aspect as the name, description, external URL and custom properties, and the provider wrote that aspect whole with only the fields it manages, so every `terraform apply` that touched a data product emptied its asset list. The resource documentation already said membership set in the DataHub UI, CLI or SDK is left alone; the provider now reads the aspect before writing it and replaces only the fields it manages, so `assets`, `parentDataProduct` and any other field it does not model are kept as they are. Assets already removed by an earlier apply are not restored and have to be added again.
 
@@ -596,7 +596,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.25.0...v0.26.0
