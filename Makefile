@@ -84,7 +84,7 @@ help:
 	@echo "                     Cloud vs OSS auto-detected via GET /config; DATAHUB_CLOUD=1 or =0 to override"
 	@echo "  coverage           Run all tests with merged coverage; prints total"
 	@echo "  coverage-html      Run coverage, then write $(COVERAGE_HTML)"
-	@echo "  dev-deps           Install Python dev dependencies (datahub CLI) into .venv"
+	@echo "  dev-deps           (Re)install Python dev dependencies (datahub CLI) into .venv; Quickstart targets do this themselves when requirements-dev.txt changes"
 	@echo "  build-serve-docs   Build the tfplugindocs serve binary from tools/go.mod"
 	@echo "  serve-docs         Preview provider docs locally via Terraform Registry rendering"
 	@echo "  quickstart-up      Start (or reuse) a local DataHub Quickstart; FRESH=1 nukes first; QUICKSTART_VERSION=vX.Y.Z overrides image"
@@ -98,11 +98,30 @@ build:
 
 install: build
 
-dev-deps:
+# The datahub CLI that the Quickstart and live targets run comes from .venv, and a
+# pin bump arrives as a one-line change to requirements-dev.txt that nothing
+# reinstalls. A checkout once stayed on CLI 1.7.0.14 while the pin moved on to
+# 1.7.0.16 and then 1.7.0.18, and CI, which installs fresh on every run, never
+# showed it. The stamp is newer than requirements-dev.txt only after an install
+# from it, so every target that runs the CLI depends on it and reinstalls first
+# whenever the pin moves.
+#
+# install, not sync: requirements-dev.txt lists only the top-level pin, and
+# 'uv pip sync' installs exactly the listed packages, without their dependencies.
+DEV_DEPS_STAMP := .venv/.dev-deps.stamp
+
+$(DEV_DEPS_STAMP): requirements-dev.txt
 	uv venv --allow-existing .venv
 	UV_INDEX= uv pip install -r requirements-dev.txt
+	@touch $@
 
-quickstart-up:
+# Always reinstalls: it is an explicit request, and the way back after editing
+# the venv by hand, which the stamp cannot see.
+dev-deps:
+	@rm -f $(DEV_DEPS_STAMP)
+	@$(MAKE) --no-print-directory $(DEV_DEPS_STAMP)
+
+quickstart-up: $(DEV_DEPS_STAMP)
 	@case "$(QUICKSTART_VERSION)" in \
 		default|head|quickstart|stable) ;; \
 		v[0-9]*.[0-9]*.[0-9]*.[0-9]*) \
@@ -177,13 +196,13 @@ quickstart-up:
 		echo "Verified running $$running"; \
 	fi
 
-quickstart-down:
+quickstart-down: $(DEV_DEPS_STAMP)
 	datahub docker nuke
 
 quickstart-token:
 	@DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh
 
-testacc-quickstart:
+testacc-quickstart: $(DEV_DEPS_STAMP)
 	@if [ "$$KEEP_QUICKSTART" != "1" ]; then \
 		trap 'echo "Tearing down Quickstart"; datahub docker nuke >/dev/null 2>&1 || true' EXIT; \
 	fi; \
@@ -344,7 +363,7 @@ test-examples-live-local: install
 # assigns a structured property burns an Elasticsearch field name that destroy
 # cannot reclaim, so re-running against a kept instance can fail where a fresh
 # one succeeds. That is the behaviour under test, not a harness defect.
-test-examples-live-quickstart:
+test-examples-live-quickstart: $(DEV_DEPS_STAMP)
 	@if [ "$$KEEP_QUICKSTART" != "1" ]; then \
 		trap 'echo "Tearing down Quickstart"; datahub docker nuke >/dev/null 2>&1 || true' EXIT; \
 	fi; \

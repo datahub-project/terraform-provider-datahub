@@ -153,6 +153,7 @@ This is the single checklist for "are our tools and dependencies up to date?" Ru
 | Go module deps (`go.mod`) | Dependabot opens grouped PRs weekly (Mondays) | Merge any open Dependabot PRs first |
 | Go module deps (`tools/go.mod`) | Dependabot opens grouped PRs weekly (Mondays) | Merge any open Dependabot PRs first |
 | GitHub Actions version pins | Dependabot opens grouped PRs weekly (Mondays) | Merge any open Dependabot PRs first |
+| Python dev deps (`requirements-dev.txt`: the datahub CLI the Quickstart and live targets run) | Dependabot opens grouped PRs weekly (Mondays); the Quickstart and live `make` targets reinstall `.venv` themselves when `requirements-dev.txt` changes | Merge any open Dependabot PRs first. `make dev-deps` forces a reinstall, for example after editing `.venv` by hand |
 | mise-managed tool versions (Go, Terraform, golangci-lint, ...) | **None** - Dependabot has no mise ecosystem support | Run the commands below |
 
 mise tool pins in `mise.toml` are the only blind spot not covered by any automated process:
