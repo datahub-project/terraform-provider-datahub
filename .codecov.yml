@@ -9,6 +9,12 @@ coverage:
         target: 70%
         threshold: 5%
 
+# datahubtesting is the mock server and acceptance-test helpers. It is not
+# shipped, and its live-only paths can never run in the mock-backed coverage
+# run, so counting it made patch coverage measure test tooling.
+ignore:
+  - "internal/provider/datahubtesting/**"
+
 comment:
   layout: "reach,diff,flags,files"
   behavior: default
