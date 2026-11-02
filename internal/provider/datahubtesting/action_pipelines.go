@@ -26,7 +26,8 @@ type mockActionPipeline struct {
 // handleUpsertActionPipeline handles the upsertActionPipeline GraphQL mutation.
 // The mutation returns the URN as a bare String. Like the server, it rebuilds
 // the aspect from the input: state falls back to its ACTIVE default, and
-// config.version / config.debugMode are accepted but not stored.
+// config.version / config.debugMode are accepted but not stored (DataHub has
+// never stored them; PFP-7564).
 func (s *mockServer) handleUpsertActionPipeline(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 	input, _ := variables["input"].(map[string]any)

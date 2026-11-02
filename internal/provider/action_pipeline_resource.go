@@ -29,6 +29,10 @@ var (
 	_ resource.ResourceWithImportState = &actionPipelineResource{}
 )
 
+const actionPipelineNoEffectDeprecation = "This attribute has no effect: DataHub accepts the value but has never " +
+	"stored or used it, so setting it produces a plan diff on every run. Remove it from your configuration; " +
+	"it will be removed in a future release."
+
 type actionPipelineResource struct {
 	client *datahub.Client
 }
@@ -79,7 +83,7 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"model run state (running/stopped): a freshly created pipeline is started by DataHub, and an update " +
 			"leaves a pipeline that was stopped in DataHub stopped. DataHub restarts a pipeline whenever its " +
 			"definition is saved, so the provider stops a previously stopped pipeline again straight after the " +
-			"update; it can run briefly in between.\n\n" +
+			"update; it can run briefly in between. This is a DataHub issue, tracked as PFP-7563.\n\n" +
 			"## Argument Reference\n\n" +
 			"- `action_id` (Optional) Unique id (URN suffix). If omitted, derived from `name` as `<sanitized-name>-<hash>`. Changing it forces a new resource.\n" +
 			"- `name` (Required) Human-friendly name shown in the DataHub UI.\n" +
@@ -88,8 +92,8 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"- `category` (Optional) UI grouping category (e.g. `Data Discovery`).\n" +
 			"- `description` (Optional) Human-readable description.\n" +
 			"- `executor_id` (Optional) Executor that runs the action (e.g. `default`).\n" +
-			"- `version` (Optional) Action package version. Not stored by DataHub; leave unset (see below).\n" +
-			"- `debug_mode` (Optional) Enable verbose executor logging. Not stored by DataHub; leave unset (see below).\n\n" +
+			"- `version` (Optional, **Deprecated**) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.\n" +
+			"- `debug_mode` (Optional, **Deprecated**) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.\n\n" +
 			"## Security Note\n\n" +
 			"**Warning:** The recipe is stored in DataHub. Do not embed credentials directly.\n\n" +
 			"**Recommended:** Use DataHub Secrets / environment variable substitution (e.g. `${SECRET_NAME}`); placeholders are stored verbatim and resolved at execution time.\n\n" +
@@ -143,15 +147,21 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 				MarkdownDescription: "Executor that runs the action (e.g. `default`). If omitted, DataHub's default is used.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
+			// version and debug_mode mirror inputs of upsertActionPipeline that
+			// DataHub has never stored or used (PFP-7564), so they can only
+			// ever produce a perpetual diff. Deprecated rather than removed so a
+			// configuration that sets them keeps working until a later release.
 			"version": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Action package version. If omitted, not sent. DataHub accepts this value but does not currently store it, so setting it produces a plan diff on every run; leave it unset.",
+				MarkdownDescription: "Has no effect: DataHub accepts this value but has never stored or used it, so setting it produces a plan diff on every run. Remove it from your configuration.",
+				DeprecationMessage:  actionPipelineNoEffectDeprecation,
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"debug_mode": schema.BoolAttribute{
 				Optional:            true,
-				MarkdownDescription: "Enable verbose executor logging for troubleshooting. DataHub accepts this value but does not currently store it, so setting it produces a plan diff on every run; leave it unset.",
+				MarkdownDescription: "Has no effect: DataHub accepts this value but has never stored or used it, so setting it produces a plan diff on every run. Remove it from your configuration.",
+				DeprecationMessage:  actionPipelineNoEffectDeprecation,
 			},
 		},
 	}
@@ -301,6 +311,11 @@ func (r *actionPipelineResource) upsert(ctx context.Context, plan *actionPipelin
 // restoreStopped stops a pipeline that was stopped before the upsert restarted
 // it. The server records INACTIVE before reporting whether the runtime stop
 // succeeded, so a stop error with INACTIVE recorded is only a warning.
+//
+// Workaround for PFP-7563: upsertActionPipeline rewrites the whole
+// dataHubActionInfo aspect without its state, so a stored INACTIVE is dropped,
+// and then reloads the pipeline unconditionally. Re-stopping it cannot close
+// the window in which it runs; remove this once the upsert keeps the state.
 func (r *actionPipelineResource) restoreStopped(ctx context.Context, actionID string, diags *diag.Diagnostics) {
 	stopErr := r.client.StopActionPipeline(ctx, actionID)
 	if stopErr == nil {
