@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **New runnable example `domain-scoped-write-access`, and the first published use of a `DOMAIN` policy criterion anywhere in the docs.** It answers a recurring field question -- can everyone read all of DataHub while write privileges stay confined to one domain? -- with the two pieces DataHub actually supports: the built-in Reader role for catalog-wide read, and a domain-scoped `METADATA` policy carrying an eleven-privilege steward set (deliberately excluding `EDIT_ENTITY_DOMAINS`, which would let a steward move an asset out of the very domain that grants the right). The example builds the domain hierarchy, steward group, login user, role assignment and policy, and its outputs emit the whole verification walkthrough as copy-paste commands run *as* the test user: the sub-domain cascade, the other-domain deny, the no-domain gap, and the platform-scoped tag-creation right a domain policy cannot grant. The `datahub_policy` registry page gains a matching domain-scoped snippet, and a live acceptance test checks that the policy really grants and denies these edits as described.
+
 ### Changed
 
 - **Development tooling: `golang.org/x/net` is now 0.62.0 and `golang.org/x/crypto` 0.58.0 in all three Go modules.** `make deps-vulncheck-tools` had started failing on GO-2026-6860 and GO-2026-6866, two `golang.org/x/net/html` findings reachable from the `tfplugindocs` documentation server in `tools/serve`, and the same bump clears the nine unreachable `x/net` and `x/crypto` advisories the tool modules were also carrying. The provider itself never calls `x/net/html`, and `govulncheck` reported neither finding as reachable from provider code, so this is not a security fix for users: the main module moves to the same versions only so that one dependency line is tracked across the repository. The remaining `GO-2026-5932` (`x/crypto/openpgp`) has no fix in any release and stays on the accepted list.

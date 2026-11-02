@@ -49,6 +49,41 @@ func TestAcc_Policy_Filter(t *testing.T) {
 	})
 }
 
+// TestAcc_Policy_DomainFilter exercises a DOMAIN filter criterion referencing a
+// domain created in the same config -- the domain-scoped write-access pattern.
+// CRUD and import fidelity only; enforcement is covered by
+// TestAcc_Policy_DomainScopedEnforcement.
+func TestAcc_Policy_DomainFilter(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	policyID := tg.Name("tfprovider-policy-domain")
+	domainID := tg.Name("tfprovider-policy-domain-scope")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyDomainFilterSteps(policyID, domainID),
+	})
+}
+
+// TestAcc_Policy_DomainScopedEnforcement proves the domain-scoped write-access
+// pattern against a live server: a steward (group member) can edit assets in
+// the governed domain and its sub-domains, and is denied everywhere else. The
+// probes run AS the steward, via a minted token whose identity is verified
+// before any assertion counts. Live-only: the mock stores policies without
+// evaluating them, so it can neither grant nor deny anything.
+func TestAcc_Policy_DomainScopedEnforcement(t *testing.T) {
+	tg := datahubtesting.SetupTarget(t)
+	if !tg.IsLive() {
+		t.Skip("skipping enforcement test: the mock target stores policies without evaluating them; run against a live instance (testacc-local / testacc-quickstart)")
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.PolicyCheckDestroy,
+		Steps:                    datahubtesting.PolicyDomainEnforcementSteps(t, tg, tg.Name("tfprovider-steward")),
+	})
+}
+
 // TestAcc_Policy_FilterImport imports a filter-scoped policy the provider did not
 // create -- the UI-authored case whose scope the read path used to discard.
 // Mock-only: it seeds the policy via /test-control/seed-policy.
