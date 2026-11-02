@@ -34,7 +34,9 @@ import (
 // classified writer against a server whose stored aspects carry a field no
 // provider version models, and checks the POST names exactly the classified
 // aspects and writes that field back for every aspect classified as
-// preserved.
+// preserved. TestOpenAPIAspectWritesStopOnFailedRead checks that a failed read
+// of a preserved aspect stops the write instead of sending only the managed
+// fields.
 
 type aspectOwnership int
 
@@ -404,5 +406,50 @@ func TestOpenAPIAspectWritesKeepUnmanagedFields(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestOpenAPIAspectWritesStopOnFailedRead fails the read of each preserved
+// aspect in turn and checks the writer returns an error without sending that
+// aspect. A writer that carried on after a failed read would POST only the
+// fields it manages, which is the wipe the read exists to prevent.
+func TestOpenAPIAspectWritesStopOnFailedRead(t *testing.T) {
+	names := make([]string, 0, len(aspectWriters))
+	for name := range aspectWriters {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		w := aspectWriters[name]
+		for aspect, rule := range w.aspects {
+			if rule.ownership != preserveUnmanaged {
+				continue
+			}
+			t.Run(name+"/"+aspect, func(t *testing.T) {
+				var posts [][]map[string]json.RawMessage
+				guard := aspectWriteGuardServer(t, &posts)
+				defer guard.Close()
+				server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodGet && r.URL.Query().Get("aspects") == aspect {
+						http.Error(rw, "injected read failure", http.StatusInternalServerError)
+						return
+					}
+					guard.Config.Handler.ServeHTTP(rw, r)
+				}))
+				defer server.Close()
+
+				if err := w.write(t.Context(), newTestClient(t, server)); err == nil {
+					t.Errorf("reading %s failed with HTTP 500, but the writer returned no error", aspect)
+				}
+				for _, body := range posts {
+					for _, entity := range body {
+						if _, ok := entity[aspect]; ok {
+							t.Errorf("reading %s failed, but the writer still sent it: %v", aspect, entity)
+						}
+					}
+				}
+			})
+		}
 	}
 }

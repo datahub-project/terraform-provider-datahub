@@ -48,6 +48,10 @@ type deleteOwnershipTypeResponse struct {
 	} `json:"errors"`
 }
 
+// managedOwnershipTypeInfoFields are the ownershipTypeInfo fields
+// WriteOwnershipTypeInfo owns. created is not listed: it is kept as read.
+var managedOwnershipTypeInfoFields = []string{"name", "description", "lastModified"}
+
 // WriteOwnershipTypeInfo creates or updates the ownershipTypeInfo aspect of a
 // DataHub ownership type via the OpenAPI v3 entity collection endpoint.
 //
@@ -63,10 +67,6 @@ type deleteOwnershipTypeResponse struct {
 // system actor on every write; created is set only when the type has none, so
 // it keeps recording when the type was made. Fields this write does not manage
 // are carried over as read.
-// managedOwnershipTypeInfoFields are the ownershipTypeInfo fields
-// WriteOwnershipTypeInfo owns. created is not listed: it is kept as read.
-var managedOwnershipTypeInfoFields = []string{"name", "description", "lastModified"}
-
 func (c *Client) WriteOwnershipTypeInfo(ctx context.Context, urn, name, description string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -92,7 +92,7 @@ func (c *Client) WriteOwnershipTypeInfo(ctx context.Context, urn, name, descript
 	}
 	infoValue["name"] = name
 	infoValue["lastModified"] = auditStamp
-	if _, ok := infoValue["created"]; !ok {
+	if created, ok := infoValue["created"]; !ok || created == nil {
 		infoValue["created"] = auditStamp
 	}
 	if description != "" {
