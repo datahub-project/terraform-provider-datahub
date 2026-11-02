@@ -212,6 +212,10 @@ func (c *Client) GetDomainByURN(ctx context.Context, urn string) (*Domain, error
 	return domain, nil
 }
 
+// managedDomainPropertiesFields are the domainProperties fields
+// SetDomainProperties owns; every other field is carried over as read.
+var managedDomainPropertiesFields = []string{"name", "description", "parentDomain", "customProperties"}
+
 // SetDomainProperties writes the domainProperties aspect for a domain via the
 // OpenAPI v3 entity endpoint. This is how customProperties reaches DataHub:
 // the GraphQL createDomain/updateName/updateDescription/moveDomain mutations do
@@ -236,9 +240,13 @@ func (c *Client) SetDomainProperties(ctx context.Context, urn, name, description
 		return errors.New("name is required")
 	}
 
-	propsValue := map[string]any{
-		"name": name,
+	// The read keeps fields this write does not manage, such as the created
+	// stamp the server sets when the domain is made.
+	propsValue, err := c.unmanagedAspectFields(ctx, "domain", urn, "domainProperties", managedDomainPropertiesFields)
+	if err != nil {
+		return err
 	}
+	propsValue["name"] = name
 	if description != "" {
 		propsValue["description"] = description
 	}

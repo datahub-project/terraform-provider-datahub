@@ -26,6 +26,11 @@ func TestNewDatasourceIngestion(t *testing.T) {
 		var gotMethod, gotPath, gotAuth string
 		var gotBody []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				// The pre-write read of the info aspect: the source does not exist yet.
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			gotMethod = r.Method
 			gotPath = r.URL.Path + "?" + r.URL.RawQuery
 			gotAuth = r.Header.Get("Authorization")
@@ -66,6 +71,11 @@ func TestNewDatasourceIngestion(t *testing.T) {
 	t.Run("success_with_schedule", func(t *testing.T) {
 		var gotBody []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				// The pre-write read of the info aspect: the source does not exist yet.
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			gotBody, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(gotBody)
@@ -106,6 +116,11 @@ func TestNewDatasourceIngestion(t *testing.T) {
 	t.Run("schedule_defaults_timezone_to_utc", func(t *testing.T) {
 		var gotBody []byte
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				// The pre-write read of the info aspect: the source does not exist yet.
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			gotBody, _ = io.ReadAll(r.Body)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(gotBody)

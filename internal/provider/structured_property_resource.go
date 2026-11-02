@@ -294,7 +294,8 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 			"property. **Destroying a property hard-deletes it and removes all applied values from " +
 			"every asset.**\n\n" +
 			"Definition fields this resource does not manage, such as the allowed platforms set in the " +
-			"DataHub UI and a search configuration set through the API or SDK, are kept on update.\n\n" +
+			"DataHub UI and a search configuration set through the API or SDK, are kept on update, and so " +
+			"are settings it does not model, which some DataHub versions add.\n\n" +
 			"## Deleting an assigned property burns its `property_id`\n\n" +
 			"Once a value for this property has been applied to any asset, DataHub creates an " +
 			"Elasticsearch field for it, and deleting the property does not release that field name. " +

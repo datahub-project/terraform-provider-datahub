@@ -5,6 +5,7 @@ package datahub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -51,6 +52,12 @@ type ingestionSourceConfig struct {
 	ExtraArgs  map[string]string `json:"extraArgs,omitempty"`
 	DebugMode  *bool             `json:"debugMode,omitempty"`
 }
+
+// managedIngestionSourceInfoFields are the dataHubIngestionSourceInfo fields
+// NewDatasourceIngestion owns. config is owned whole: the provider models every
+// field it has. Fields it omits when unset (platform, schedule) are listed so
+// that removing them from the configuration clears them.
+var managedIngestionSourceInfoFields = []string{"name", "type", "platform", "schedule", "config"}
 
 // DatasourceIngestionInput groups the inputs used to create or update a Datahub
 // ingestion source via the OpenAPI endpoint.
@@ -168,8 +175,29 @@ func (c *Client) NewDatasourceIngestion(ctx context.Context, in DatasourceIngest
 		}
 	}
 
+	// The write replaces the whole info aspect, which also holds source (how
+	// the source was created: UI, CLI or system). The read keeps that and any
+	// other field this write does not manage.
+	info, err := c.unmanagedAspectFields(ctx, "datahubingestionsource", payload[0].Urn,
+		"dataHubIngestionSourceInfo", managedIngestionSourceInfoFields)
+	if err != nil {
+		return nil, err
+	}
+	managed, err := json.Marshal(payload[0].DataHubIngestionSourceInfo.Value)
+	if err != nil {
+		return nil, fmt.Errorf("encoding ingestion source info: %w", err)
+	}
+	if err := json.Unmarshal(managed, &info); err != nil {
+		return nil, fmt.Errorf("encoding ingestion source info: %w", err)
+	}
+	entity := []map[string]any{{
+		"urn":                        payload[0].Urn,
+		"dataHubIngestionSourceKey":  payload[0].DataHubIngestionSourceKey,
+		"dataHubIngestionSourceInfo": map[string]any{"value": info},
+	}}
+
 	path := "/openapi/v3/entity/datahubingestionsource?async=false"
-	req, err := c.NewRequest(ctx, http.MethodPost, path, payload)
+	req, err := c.NewRequest(ctx, http.MethodPost, path, entity)
 	if err != nil {
 		return nil, err
 	}

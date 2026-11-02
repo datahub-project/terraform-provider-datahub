@@ -59,8 +59,14 @@ type deleteOwnershipTypeResponse struct {
 // URNs.
 //
 // AuditStamps (created / lastModified) are required fields in the
-// OwnershipTypeInfo schema. Both are set to the current time with the system
-// actor on every write.
+// OwnershipTypeInfo schema. lastModified is set to the current time with the
+// system actor on every write; created is set only when the type has none, so
+// it keeps recording when the type was made. Fields this write does not manage
+// are carried over as read.
+// managedOwnershipTypeInfoFields are the ownershipTypeInfo fields
+// WriteOwnershipTypeInfo owns. created is not listed: it is kept as read.
+var managedOwnershipTypeInfoFields = []string{"name", "description", "lastModified"}
+
 func (c *Client) WriteOwnershipTypeInfo(ctx context.Context, urn, name, description string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -80,10 +86,14 @@ func (c *Client) WriteOwnershipTypeInfo(ctx context.Context, urn, name, descript
 		"actor": "urn:li:corpuser:__datahub_system",
 	}
 
-	infoValue := map[string]any{
-		"name":         name,
-		"created":      auditStamp,
-		"lastModified": auditStamp,
+	infoValue, err := c.unmanagedAspectFields(ctx, "ownershiptype", urn, "ownershipTypeInfo", managedOwnershipTypeInfoFields)
+	if err != nil {
+		return err
+	}
+	infoValue["name"] = name
+	infoValue["lastModified"] = auditStamp
+	if _, ok := infoValue["created"]; !ok {
+		infoValue["created"] = auditStamp
 	}
 	if description != "" {
 		infoValue["description"] = description
