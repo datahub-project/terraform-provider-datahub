@@ -78,7 +78,12 @@ type preservedAspects map[string]preservedAspect
 
 // existing reports, for a create-only write, the entity the read found,
 // as an EntityExistsError naming whether it is soft-deleted; nil when the
-// read found none of the declared aspects.
+// read found none of the declared aspects. A leftover holding only its key
+// aspect or a status (a CAT-2583 husk, or a soft-deleted entity whose
+// content aspects were since removed) is therefore not "existing": the
+// declared aspects really are absent, the write carries "-1" for each, and
+// the server accepts it, which repairs the leftover rather than refusing
+// a URN nothing visible occupies.
 func (p preservedAspects) existing(spec aspectWriteSpec) error {
 	found := false
 	for _, d := range spec.preserved {
