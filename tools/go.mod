@@ -6,7 +6,7 @@ toolchain go1.27.3
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
-	github.com/minamijoyo/tfupdate v0.10.2
+	github.com/minamijoyo/tfupdate v0.10.3
 )
 
 require (
