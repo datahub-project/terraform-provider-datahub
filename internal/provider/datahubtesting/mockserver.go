@@ -128,6 +128,10 @@ type mockServer struct {
 	// failDeleteFor holds source IDs whose next DELETE should return 500.
 	// Entries are consumed on first use. Used by the /test-control endpoint.
 	failDeleteFor map[string]struct{}
+
+	// unmanaged gives seeded aspect fields the server's whole-aspect replace
+	// semantics; see unmanaged_aspect_fields.go.
+	unmanaged unmanagedAspectFields
 	// failMonitorLookup makes the getAssertionMonitor GraphQL query return an
 	// error while set, simulating the transient graph/search failures the live
 	// query can produce. Toggled via /test-control/fail-monitor-lookup.
@@ -231,7 +235,8 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/seed-owner", s.handleSeedOwner)
 	mux.HandleFunc("/test-control/seed-policy", s.handleSeedPolicy)
 	mux.HandleFunc("/test-control/seed-role-policy", s.handleSeedRolePolicy)
-	srv := httptest.NewServer(mux)
+	mux.HandleFunc("/test-control/seed-unmanaged-field", s.unmanaged.handleSeedUnmanagedField)
+	srv := httptest.NewServer(s.unmanaged.wrap(mux))
 	t.Cleanup(srv.Close)
 	return srv
 }
