@@ -157,6 +157,15 @@ var aspectWriters = map[string]aspectWriter{
 			}, false)
 		},
 	},
+	"softDeleteStructuredProperty": {
+		aspects: map[string]aspectRule{
+			"status": ownedWhole("removed is the aspect's only field, and the write sets it to mark the " +
+				"property deleted ahead of the hard delete DataHub then permits"),
+		},
+		write: func(ctx context.Context, c *Client) error {
+			return c.softDeleteStructuredProperty(ctx, "urn:li:structuredProperty:io.guard")
+		},
+	},
 	"WriteTagProperties": {
 		aspects: map[string]aspectRule{
 			"tagProperties": ownedWhole("name, description and colorHex are every field the aspect " +

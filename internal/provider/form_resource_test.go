@@ -694,10 +694,15 @@ func TestFormResource_legacyFormSchema_mock(t *testing.T) {
 // DataHub (OSS or Cloud): a structured property feeding a prompt, a dynamic
 // assignment, an in-place update that drops the assignment, and an import.
 func TestAcc_Form_Lifecycle(t *testing.T) {
-	datahubtesting.SetupTarget(t) // configures the live target or skips
+	// Randomised on a live target: DataHub v1.8.0 and DataHub Cloud map a
+	// structured property into the search index when it is created and
+	// refuse to create another with the same name after a hard delete, so a
+	// fixed property_id could pass only once per instance.
+	tg := datahubtesting.SetupTarget(t)
+	base := tg.Name("tf-acc-live-form")
 
 	const addr = "datahub_form.test"
-	const wantURN = "urn:li:form:tf-acc-live-form-pii"
+	wantURN := "urn:li:form:" + base + "-pii"
 
 	cfg := func(withAssignment bool) string {
 		assignment := ""
@@ -717,13 +722,13 @@ func TestAcc_Form_Lifecycle(t *testing.T) {
 provider "datahub" {}
 
 resource "datahub_structured_property" "classification" {
-  property_id  = "tf-acc-live-form-classification"
+  property_id  = "` + base + `-classification"
   value_type   = "string"
   entity_types = ["dataset"]
 }
 
 resource "datahub_form" "test" {
-  form_id     = "tf-acc-live-form-pii"
+  form_id     = "` + base + `-pii"
   name        = "TF Acc Live Form - PII"
   description = "Live acceptance form"
   type        = "VERIFICATION"

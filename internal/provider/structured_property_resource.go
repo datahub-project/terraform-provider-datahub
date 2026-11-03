@@ -292,18 +292,26 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 			"cardinality) are applied in-place. If you remove an element from any of these lists or " +
 			"narrow cardinality from `MULTIPLE` to `SINGLE`, Terraform will destroy and recreate the " +
 			"property. **Destroying a property hard-deletes it and removes all applied values from " +
-			"every asset.**\n\n" +
+			"every asset.** DataHub v1.8.0 and later, and DataHub Cloud, refuse to hard-delete a property " +
+			"that is not soft-deleted first, so the provider soft-deletes it immediately before the hard " +
+			"delete, as the DataHub UI does. If the hard delete is then refused, the property is left " +
+			"soft-deleted and the next destroy retries.\n\n" +
 			"Definition fields this resource does not manage, such as the allowed platforms set in the " +
 			"DataHub UI and a search configuration set through the API or SDK, are kept on update, and so " +
 			"are settings it does not model, which some DataHub versions add.\n\n" +
-			"## Deleting an assigned property burns its `property_id`\n\n" +
-			"Once a value for this property has been applied to any asset, DataHub creates an " +
-			"Elasticsearch field for it, and deleting the property does not release that field name. " +
-			"A later apply that re-creates the same `qualified_name` -- including the destroy-then-create " +
-			"Terraform performs for the list-shrink changes above -- is rejected with " +
-			"`Elasticsearch field '...' collides with existing property mapping`, and reclaiming the name " +
-			"otherwise needs an operator-run reindex. Set `version` to sidestep this: a versioned " +
-			"definition derives a different field name, so re-creating the same `property_id` succeeds. " +
+			"## Deleting a property burns its `property_id`\n\n" +
+			"DataHub creates an Elasticsearch field for each structured property, and deleting the property " +
+			"does not release that field name. On DataHub v1.8.0 and later, and DataHub Cloud, the field is " +
+			"created when the property is created, so this applies to every property; on earlier versions " +
+			"it is created when a value is first applied to an asset, so it applies only to properties that " +
+			"were assigned. A later apply that re-creates the same `qualified_name` -- including the " +
+			"destroy-then-create Terraform performs for the list-shrink changes above -- is rejected " +
+			"(`... already exists in the entity-index mapping`, or `... collides with existing property " +
+			"mapping` on earlier versions), and reclaiming the name otherwise needs an operator-run reindex. " +
+			"Because the destroy has already happened by then, such a replacement removes the property and " +
+			"its applied values and then fails. Set `version` to a new value in the same change to sidestep " +
+			"this: a versioned definition derives a different field name, so re-creating the same " +
+			"`property_id` succeeds. " +
 			"See [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974).\n\n" +
 			"## Value types\n\n" +
 			"Specify `value_type` as a short name: `string`, `number`, `date`, `urn`, or `rich_text`. " +
@@ -344,11 +352,12 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 				MarkdownDescription: "Optional definition version, as exactly 14 digits (a `yyyyMMddHHmmss` timestamp, e.g. " +
 					"`20240610120000`). Short forms like `v1` or `20240610` are rejected by DataHub even though the " +
 					"underlying field documentation suggests them.\n\n" +
-					"Set this when you need to re-create a property whose `property_id` has already been used and " +
-					"assigned. Deleting a structured property that was applied to an asset does not release the " +
-					"Elasticsearch field DataHub derived for it, so re-creating the same `qualified_name` afterwards " +
-					"fails with `Elasticsearch field '...' collides with existing property mapping` until an operator " +
-					"reindexes. A versioned definition derives a different field name, so it is not the same field and " +
+					"Set this when you need to re-create a property whose `property_id` has already been used, " +
+					"including the replacement Terraform plans when an allowed value is removed or cardinality is " +
+					"narrowed. Deleting a structured property does not release the Elasticsearch field DataHub " +
+					"derived for it (on DataHub v1.8.0 and later, and DataHub Cloud, any property; on earlier " +
+					"versions, one that was applied to an asset), so re-creating the same `qualified_name` " +
+					"afterwards is rejected until an operator reindexes. A versioned definition derives a different field name, so it is not the same field and " +
 					"does not collide. This is intended upstream behaviour, not a bug: see " +
 					"[datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), where " +
 					"versioning is the recommended alternative to hard-deleting a property you need to change.\n\n" +
@@ -356,7 +365,7 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 					"value must be greater than the previous one (compared case-insensitively), which a " +
 					"`yyyyMMddHHmmss` timestamp gives you for free.\n\n" +
 					"**Never reuse a version you have used before on the same `property_id`.** A versioned field is " +
-					"burned by an assignment exactly like the un-versioned one, so re-creating a deleted property at " +
+					"burned exactly like the un-versioned one, so re-creating a deleted property at " +
 					"an earlier version collides all over again. Take a fresh timestamp each time; the format is what " +
 					"makes that natural.",
 				Validators: []validator.String{

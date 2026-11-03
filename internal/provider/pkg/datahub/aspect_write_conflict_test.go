@@ -685,15 +685,16 @@ func TestAspectWriteRetryAfterIsHonoured(t *testing.T) {
 // each writer declares, which is the only thing a practitioner can act on.
 func TestAspectWriteForbiddenNamesPrivilege(t *testing.T) {
 	privileges := map[string]string{
-		"UpsertCorpUser":             "MANAGE_USERS_AND_GROUPS",
-		"WriteDataProductProperties": "MANAGE_DATA_PRODUCTS",
-		"SetDomainProperties":        "MANAGE_DOMAINS",
-		"setGlossaryProperties":      "MANAGE_GLOSSARIES",
-		"NewDatasourceIngestion":     "MANAGE_INGESTION",
-		"WriteOwnershipTypeInfo":     "MANAGE_OWNERSHIP_TYPES",
-		"writeStructuredProperty":    "MANAGE_STRUCTURED_PROPERTIES",
-		"WriteTagProperties":         "MANAGE_TAGS",
-		"SetGlobalTags":              "", // no single privilege: it writes on many entity types
+		"UpsertCorpUser":               "MANAGE_USERS_AND_GROUPS",
+		"WriteDataProductProperties":   "MANAGE_DATA_PRODUCTS",
+		"SetDomainProperties":          "MANAGE_DOMAINS",
+		"setGlossaryProperties":        "MANAGE_GLOSSARIES",
+		"NewDatasourceIngestion":       "MANAGE_INGESTION",
+		"WriteOwnershipTypeInfo":       "MANAGE_OWNERSHIP_TYPES",
+		"writeStructuredProperty":      "MANAGE_STRUCTURED_PROPERTIES",
+		"WriteTagProperties":           "MANAGE_TAGS",
+		"softDeleteStructuredProperty": "MANAGE_STRUCTURED_PROPERTIES",
+		"SetGlobalTags":                "", // no single privilege: it writes on many entity types
 	}
 	for _, name := range sortedWriterNames() {
 		t.Run(name, func(t *testing.T) {
