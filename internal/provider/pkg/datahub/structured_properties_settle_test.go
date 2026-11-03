@@ -140,8 +140,11 @@ type settleTestServer struct {
 	// softDeleteStatus, when non-zero, is the HTTP status the soft-delete
 	// write receives instead of success.
 	softDeleteStatus int
-	softDeletes      int
-	softDeleted      bool
+	// readStatus, when non-zero, is the HTTP status every definition read
+	// receives instead of an answer.
+	readStatus  int
+	softDeletes int
+	softDeleted bool
 	// events records the order of soft deletes ("soft") and delete
 	// mutations ("hard").
 	events []string
@@ -178,7 +181,12 @@ func (s *settleTestServer) handler() http.HandlerFunc {
 		if strings.HasPrefix(r.URL.Path, "/openapi/v3/entity/structuredproperty/") {
 			s.mu.Lock()
 			def := s.definition
+			readStatus := s.readStatus
 			s.mu.Unlock()
+			if readStatus != 0 {
+				http.Error(w, `{"error":"read failed"}`, readStatus)
+				return
+			}
 			if def == nil {
 				http.NotFound(w, r)
 				return
@@ -491,6 +499,48 @@ func TestDeleteStructuredProperty_HardDeleteFailureAfterSoftDelete(t *testing.T)
 	for _, want := range []string{"Unauthorized", "is soft-deleted", "terraform destroy again"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+}
+
+// TestDeleteStructuredProperty_ReadFailureStopsSoftDelete checks that a
+// failed existence check stops the delete instead of guessing: soft-deleting
+// a property that is in fact gone would create an entity holding nothing but
+// a status.
+func TestDeleteStructuredProperty_ReadFailureStopsSoftDelete(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+	ts := &settleTestServer{readStatus: http.StatusInternalServerError}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	err := newTestClient(t, srv).DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+	if err == nil || !strings.Contains(err.Error(), "before soft-deleting it") {
+		t.Fatalf("a failed read must stop the delete with an explanation, got %v", err)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.softDeletes != 0 || ts.deleteCalls != 0 {
+		t.Errorf("nothing may be written after a failed read: soft=%d hard=%d", ts.softDeletes, ts.deleteCalls)
+	}
+}
+
+// TestGetStructuredPropertyByURN_ReportsSoftDeleted checks the read exposes
+// status.removed, which the resource turns into a warning: a soft-deleted
+// property otherwise reads like a live one while DataHub rejects every write
+// to it.
+func TestGetStructuredPropertyByURN_ReportsSoftDeleted(t *testing.T) {
+	for _, removed := range []bool{false, true} {
+		def := spSettleDefinition("tf-example.governance.tier")
+		def["status"] = map[string]any{"value": map[string]any{"removed": removed}}
+		ts := &settleTestServer{definition: def}
+		srv := httptest.NewServer(ts.handler())
+		sp, err := newTestClient(t, srv).GetStructuredPropertyByURN(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+		srv.Close()
+		if err != nil || sp == nil {
+			t.Fatalf("read: %v %v", sp, err)
+		}
+		if sp.Removed != removed {
+			t.Errorf("status.removed=%v read back as Removed=%v", removed, sp.Removed)
 		}
 	}
 }

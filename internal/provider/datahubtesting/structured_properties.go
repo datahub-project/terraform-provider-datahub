@@ -171,6 +171,11 @@ func (s *mockServer) handleStructuredPropertyWrite(w http.ResponseWriter, r *htt
 			sp.Settings = extractMockSPSettings(settVal)
 			sp.SettingsSet = true
 		}
+		if status := aspectValueMap(e["status"]); status != nil {
+			sp.Removed, _ = status["removed"].(bool)
+		} else if prev, ok := s.structuredProperties[sp.ID]; ok {
+			sp.Removed = prev.Removed
+		}
 
 		s.structuredProperties[sp.ID] = sp
 	}
@@ -299,6 +304,9 @@ func (s *mockServer) handleStructuredPropertyItem(w http.ResponseWriter, r *http
 			"value": map[string]any{"id": sp.ID},
 		},
 		"propertyDefinition": map[string]any{"value": propDefValue},
+	}
+	if sp.Removed {
+		entity["status"] = map[string]any{"value": map[string]any{"removed": true}}
 	}
 
 	// Only include the structuredPropertySettings aspect when settings were

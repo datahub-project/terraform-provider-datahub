@@ -84,6 +84,9 @@ type StructuredProperty struct {
 	AllowedValues      []AllowedValue
 	AllowedEntityTypes []string // short names; from typeQualifier.allowedTypes
 	Settings           *StructuredPropertySettings
+	// Removed is status.removed: the property is soft-deleted. DataHub then
+	// rejects writes to it and assignments of it.
+	Removed bool
 }
 
 // CreateStructuredPropertyInput groups the inputs for creating a structured
@@ -113,7 +116,12 @@ type CreateStructuredPropertyInput struct {
 // structuredPropertyEntity is the OpenAPI v3 response shape for
 // GET /openapi/v3/entity/structuredproperty/{urn}.
 type structuredPropertyEntity struct {
-	URN     string `json:"urn"`
+	URN    string `json:"urn"`
+	Status *struct {
+		Value struct {
+			Removed bool `json:"removed"`
+		} `json:"value"`
+	} `json:"status,omitempty"`
 	KeyData *struct {
 		Value struct {
 			ID string `json:"id"`
@@ -417,6 +425,9 @@ func (c *Client) GetStructuredPropertyByURN(ctx context.Context, urn string) (*S
 	}
 
 	sp := &StructuredProperty{URN: entity.URN, ID: id, QualifiedName: id}
+	if entity.Status != nil {
+		sp.Removed = entity.Status.Value.Removed
+	}
 
 	if entity.PropDef != nil {
 		v := entity.PropDef.Value
@@ -686,16 +697,21 @@ func hardDeleteError(urn string, softDeleted bool, err error) error {
 		return err
 	}
 	return fmt.Errorf("structured property %s is soft-deleted, but DataHub refused the hard delete: %w. "+
-		"A soft-deleted property is hidden in DataHub and can be restored; running terraform destroy again retries the hard delete", urn, err)
+		"Running terraform destroy again retries the hard delete. To keep managing the property instead, restore it "+
+		"in DataHub: while it is soft-deleted, DataHub rejects changes to it and assignments of it", urn, err)
 }
 
 // softDeleteStructuredPropertyIfPresent soft-deletes the property unless a
 // read shows it does not exist, and reports whether it wrote. Writing status
 // to an absent property would create an entity holding nothing but that
-// status, so an absent property is left to the hard delete as before. A read
-// that fails is not taken as absence: the soft delete is attempted anyway.
+// status, so an absent property is left to the hard delete as before, and a
+// read that fails stops the delete rather than guess.
 func (c *Client) softDeleteStructuredPropertyIfPresent(ctx context.Context, urn string) (bool, error) {
-	if sp, err := c.GetStructuredPropertyByURN(ctx, urn); err == nil && sp == nil {
+	sp, err := c.GetStructuredPropertyByURN(ctx, urn)
+	if err != nil {
+		return false, fmt.Errorf("reading structured property %s before soft-deleting it: %w", urn, err)
+	}
+	if sp == nil {
 		return false, nil
 	}
 	if err := c.softDeleteStructuredProperty(ctx, urn); err != nil {

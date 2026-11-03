@@ -11,6 +11,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -18,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -124,6 +126,31 @@ func (v cardinalityValidator) ValidateString(_ context.Context, req validator.St
 	}
 }
 
+// warnStructuredPropertyReplacement explains, at plan time, what a forced
+// replacement of a structured property does, because the destroy half
+// succeeds before the create half can fail. Replacing hard-deletes the
+// property and every value applied to it. On DataHub v1.8.0 and later, and
+// DataHub Cloud, every property is mapped into the search index when it is
+// created and a hard-deleted name cannot be created again, so unless
+// `version` changes in the same plan the re-create is refused and the
+// apply ends with the property gone. The text is identical from every
+// modifier so the framework reports it once.
+func warnStructuredPropertyReplacement(ctx context.Context, plan tfsdk.Plan, state tfsdk.State, diags *diag.Diagnostics) {
+	var planVersion, stateVersion types.String
+	_ = plan.GetAttribute(ctx, path.Root("version"), &planVersion)
+	_ = state.GetAttribute(ctx, path.Root("version"), &stateVersion)
+	detail := "Removing an allowed value or entity type, or narrowing cardinality, cannot be applied in place, " +
+		"so Terraform replaces the structured property: it hard-deletes the property, which also removes every " +
+		"value applied to assets, and then creates it again."
+	if planVersion.Equal(stateVersion) {
+		detail += " On DataHub v1.8.0 and later, and DataHub Cloud, a hard-deleted property's name cannot be " +
+			"created again until an operator reindexes, so this apply would delete the property and then fail. " +
+			"Set `version` to a new value in the same change: a versioned definition is a different search " +
+			"field, so the re-create succeeds."
+	}
+	diags.AddWarning("Replacing this structured property deletes it and its applied values", detail)
+}
+
 // requiresReplaceIfNarrowedModifier is a plan modifier for cardinality: forces
 // resource replacement when state is "MULTIPLE" and plan is "SINGLE", because
 // the DataHub API cannot narrow cardinality.
@@ -137,7 +164,7 @@ func (m requiresReplaceIfNarrowedModifier) MarkdownDescription(ctx context.Conte
 	return m.Description(ctx)
 }
 
-func (m requiresReplaceIfNarrowedModifier) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+func (m requiresReplaceIfNarrowedModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
 	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
 		return
 	}
@@ -146,6 +173,7 @@ func (m requiresReplaceIfNarrowedModifier) PlanModifyString(_ context.Context, r
 	}
 	if req.StateValue.ValueString() == "MULTIPLE" && req.PlanValue.ValueString() == "SINGLE" {
 		resp.RequiresReplace = true
+		warnStructuredPropertyReplacement(ctx, req.Plan, req.State, &resp.Diagnostics)
 	}
 }
 
@@ -162,7 +190,7 @@ func (m requiresReplaceIfSetShrunkModifier) MarkdownDescription(ctx context.Cont
 	return m.Description(ctx)
 }
 
-func (m requiresReplaceIfSetShrunkModifier) PlanModifySet(_ context.Context, req planmodifier.SetRequest, resp *planmodifier.SetResponse) {
+func (m requiresReplaceIfSetShrunkModifier) PlanModifySet(ctx context.Context, req planmodifier.SetRequest, resp *planmodifier.SetResponse) {
 	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
 		return
 	}
@@ -177,6 +205,7 @@ func (m requiresReplaceIfSetShrunkModifier) PlanModifySet(_ context.Context, req
 	for _, e := range req.StateValue.Elements() {
 		if !planElements[e.String()] {
 			resp.RequiresReplace = true
+			warnStructuredPropertyReplacement(ctx, req.Plan, req.State, &resp.Diagnostics)
 			return
 		}
 	}
@@ -194,7 +223,7 @@ func (m requiresReplaceIfListShrunkModifier) MarkdownDescription(ctx context.Con
 	return m.Description(ctx)
 }
 
-func (m requiresReplaceIfListShrunkModifier) PlanModifyList(_ context.Context, req planmodifier.ListRequest, resp *planmodifier.ListResponse) {
+func (m requiresReplaceIfListShrunkModifier) PlanModifyList(ctx context.Context, req planmodifier.ListRequest, resp *planmodifier.ListResponse) {
 	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
 		return
 	}
@@ -203,6 +232,7 @@ func (m requiresReplaceIfListShrunkModifier) PlanModifyList(_ context.Context, r
 	}
 	if len(req.PlanValue.Elements()) < len(req.StateValue.Elements()) {
 		resp.RequiresReplace = true
+		warnStructuredPropertyReplacement(ctx, req.Plan, req.State, &resp.Diagnostics)
 	}
 }
 
@@ -554,6 +584,17 @@ func (r *structuredPropertyResource) Read(ctx context.Context, req resource.Read
 	if sp == nil {
 		resp.State.RemoveResource(ctx)
 		return
+	}
+	if sp.Removed {
+		// A soft-deleted property reads like any other, but DataHub rejects
+		// every later write to it and every assignment of it. This happens
+		// when a destroy soft-deleted the property and the hard delete then
+		// failed, or when it was deleted in the DataHub UI.
+		resp.Diagnostics.AddWarning(
+			"Structured property is soft-deleted in DataHub",
+			fmt.Sprintf("%s is soft-deleted in DataHub. DataHub rejects changes to it and assignments of it while it "+
+				"is soft-deleted. Run terraform destroy to finish deleting it, or restore it in DataHub to keep "+
+				"managing it.", urn))
 	}
 
 	diags := applyStructuredPropertyToModel(ctx, sp, &state)
