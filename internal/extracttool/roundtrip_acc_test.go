@@ -115,6 +115,11 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 		GmsURL:    gmsURL,
 		GmsToken:  gmsToken,
 		OutputDir: outDir,
+		// Scope the run to the two types this test seeds. The registry holds
+		// every target the provider supports, and enumerating all of them here
+		// would make the assertions below depend on whatever else happens to
+		// exist on the target instance.
+		Types: "datahub_ingestion_source,datahub_secret",
 		// SkipTerraform: false (default) -- the whole point of this test.
 		// SkipValidation is not needed: a non-empty vars list (the secret)
 		// naturally skips the final terraform plan validation.
