@@ -33,6 +33,10 @@ type mockStructuredProperty struct {
 	AllowedEntityTypes []string // full URNs; typeQualifier.allowedTypes
 	Settings           mockSPSettings
 	SettingsSet        bool // true when settings were explicitly configured
+	// Removed is status.removed: the property is soft-deleted. The delete
+	// mutation requires it, as DataHub v1.8.0 and DataHub Cloud do
+	// (datahub-project/datahub#19445).
+	Removed bool
 }
 
 type mockAllowedValue struct {
@@ -104,6 +108,17 @@ func (s *mockServer) handleStructuredPropertyWrite(w http.ResponseWriter, r *htt
 		urn, _ := e["urn"].(string)
 		id := strings.TrimPrefix(urn, "urn:li:structuredProperty:")
 		def := aspectValueMap(e["propertyDefinition"])
+		// A write of status alone (the soft delete) changes only the removed
+		// flag of a stored property; it must not rebuild the definition.
+		if def == nil {
+			if status := aspectValueMap(e["status"]); status != nil {
+				if sp, ok := s.structuredProperties[id]; ok {
+					sp.Removed, _ = status["removed"].(bool)
+					s.structuredProperties[id] = sp
+				}
+			}
+			continue
+		}
 
 		sp := mockStructuredProperty{URN: urn, ID: id, Cardinality: "SINGLE"}
 		if v, ok := def["version"].(string); ok {
@@ -156,6 +171,11 @@ func (s *mockServer) handleStructuredPropertyWrite(w http.ResponseWriter, r *htt
 			sp.Settings = extractMockSPSettings(settVal)
 			sp.SettingsSet = true
 		}
+		if status := aspectValueMap(e["status"]); status != nil {
+			sp.Removed, _ = status["removed"].(bool)
+		} else if prev, ok := s.structuredProperties[sp.ID]; ok {
+			sp.Removed = prev.Removed
+		}
 
 		s.structuredProperties[sp.ID] = sp
 	}
@@ -199,6 +219,20 @@ func (s *mockServer) handleDeleteStructuredProperty(w http.ResponseWriter, varia
 	id := strings.TrimPrefix(urn, "urn:li:structuredProperty:")
 
 	s.mu.Lock()
+	sp, ok := s.structuredProperties[id]
+	if ok && !sp.Removed {
+		s.mu.Unlock()
+		// DataHub v1.8.0 and DataHub Cloud refuse to hard-delete an active
+		// structured property (datahub-project/datahub#19445).
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"deleteStructuredProperty": nil},
+			"errors": []map[string]any{{"message": "Hard delete rejected for structured property qualifiedName '" + id +
+				"'. Hard deletion can leave a permanent entity-index mapping for this normalized name, preventing reuse " +
+				"until the affected entity indices are reindexed with SystemUpdate. Soft-delete the property first to " +
+				"confirm, or leave it soft-deleted; soft deletion is reversible."}},
+		})
+		return
+	}
 	delete(s.structuredProperties, id)
 	s.mu.Unlock()
 
@@ -270,6 +304,9 @@ func (s *mockServer) handleStructuredPropertyItem(w http.ResponseWriter, r *http
 			"value": map[string]any{"id": sp.ID},
 		},
 		"propertyDefinition": map[string]any{"value": propDefValue},
+	}
+	if sp.Removed {
+		entity["status"] = map[string]any{"value": map[string]any{"removed": true}}
 	}
 
 	// Only include the structuredPropertySettings aspect when settings were

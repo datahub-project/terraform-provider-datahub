@@ -133,14 +133,60 @@ type settleTestServer struct {
 	searchFields []string
 	deleteCalls  int
 	deleteAfter  []int // snapshot of searchCalls at each delete
+	// requireSoftDelete makes the delete mutation behave as DataHub v1.8.0
+	// and DataHub Cloud do (datahub-project/datahub#19445): it is rejected
+	// unless the property was soft-deleted first.
+	requireSoftDelete bool
+	// softDeleteStatus, when non-zero, is the HTTP status the soft-delete
+	// write receives instead of success.
+	softDeleteStatus int
+	// readStatus, when non-zero, is the HTTP status every definition read
+	// receives instead of an answer.
+	readStatus  int
+	softDeletes int
+	softDeleted bool
+	// events records the order of soft deletes ("soft") and delete
+	// mutations ("hard").
+	events []string
 }
 
 func (s *settleTestServer) handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/openapi/v3/entity/structuredproperty" {
+			var entities []map[string]map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&entities)
+			removed := false
+			for _, e := range entities {
+				if v, ok := e["status"]["value"].(map[string]any); ok {
+					removed, _ = v["removed"].(bool)
+				}
+			}
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			if r.URL.Query().Get("async") != "false" || !removed {
+				http.Error(w, `{"error":"test server: expected a synchronous status write with removed=true"}`, http.StatusBadRequest)
+				return
+			}
+			s.softDeletes++
+			s.events = append(s.events, "soft")
+			if s.softDeleteStatus != 0 {
+				w.WriteHeader(s.softDeleteStatus)
+				_, _ = w.Write([]byte(`{"error":"denied"}`))
+				return
+			}
+			s.softDeleted = true
+			_, _ = w.Write([]byte("[]"))
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/openapi/v3/entity/structuredproperty/") {
 			s.mu.Lock()
 			def := s.definition
+			readStatus := s.readStatus
 			s.mu.Unlock()
+			if readStatus != 0 {
+				http.Error(w, `{"error":"read failed"}`, readStatus)
+				return
+			}
 			if def == nil {
 				http.NotFound(w, r)
 				return
@@ -193,8 +239,14 @@ func (s *settleTestServer) handler() http.HandlerFunc {
 			s.mu.Lock()
 			s.deleteCalls++
 			s.deleteAfter = append(s.deleteAfter, s.searchCalls)
+			s.events = append(s.events, "hard")
 			fails := s.deleteErr
+			guarded := s.requireSoftDelete && !s.softDeleted
 			s.mu.Unlock()
+			if guarded {
+				_, _ = w.Write([]byte(`{"errors":[{"message":"Hard delete rejected for structured property qualifiedName 'x'. Soft-delete the property first to confirm, or leave it soft-deleted; soft deletion is reversible."}]}`))
+				return
+			}
 			if fails {
 				_, _ = w.Write([]byte(`{"errors":[{"message":"Unauthorized to delete this property"}]}`))
 				return
@@ -369,5 +421,126 @@ func TestDeleteStructuredProperty_DefinitionGoneSkipsBarrier(t *testing.T) {
 	}
 	if ts.deleteCalls != 1 {
 		t.Errorf("expected exactly one delete, got %d", ts.deleteCalls)
+	}
+	// Writing status to an absent property would create an entity holding
+	// nothing but that status.
+	if ts.softDeletes != 0 {
+		t.Errorf("an absent property must not be soft-deleted, got %d soft deletes", ts.softDeletes)
+	}
+}
+
+// TestDeleteStructuredProperty_SoftDeletesBeforeHardDelete is the
+// datahub-project/datahub#19445 guard: against a server that refuses to
+// hard-delete an active structured property, as DataHub v1.8.0 and DataHub
+// Cloud do, the delete must soft-delete first, synchronously, exactly once,
+// and only then issue the hard delete.
+func TestDeleteStructuredProperty_SoftDeletesBeforeHardDelete(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+	ts := &settleTestServer{
+		definition:        spSettleDefinition("tf-example.governance.tier"),
+		searchTotals:      []int{0},
+		requireSoftDelete: true,
+	}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	c := newTestClient(t, srv)
+	if err := c.DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier"); err != nil {
+		t.Fatalf("DeleteStructuredProperty against a server requiring soft delete first: %v", err)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if strings.Join(ts.events, ",") != "soft,hard" {
+		t.Errorf("want exactly one soft delete then one hard delete, got %v", ts.events)
+	}
+}
+
+// TestDeleteStructuredProperty_SoftDeleteFailureStopsHardDelete checks a
+// failed soft delete is reported, names the privilege, and stops the hard
+// delete: nothing is half-done.
+func TestDeleteStructuredProperty_SoftDeleteFailureStopsHardDelete(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+	ts := &settleTestServer{
+		definition:       spSettleDefinition("tf-example.governance.tier"),
+		searchTotals:     []int{0},
+		softDeleteStatus: http.StatusForbidden,
+	}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	err := newTestClient(t, srv).DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+	if err == nil || !strings.Contains(err.Error(), "MANAGE_STRUCTURED_PROPERTIES") {
+		t.Errorf("a refused soft delete should fail and name the privilege, got %v", err)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.deleteCalls != 0 {
+		t.Errorf("the hard delete must not run after a failed soft delete; got %d", ts.deleteCalls)
+	}
+}
+
+// TestDeleteStructuredProperty_HardDeleteFailureAfterSoftDelete checks the
+// message when the soft delete landed and the hard delete did not: the
+// property is soft-deleted, which is safe, and a retry finishes the job.
+func TestDeleteStructuredProperty_HardDeleteFailureAfterSoftDelete(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+	ts := &settleTestServer{
+		definition:   spSettleDefinition("tf-example.governance.tier"),
+		searchTotals: []int{0},
+		deleteErr:    true,
+	}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	err := newTestClient(t, srv).DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+	if err == nil {
+		t.Fatal("a refused hard delete must be an error")
+	}
+	for _, want := range []string{"Unauthorized", "is soft-deleted", "terraform destroy again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+}
+
+// TestDeleteStructuredProperty_ReadFailureStopsSoftDelete checks that a
+// failed existence check stops the delete instead of guessing: soft-deleting
+// a property that is in fact gone would create an entity holding nothing but
+// a status.
+func TestDeleteStructuredProperty_ReadFailureStopsSoftDelete(t *testing.T) {
+	shortenSettleBudget(t, 5*time.Second)
+	ts := &settleTestServer{readStatus: http.StatusInternalServerError}
+	srv := httptest.NewServer(ts.handler())
+	defer srv.Close()
+
+	err := newTestClient(t, srv).DeleteStructuredProperty(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+	if err == nil || !strings.Contains(err.Error(), "before soft-deleting it") {
+		t.Fatalf("a failed read must stop the delete with an explanation, got %v", err)
+	}
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.softDeletes != 0 || ts.deleteCalls != 0 {
+		t.Errorf("nothing may be written after a failed read: soft=%d hard=%d", ts.softDeletes, ts.deleteCalls)
+	}
+}
+
+// TestGetStructuredPropertyByURN_ReportsSoftDeleted checks the read exposes
+// status.removed, which the resource turns into a warning: a soft-deleted
+// property otherwise reads like a live one while DataHub rejects every write
+// to it.
+func TestGetStructuredPropertyByURN_ReportsSoftDeleted(t *testing.T) {
+	for _, removed := range []bool{false, true} {
+		def := spSettleDefinition("tf-example.governance.tier")
+		def["status"] = map[string]any{"value": map[string]any{"removed": removed}}
+		ts := &settleTestServer{definition: def}
+		srv := httptest.NewServer(ts.handler())
+		sp, err := newTestClient(t, srv).GetStructuredPropertyByURN(context.Background(), "urn:li:structuredProperty:tf-example.governance.tier")
+		srv.Close()
+		if err != nil || sp == nil {
+			t.Fatalf("read: %v %v", sp, err)
+		}
+		if sp.Removed != removed {
+			t.Errorf("status.removed=%v read back as Removed=%v", removed, sp.Removed)
+		}
 	}
 }

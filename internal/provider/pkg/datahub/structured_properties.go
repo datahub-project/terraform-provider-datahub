@@ -84,6 +84,9 @@ type StructuredProperty struct {
 	AllowedValues      []AllowedValue
 	AllowedEntityTypes []string // short names; from typeQualifier.allowedTypes
 	Settings           *StructuredPropertySettings
+	// Removed is status.removed: the property is soft-deleted. DataHub then
+	// rejects writes to it and assignments of it.
+	Removed bool
 }
 
 // CreateStructuredPropertyInput groups the inputs for creating a structured
@@ -113,7 +116,12 @@ type CreateStructuredPropertyInput struct {
 // structuredPropertyEntity is the OpenAPI v3 response shape for
 // GET /openapi/v3/entity/structuredproperty/{urn}.
 type structuredPropertyEntity struct {
-	URN     string `json:"urn"`
+	URN    string `json:"urn"`
+	Status *struct {
+		Value struct {
+			Removed bool `json:"removed"`
+		} `json:"value"`
+	} `json:"status,omitempty"`
 	KeyData *struct {
 		Value struct {
 			ID string `json:"id"`
@@ -417,6 +425,9 @@ func (c *Client) GetStructuredPropertyByURN(ctx context.Context, urn string) (*S
 	}
 
 	sp := &StructuredProperty{URN: entity.URN, ID: id, QualifiedName: id}
+	if entity.Status != nil {
+		sp.Removed = entity.Status.Value.Removed
+	}
 
 	if entity.PropDef != nil {
 		v := entity.PropDef.Value
@@ -634,7 +645,8 @@ func (c *Client) settleStructuredPropertyAssignments(ctx context.Context, urn st
 // removes applied values from all assets. Structured properties are flat (no
 // children), so no child-guard or retry logic is needed; however, the delete
 // waits for the search index to stop listing assignees first (see
-// settleStructuredPropertyAssignments / CAT-2583).
+// settleStructuredPropertyAssignments / CAT-2583), and soft-deletes the
+// property before the hard delete (see softDeleteStructuredProperty).
 func (c *Client) DeleteStructuredProperty(ctx context.Context, urn string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -645,6 +657,15 @@ func (c *Client) DeleteStructuredProperty(ctx context.Context, urn string) error
 	}
 
 	c.settleStructuredPropertyAssignments(ctx, urn)
+
+	// Soft delete first: DataHub v1.8.0 and DataHub Cloud refuse to hard-delete
+	// a structured property that is not already soft-deleted
+	// (datahub-project/datahub#19445). This block is self-contained; to back it
+	// out, remove it and softDeleteStructuredProperty, and nothing else changes.
+	softDeleted, err := c.softDeleteStructuredPropertyIfPresent(ctx, urn)
+	if err != nil {
+		return err
+	}
 
 	const q = `
 mutation deleteStructuredProperty($input: DeleteStructuredPropertyInput!) {
@@ -659,10 +680,69 @@ mutation deleteStructuredProperty($input: DeleteStructuredPropertyInput!) {
 	}
 	var gqlResp genericGraphQLErrors
 	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
-		return err
+		return hardDeleteError(urn, softDeleted, err)
 	}
 	if len(gqlResp.Errors) > 0 {
-		return fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message)
+		return hardDeleteError(urn, softDeleted, fmt.Errorf("DataHub API error: %s", gqlResp.Errors[0].Message))
 	}
 	return nil
+}
+
+// hardDeleteError explains a failed hard delete. When the soft delete before
+// it succeeded, the property is left soft-deleted, which is a safe state:
+// hidden in DataHub, its values hidden on read, restorable, and retried by
+// the next terraform destroy.
+func hardDeleteError(urn string, softDeleted bool, err error) error {
+	if !softDeleted {
+		return err
+	}
+	return fmt.Errorf("structured property %s is soft-deleted, but DataHub refused the hard delete: %w. "+
+		"Running terraform destroy again retries the hard delete. To keep managing the property instead, restore it "+
+		"in DataHub: while it is soft-deleted, DataHub rejects changes to it and assignments of it", urn, err)
+}
+
+// softDeleteStructuredPropertyIfPresent soft-deletes the property unless a
+// read shows it does not exist, and reports whether it wrote. Writing status
+// to an absent property would create an entity holding nothing but that
+// status, so an absent property is left to the hard delete as before, and a
+// read that fails stops the delete rather than guess.
+func (c *Client) softDeleteStructuredPropertyIfPresent(ctx context.Context, urn string) (bool, error) {
+	sp, err := c.GetStructuredPropertyByURN(ctx, urn)
+	if err != nil {
+		return false, fmt.Errorf("reading structured property %s before soft-deleting it: %w", urn, err)
+	}
+	if sp == nil {
+		return false, nil
+	}
+	if err := c.softDeleteStructuredProperty(ctx, urn); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// softDeleteStructuredProperty marks a structured property removed
+// (status.removed = true), the first of the two steps DataHub v1.8.0 and
+// DataHub Cloud require before a hard delete
+// (datahub-project/datahub#19445): hard-deleting an active property is
+// rejected with "Hard delete rejected for structured property qualifiedName
+// ... Soft-delete the property first". The DataHub UI performs the same two
+// steps. On a server without that guard the write is harmless, because the
+// hard delete that follows removes the status aspect with the rest of the
+// entity.
+//
+// Soft-then-hard is not soft-only: the entity is still hard-deleted, so the
+// resource keeps the meaning destroy had before the guard existed. Whether
+// destroy should stop at the soft delete is an open question with DataHub;
+// answering yes means removing the hard delete in DeleteStructuredProperty.
+func (c *Client) softDeleteStructuredProperty(ctx context.Context, urn string) error {
+	spec := aspectWriteSpec{
+		entityPath: "structuredproperty",
+		urn:        urn,
+		what:       "structured property soft delete",
+		privilege:  "MANAGE_STRUCTURED_PROPERTIES",
+	}
+	_, err := c.writeAspects(ctx, spec, func(preservedAspects) ([]aspectEntry, error) {
+		return []aspectEntry{ownedEntry("status", map[string]any{"removed": true})}, nil
+	})
+	return err
 }

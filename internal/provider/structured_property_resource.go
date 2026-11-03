@@ -11,6 +11,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
@@ -18,6 +19,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
@@ -124,6 +126,31 @@ func (v cardinalityValidator) ValidateString(_ context.Context, req validator.St
 	}
 }
 
+// warnStructuredPropertyReplacement explains, at plan time, what a forced
+// replacement of a structured property does, because the destroy half
+// succeeds before the create half can fail. Replacing hard-deletes the
+// property and every value applied to it. On DataHub v1.8.0 and later, and
+// DataHub Cloud, every property is mapped into the search index when it is
+// created and a hard-deleted name cannot be created again, so unless
+// `version` changes in the same plan the re-create is refused and the
+// apply ends with the property gone. The text is identical from every
+// modifier so the framework reports it once.
+func warnStructuredPropertyReplacement(ctx context.Context, plan tfsdk.Plan, state tfsdk.State, diags *diag.Diagnostics) {
+	var planVersion, stateVersion types.String
+	_ = plan.GetAttribute(ctx, path.Root("version"), &planVersion)
+	_ = state.GetAttribute(ctx, path.Root("version"), &stateVersion)
+	detail := "Removing an allowed value or entity type, or narrowing cardinality, cannot be applied in place, " +
+		"so Terraform replaces the structured property: it hard-deletes the property, which also removes every " +
+		"value applied to assets, and then creates it again."
+	if planVersion.Equal(stateVersion) {
+		detail += " On DataHub v1.8.0 and later, and DataHub Cloud, a hard-deleted property's name cannot be " +
+			"created again until an operator reindexes, so this apply would delete the property and then fail. " +
+			"Set `version` to a new value in the same change: a versioned definition is a different search " +
+			"field, so the re-create succeeds."
+	}
+	diags.AddWarning("Replacing this structured property deletes it and its applied values", detail)
+}
+
 // requiresReplaceIfNarrowedModifier is a plan modifier for cardinality: forces
 // resource replacement when state is "MULTIPLE" and plan is "SINGLE", because
 // the DataHub API cannot narrow cardinality.
@@ -137,7 +164,7 @@ func (m requiresReplaceIfNarrowedModifier) MarkdownDescription(ctx context.Conte
 	return m.Description(ctx)
 }
 
-func (m requiresReplaceIfNarrowedModifier) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+func (m requiresReplaceIfNarrowedModifier) PlanModifyString(ctx context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
 	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
 		return
 	}
@@ -146,6 +173,7 @@ func (m requiresReplaceIfNarrowedModifier) PlanModifyString(_ context.Context, r
 	}
 	if req.StateValue.ValueString() == "MULTIPLE" && req.PlanValue.ValueString() == "SINGLE" {
 		resp.RequiresReplace = true
+		warnStructuredPropertyReplacement(ctx, req.Plan, req.State, &resp.Diagnostics)
 	}
 }
 
@@ -162,7 +190,7 @@ func (m requiresReplaceIfSetShrunkModifier) MarkdownDescription(ctx context.Cont
 	return m.Description(ctx)
 }
 
-func (m requiresReplaceIfSetShrunkModifier) PlanModifySet(_ context.Context, req planmodifier.SetRequest, resp *planmodifier.SetResponse) {
+func (m requiresReplaceIfSetShrunkModifier) PlanModifySet(ctx context.Context, req planmodifier.SetRequest, resp *planmodifier.SetResponse) {
 	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
 		return
 	}
@@ -177,6 +205,7 @@ func (m requiresReplaceIfSetShrunkModifier) PlanModifySet(_ context.Context, req
 	for _, e := range req.StateValue.Elements() {
 		if !planElements[e.String()] {
 			resp.RequiresReplace = true
+			warnStructuredPropertyReplacement(ctx, req.Plan, req.State, &resp.Diagnostics)
 			return
 		}
 	}
@@ -194,7 +223,7 @@ func (m requiresReplaceIfListShrunkModifier) MarkdownDescription(ctx context.Con
 	return m.Description(ctx)
 }
 
-func (m requiresReplaceIfListShrunkModifier) PlanModifyList(_ context.Context, req planmodifier.ListRequest, resp *planmodifier.ListResponse) {
+func (m requiresReplaceIfListShrunkModifier) PlanModifyList(ctx context.Context, req planmodifier.ListRequest, resp *planmodifier.ListResponse) {
 	if req.StateValue.IsNull() || req.StateValue.IsUnknown() {
 		return
 	}
@@ -203,6 +232,7 @@ func (m requiresReplaceIfListShrunkModifier) PlanModifyList(_ context.Context, r
 	}
 	if len(req.PlanValue.Elements()) < len(req.StateValue.Elements()) {
 		resp.RequiresReplace = true
+		warnStructuredPropertyReplacement(ctx, req.Plan, req.State, &resp.Diagnostics)
 	}
 }
 
@@ -292,18 +322,26 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 			"cardinality) are applied in-place. If you remove an element from any of these lists or " +
 			"narrow cardinality from `MULTIPLE` to `SINGLE`, Terraform will destroy and recreate the " +
 			"property. **Destroying a property hard-deletes it and removes all applied values from " +
-			"every asset.**\n\n" +
+			"every asset.** DataHub v1.8.0 and later, and DataHub Cloud, refuse to hard-delete a property " +
+			"that is not soft-deleted first, so the provider soft-deletes it immediately before the hard " +
+			"delete, as the DataHub UI does. If the hard delete is then refused, the property is left " +
+			"soft-deleted and the next destroy retries.\n\n" +
 			"Definition fields this resource does not manage, such as the allowed platforms set in the " +
 			"DataHub UI and a search configuration set through the API or SDK, are kept on update, and so " +
 			"are settings it does not model, which some DataHub versions add.\n\n" +
-			"## Deleting an assigned property burns its `property_id`\n\n" +
-			"Once a value for this property has been applied to any asset, DataHub creates an " +
-			"Elasticsearch field for it, and deleting the property does not release that field name. " +
-			"A later apply that re-creates the same `qualified_name` -- including the destroy-then-create " +
-			"Terraform performs for the list-shrink changes above -- is rejected with " +
-			"`Elasticsearch field '...' collides with existing property mapping`, and reclaiming the name " +
-			"otherwise needs an operator-run reindex. Set `version` to sidestep this: a versioned " +
-			"definition derives a different field name, so re-creating the same `property_id` succeeds. " +
+			"## Deleting a property burns its `property_id`\n\n" +
+			"DataHub creates an Elasticsearch field for each structured property, and deleting the property " +
+			"does not release that field name. On DataHub v1.8.0 and later, and DataHub Cloud, the field is " +
+			"created when the property is created, so this applies to every property; on earlier versions " +
+			"it is created when a value is first applied to an asset, so it applies only to properties that " +
+			"were assigned. A later apply that re-creates the same `qualified_name` -- including the " +
+			"destroy-then-create Terraform performs for the list-shrink changes above -- is rejected " +
+			"(`... already exists in the entity-index mapping`, or `... collides with existing property " +
+			"mapping` on earlier versions), and reclaiming the name otherwise needs an operator-run reindex. " +
+			"Because the destroy has already happened by then, such a replacement removes the property and " +
+			"its applied values and then fails. Set `version` to a new value in the same change to sidestep " +
+			"this: a versioned definition derives a different field name, so re-creating the same " +
+			"`property_id` succeeds. " +
 			"See [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974).\n\n" +
 			"## Value types\n\n" +
 			"Specify `value_type` as a short name: `string`, `number`, `date`, `urn`, or `rich_text`. " +
@@ -344,11 +382,12 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 				MarkdownDescription: "Optional definition version, as exactly 14 digits (a `yyyyMMddHHmmss` timestamp, e.g. " +
 					"`20240610120000`). Short forms like `v1` or `20240610` are rejected by DataHub even though the " +
 					"underlying field documentation suggests them.\n\n" +
-					"Set this when you need to re-create a property whose `property_id` has already been used and " +
-					"assigned. Deleting a structured property that was applied to an asset does not release the " +
-					"Elasticsearch field DataHub derived for it, so re-creating the same `qualified_name` afterwards " +
-					"fails with `Elasticsearch field '...' collides with existing property mapping` until an operator " +
-					"reindexes. A versioned definition derives a different field name, so it is not the same field and " +
+					"Set this when you need to re-create a property whose `property_id` has already been used, " +
+					"including the replacement Terraform plans when an allowed value is removed or cardinality is " +
+					"narrowed. Deleting a structured property does not release the Elasticsearch field DataHub " +
+					"derived for it (on DataHub v1.8.0 and later, and DataHub Cloud, any property; on earlier " +
+					"versions, one that was applied to an asset), so re-creating the same `qualified_name` " +
+					"afterwards is rejected until an operator reindexes. A versioned definition derives a different field name, so it is not the same field and " +
 					"does not collide. This is intended upstream behaviour, not a bug: see " +
 					"[datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974), where " +
 					"versioning is the recommended alternative to hard-deleting a property you need to change.\n\n" +
@@ -356,7 +395,7 @@ func (r *structuredPropertyResource) Schema(_ context.Context, _ resource.Schema
 					"value must be greater than the previous one (compared case-insensitively), which a " +
 					"`yyyyMMddHHmmss` timestamp gives you for free.\n\n" +
 					"**Never reuse a version you have used before on the same `property_id`.** A versioned field is " +
-					"burned by an assignment exactly like the un-versioned one, so re-creating a deleted property at " +
+					"burned exactly like the un-versioned one, so re-creating a deleted property at " +
 					"an earlier version collides all over again. Take a fresh timestamp each time; the format is what " +
 					"makes that natural.",
 				Validators: []validator.String{
@@ -545,6 +584,17 @@ func (r *structuredPropertyResource) Read(ctx context.Context, req resource.Read
 	if sp == nil {
 		resp.State.RemoveResource(ctx)
 		return
+	}
+	if sp.Removed {
+		// A soft-deleted property reads like any other, but DataHub rejects
+		// every later write to it and every assignment of it. This happens
+		// when a destroy soft-deleted the property and the hard delete then
+		// failed, or when it was deleted in the DataHub UI.
+		resp.Diagnostics.AddWarning(
+			"Structured property is soft-deleted in DataHub",
+			fmt.Sprintf("%s is soft-deleted in DataHub. DataHub rejects changes to it and assignments of it while it "+
+				"is soft-deleted. Run terraform destroy to finish deleting it, or restore it in DataHub to keep "+
+				"managing it.", urn))
 	}
 
 	diags := applyStructuredPropertyToModel(ctx, sp, &state)

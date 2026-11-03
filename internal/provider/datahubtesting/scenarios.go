@@ -4194,10 +4194,16 @@ resource "datahub_structured_property" "test" {
 		},
 		{
 			// Shrink: remove one allowed_value. The DataHub API cannot remove
-			// allowed values, so Terraform must replace the resource.
+			// allowed values, so Terraform must replace the resource. The
+			// replacement sets a version, as the resource documentation tells
+			// users to: on DataHub v1.8.0 and later, and DataHub Cloud, every
+			// property is mapped into the search index when it is created, so
+			// re-creating the same un-versioned name after the destroy is
+			// refused, while a versioned definition derives a different field.
 			Config: providerBlock + fmt.Sprintf(`
 resource "datahub_structured_property" "test" {
   property_id  = %q
+  version      = "20260101000000"
   value_type   = "string"
   cardinality  = "MULTIPLE"
   entity_types = ["dataset", "dashboard"]
