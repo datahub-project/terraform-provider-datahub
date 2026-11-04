@@ -88,7 +88,7 @@ datahub-tf-extract enumerate --output ./import --skip-terraform
 
 `enumerate` is deployment-wide: it discovers every instance of each supported type that the authenticated principal can see, not only the resources you (or one project) created. Two consequences are worth planning for:
 
-- **System objects are excluded automatically where they can be identified.** DataHub Cloud provisions internal ingestion sources (`datahub-gc`, `datahub-usage-reporting`, `semantic-anchor`, ...) and internal/OAuth connections; these are filtered out so you never adopt platform-managed objects into Terraform. Assertions are filtered the same way: only `NATIVE` (author-as-code) assertions are enumerated, and only of the type/sub-shape each resource models -- ingested `EXTERNAL` assertions (e.g. dbt or Great Expectations tests) and `INFERRED` smart/AI assertions are never enumerated, since they are owned by the system that produces them.
+- **System objects are excluded automatically where they can be identified.** DataHub Cloud provisions internal ingestion sources (`datahub-gc`, `datahub-usage-reporting`, `semantic-anchor`, ...) and internal/OAuth connections; these are filtered out so you never adopt platform-managed objects into Terraform. Assertions are filtered the same way: only `NATIVE` (author-as-code) assertions are enumerated, and only of the type/sub-shape each resource models -- ingested `EXTERNAL` assertions (e.g. dbt or Great Expectations tests) and `INFERRED` smart/AI assertions are never enumerated, since they are owned by the system that produces them. Built-in ownership types (`__system__technical_owner`, `__system__business_owner`, ...) are excluded on the same grounds: DataHub reserves the `__system__` prefix and refuses to manage them, so enumerating them would fail the import rather than adopt anything.
 - **Shared instances surface other people's objects.** On a shared or multi-tenant instance, enumeration will also list tags, glossary terms, policies, users, etc. created by others or by the UI. Always start with `--skip-terraform` and review `import.tf`, narrow with `--types`, and delete any `import {}` blocks you do not want before generating config. Importing the whole deployment is rarely what you want. Note that once you narrow this way you generate config yourself (`terraform plan -generate-config-out`, as in the Manual path below), which skips the post-processing the full `enumerate` run performs -- the connection platform-block stub, `variables.tf`, and `IMPORT_README.md` are not written, so handle write-only attributes manually (see Manual path, Step 4).
 
 ### Step 2: fill in sensitive values
@@ -335,7 +335,7 @@ See the [datahub_custom_assertion](../resources/custom_assertion.md), [datahub_f
 | `datahub_glossary_term` | Yes | `datahub_glossary_terms` |
 | `datahub_structured_property` | Yes | `datahub_structured_properties` |
 | `datahub_data_product` | Yes | `datahub_data_products` |
-| `datahub_ownership_type` | Yes | `datahub_ownership_types` |
+| `datahub_ownership_type` | Yes (custom types only; built-ins excluded) | `datahub_ownership_types` |
 | `datahub_policy` | Yes | `datahub_policies` |
 | `datahub_corp_group` | Yes | `datahub_corp_groups` |
 | `datahub_corp_user` | Yes | `datahub_corp_user` |
