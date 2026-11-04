@@ -158,12 +158,14 @@ func (r *policyResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			"`all_users`, `all_groups` and the resource-owner filter, and the server rebuilds the " +
 			"entire policy from that input -- so any write to a role-bearing policy deletes its role " +
 			"binding, whoever makes it. The DataHub UI writes through the same mutation and so cannot " +
-			"repair the result; only a direct aspect write can. This is a server-side limitation, " +
-			"tracked upstream as OSS-1216, and no provider version avoids it.\n\n" +
+			"repair the result; only a direct aspect write can. This is a server-side limitation. " +
+			"DataHub Cloud carries a fix from v2.3.0; OSS does " +
+			"not, so the provider refuses the write on every server rather than gating on a " +
+			"server version.\n\n" +
 			"Rather than make that write, the provider reads the policy first and refuses, naming the " +
 			"roles that would have been lost. `terraform import` of a role-bearing policy is allowed " +
 			"and warns, so the problem surfaces at import rather than at the first apply.\n\n" +
-			"Nine of the sixteen policies DataHub ships bind their actors through roles alone, and " +
+			"Nine of the policies DataHub ships bind their actors through roles alone, and " +
 			"they are returned by the `datahub_policies` data source and enumerated by " +
 			"`datahub-tf-extract` alongside your own -- so this is reached by bulk-importing an " +
 			"existing estate, not by writing a policy by hand. Leave DataHub's policies to DataHub " +
@@ -422,7 +424,7 @@ func (r *policyResource) ValidateConfig(ctx context.Context, req resource.Valida
 
 // guardWrite reads the policy currently stored at urn and reports what an
 // upsert would cost, refusing the write when the answer is "its role-based
-// actor bindings" (upstream defect OSS-1216 -- see policy_write_guard.go).
+// actor bindings" (an upstream DataHub defect -- see policy_write_guard.go).
 //
 // This runs at apply time, immediately before the mutation, rather than in
 // ValidateConfig or ModifyPlan alongside the resources.filter conflict checks.
@@ -445,7 +447,7 @@ func (r *policyResource) guardWrite(ctx context.Context, urn string) diag.Diagno
 			"Could not read the policy currently stored at %s before writing it: %v\n\n"+
 				"The provider inspects a policy's existing actors before every write, because a "+
 				"DataHub policy write deletes any role-based actor binding the policy holds "+
-				"(upstream defect OSS-1216). It refuses to write when it cannot make that check.",
+				"(an upstream DataHub defect). It refuses to write when it cannot make that check.",
 			urn, err))
 		return diags
 	}

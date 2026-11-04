@@ -47,15 +47,16 @@ func (d *policiesDataSource) Schema(_ context.Context, _ datasource.SchemaReques
 			"This list is everything the caller can see, which includes the default policies DataHub " +
 			"itself ships and maintains. Those belong to DataHub, and importing them has a specific " +
 			"consequence beyond the usual reasons not to manage a platform's built-ins.\n\n" +
-			"Nine of DataHub's sixteen default policies bind their actors entirely through DataHub " +
+			"Nine of DataHub's default policies bind their actors entirely through DataHub " +
 			"**roles** -- `Admin`, `Editor`, `Reader` -- naming no users and no groups. DataHub's " +
 			"policy write API cannot carry a role binding: the `updatePolicy` mutation has no field " +
 			"for one, and the server rebuilds the whole policy from that mutation's input. So writing " +
 			"such a policy from anywhere -- this provider, the DataHub UI, any other client -- deletes " +
 			"its role binding, and a policy that bound its actors only through roles is then granting " +
 			"nothing to anybody. Repairing it needs a direct aspect write, since saving it in the UI " +
-			"goes through the same mutation. This is a server-side limitation, tracked upstream as " +
-			"OSS-1216; no provider version changes it.\n\n" +
+			"goes through the same mutation. This is a server-side limitation. " +
+			"DataHub Cloud carries a fix from v2.3.0; OSS does not, so the provider " +
+			"refuses the write on every server rather than gating on a server version.\n\n" +
 			"`datahub_policy` will not make that write -- it refuses at apply time and warns as soon " +
 			"as a role-bearing policy is imported -- so the failure mode is a blocked apply rather " +
 			"than a broken deployment. The blocked apply is still yours to unpick, so it is worth not " +

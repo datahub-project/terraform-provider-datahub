@@ -134,7 +134,7 @@ Everything in this family writes into a single aspect, `globalSettingsInfo`, whi
 
 **`updateGlobalSettings` merges per top-level section, and does not rebuild.** The resolver fetches the existing `globalSettingsInfo` first, then applies each input section only when that input field is non-null, mutating the fetched object. So a caller sending only `ssoSettings` leaves notifications, MCP, the AI groups, `visual` and `homePage` exactly as they were -- including the two sections the mutation cannot express at all.
 
-That matters because the opposite design exists in this same server and has already cost us a guard: `updatePolicy` rebuilds `dataHubPolicyInfo` from its input and silently drops `actors.roles` and `editable` (OSS-1216, `internal/provider/policy_write_guard.go`). Had `updateGlobalSettings` been written that way, a user managing SSO in Terraform would have silently wiped their org branding and home-page default. **It was worth checking rather than assuming, and the same check is owed by any future mutation that writes part of a shared aspect.**
+That matters because the opposite design exists in this same server and has already cost us a guard: `updatePolicy` rebuilds `dataHubPolicyInfo` from its input and silently drops `actors.roles` and `editable` (`internal/provider/policy_write_guard.go`). Had `updateGlobalSettings` been written that way, a user managing SSO in Terraform would have silently wiped their org branding and home-page default. **It was worth checking rather than assuming, and the same check is owed by any future mutation that writes part of a shared aspect.**
 
 ### Write path per section -- prefer the mutation, fall back to the aspect
 

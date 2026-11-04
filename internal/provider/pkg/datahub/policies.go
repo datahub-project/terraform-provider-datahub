@@ -21,7 +21,7 @@ import (
 // has no ActorFilterInput counterpart, so a Roles field on this struct could
 // only ever be silently discarded. Roles read back on Policy.ActorRoles
 // instead, keeping "what the server holds" and "what the provider can write"
-// two different types. See OSS-1216 and the note on Policy.ActorRoles.
+// two different types. See the note on Policy.ActorRoles.
 type PolicyActors struct {
 	Users               []string
 	Groups              []string

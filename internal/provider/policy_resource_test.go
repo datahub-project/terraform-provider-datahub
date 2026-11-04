@@ -116,7 +116,7 @@ func TestAcc_Policy_FilterConflicts(t *testing.T) {
 
 // TestAcc_Policy_RoleGuardCreate verifies the provider refuses to overwrite a
 // policy whose actors are bound through DataHub roles, and that the refusal
-// leaves those roles intact (OSS-1216). Mock-only: a role-bearing policy cannot
+// leaves those roles intact. Mock-only: a role-bearing policy cannot
 // be created through the provider, and the ones that exist on a live instance
 // are DataHub's own.
 func TestAcc_Policy_RoleGuardCreate(t *testing.T) {

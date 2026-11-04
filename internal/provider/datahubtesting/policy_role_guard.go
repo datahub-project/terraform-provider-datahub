@@ -16,7 +16,7 @@ import (
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
-// Scenarios for the OSS-1216 write guard: a DataHub policy write deletes any
+// Scenarios for the policy role-strip write guard: a DataHub policy write deletes any
 // actors.roles the policy holds, because the updatePolicy mutation cannot
 // carry them and the server rebuilds the aspect from the mutation input.
 //
@@ -112,7 +112,7 @@ resource "datahub_policy" "test" {
 		{
 			PreConfig:   func() { assertPolicyRoles(policyID, roles) },
 			Config:      cfg,
-			ExpectError: regexp.MustCompile(`OSS-1216`),
+			ExpectError: regexp.MustCompile(`OSS\s+DataHub\s+has\s+no\s+fix`),
 		},
 		{
 			// Roles are this policy's only actor binding, so the diagnostic

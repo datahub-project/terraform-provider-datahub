@@ -12,7 +12,15 @@ import (
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
-// Server-bug mitigation, tracked upstream as OSS-1216.
+// Server-bug mitigation for an upstream DataHub defect: updatePolicy deletes
+// a policy's role bindings.
+//
+// DataHub Cloud v2.3.0 and later keeps role bindings on update, a change in
+// behaviour rather than in schema. OSS has shipped no fix. The guard
+// therefore stays unconditional -- OSS is the binding constraint, and
+// docs/roadmap.md rules out gating on a server version. A GraphQL
+// introspection probe for ActorFilterInput.roles cannot detect the Cloud fix,
+// because the schema never changed.
 //
 // The dataHubPolicyInfo aspect carries two fields that the updatePolicy
 // mutation cannot express: actors.roles (DataHub role URNs the policy grants
@@ -25,8 +33,8 @@ import (
 // its PDL default of true.
 //
 // Dropping roles is destructive rather than merely lossy. DataHub's own
-// bootstrap policies bind their actors through roles alone: nine of the
-// sixteen in datahub-upgrade's boot/policies.json name no users, no groups
+// bootstrap policies bind their actors through roles alone: nine of those
+// in datahub-upgrade's boot/policies.json name no users, no groups
 // and set neither allUsers nor allGroups. Strip the roles and the policy
 // grants its privileges to nobody. Repair needs an OpenAPI v3 aspect write,
 // because saving the policy in the UI goes through the same mutation and
@@ -87,8 +95,10 @@ func policyRoleStripError(p *datahub.Policy) diag.Diagnostic {
 			"the server rebuilds the whole dataHubPolicyInfo aspect from that input -- so any "+
 			"update drops actors.roles, whatever the caller sends. Saving the policy in the "+
 			"DataHub UI goes through the same mutation, so the damage could not be undone there "+
-			"either. This is an upstream DataHub defect, tracked as OSS-1216; no provider "+
-			"version avoids it, because the loss happens on the server.\n\n"+
+			"either. This is an upstream DataHub defect and the loss happens on the server, so "+
+			"no provider version avoids it. DataHub Cloud v2.3.0 and later keeps role bindings "+
+			"on update, but OSS DataHub has no fix, so the provider refuses the write on every "+
+			"server rather than gating on a server version.\n\n"+
 
 			"Two ways forward:\n\n"+
 
@@ -118,7 +128,8 @@ func policyRoleStripImportWarning(p *datahub.Policy) diag.Diagnostic {
 			"is not, so the provider will refuse it. DataHub's updatePolicy mutation has no roles "+
 			"field and the server rebuilds the whole dataHubPolicyInfo aspect from the mutation "+
 			"input, which deletes actors.roles on every write. This is an upstream DataHub "+
-			"defect, tracked as OSS-1216.\n\n"+
+			"defect. DataHub Cloud v2.3.0 and later keeps role bindings on update, but OSS "+
+			"DataHub has no fix, so the provider refuses the write on every server.\n\n"+
 
 			"If adopting this policy was not deliberate -- DataHub's own default policies come "+
 			"back from the datahub_policies data source and from datahub-tf-extract alongside "+

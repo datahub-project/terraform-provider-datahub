@@ -1764,7 +1764,7 @@ func PolicyCheckDestroy(s *terraform.State) error {
 // datahub_policies enumeration data source.
 //
 // The containment check (rather than exact-match) mirrors the live shape: a
-// real instance always holds DataHub's sixteen default policies alongside
+// real instance always holds DataHub's default policies alongside
 // anything a test creates, so a check that would only ever pass against the
 // mock's empty store proves less than one that tolerates neighbours.
 func PoliciesListSteps(policyID string) []resource.TestStep {

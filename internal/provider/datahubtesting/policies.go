@@ -13,7 +13,7 @@ import (
 //
 // Roles and NonEditable have no counterpart in the mutation input on purpose:
 // they model the two aspect fields GraphQL cannot carry, so that
-// handleUpsertPolicy can reproduce the upstream strip (OSS-1216) faithfully.
+// handleUpsertPolicy can reproduce the upstream strip faithfully.
 type mockPolicy struct {
 	ID                  string
 	Name                string
@@ -50,7 +50,7 @@ type mockPolicyCriterion struct {
 // The stored policy is rebuilt from the mutation input alone, exactly as
 // PolicyUpdateInputInfoMapper builds a fresh DataHubPolicyInfo server-side.
 // That is what makes any pre-existing Roles and NonEditable vanish here: the
-// mock reproduces the upstream strip (OSS-1216) rather than papering over it,
+// mock reproduces the upstream strip rather than papering over it,
 // so a test that reaches the mutation with a role-bearing policy in the store
 // really does lose the roles -- which is what makes the guard's absence
 // visible when it is deliberately removed.

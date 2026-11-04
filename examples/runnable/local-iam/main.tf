@@ -132,7 +132,7 @@ resource "datahub_policy" "data_platform_admins" {
 # ago may be missing from the first read). Feed the urns output into an
 # import {} for-each block to bulk-import existing policies, but select only
 # the ones you own: see the data source documentation for why adopting
-# DataHub's role-bound default policies breaks them (OSS-1216).
+# DataHub's role-bound default policies breaks them.
 data "datahub_policies" "all" {
   depends_on = [datahub_policy.data_platform_admins]
 }

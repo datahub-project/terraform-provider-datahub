@@ -85,7 +85,7 @@ func TestPolicyWriteHazards(t *testing.T) {
 			"urn:li:dataHubPolicy:admin-platform-policy", // which policy
 			"urn:li:dataHubRole:Admin",                   // which grant is at stake
 			"granting its privileges to nobody",          // the consequence
-			"OSS-1216",                                   // where the defect lives
+			"OSS DataHub has no fix",                     // where the defect lives
 			"terraform state rm",                         // the way out
 			"/openapi/v3/entity/datahubpolicy",           // the deliberate override
 		} {
@@ -211,7 +211,7 @@ func TestPolicyImportHazards(t *testing.T) {
 		for _, want := range []string{
 			"urn:li:dataHubRole:Editor",
 			"the provider will refuse it",
-			"OSS-1216",
+			"OSS DataHub has no fix",
 			"datahub_policies",   // where the accidental adoption comes from
 			"datahub-tf-extract", // and the other place
 			"terraform state rm",
@@ -309,7 +309,7 @@ func TestPolicyImportStateDiagnostics(t *testing.T) {
 			t.Fatalf("got %d errors and %d warnings, want 0 and 2: %v", errs, warns, resp.Diagnostics)
 		}
 		joined := resp.Diagnostics[0].Detail() + resp.Diagnostics[1].Detail()
-		for _, want := range []string{"urn:li:dataHubRole:Admin", "OSS-1216", "editable = false"} {
+		for _, want := range []string{"urn:li:dataHubRole:Admin", "OSS DataHub has no fix", "editable = false"} {
 			if !strings.Contains(joined, want) {
 				t.Errorf("import diagnostics are missing %q:\n%s", want, joined)
 			}
