@@ -28,6 +28,12 @@ type listOwnershipTypesResponse struct {
 // to the authenticated principal, including built-in system types
 // (urn:li:ownershipType:__system__*).
 //
+// Keep the built-ins here. This function backs the datahub_ownership_types
+// data source, whose callers need them: ownership is attached by referencing
+// __system__technical_owner and friends. The built-ins are unimportable, but
+// that is filtered in the datahub_ownership_type import target rather than
+// here, so the data source keeps its full list.
+//
 // Uses the listOwnershipTypes GraphQL query. Note: OWNERSHIP_TYPE is not a
 // valid value in the GraphQL EntityType enum, so searchAcrossEntities cannot
 // be used for this entity type.

@@ -5,83 +5,25 @@ package extracttool
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
-	"github.com/datahub-project/terraform-provider-datahub/internal/provider/importtarget"
+	// Blank import for its init(), which populates the import-target registry.
+	// These tests drive the real registry rather than a hand-maintained copy of
+	// it: a copy silently stops reflecting the targets it mirrors, so a filter
+	// bug in the real Enumerate closure (built-in __system__ ownership types
+	// being enumerated, for one) went unnoticed here. Every test in this
+	// package that calls Run therefore names the types it cares about via
+	// Options.Types, instead of letting the whole registry decide its scope.
+	_ "github.com/datahub-project/terraform-provider-datahub/internal/provider/importtarget/targets"
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/pkg/datahub"
 )
 
 // recipe is a minimal ingestion source recipe used for seeding test data.
 const recipe = `{"source":{"type":"demo-data","config":{}},"sink":{"type":"datahub-rest","config":{}}}`
-
-// init registers the same import targets as cmd/datahub-tf-extract/internal/reg
-// (which cannot be imported here due to Go's internal package rule). The order
-// mirrors reg.go: secrets last, so that any Required+WriteOnly error from
-// terraform plan -generate-config-out does not abort generation of earlier types.
-//
-// The connection filter is co-registered here so changes to the real filter are
-// caught by TestRunImportTF_importBlocksPerType.
-func init() {
-	importtarget.Register(importtarget.Target{
-		ResourceTypeName:   "datahub_ingestion_source",
-		DataSourceTypeName: "datahub_ingestion_sources",
-		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
-			return c.ListIngestionSourceURNs(ctx)
-		},
-		IDFromURN: func(urn string) string {
-			return strings.TrimPrefix(urn, "urn:li:dataHubIngestionSource:")
-		},
-		OSSCompatible: true,
-	})
-
-	importtarget.Register(importtarget.Target{
-		ResourceTypeName:   "datahub_connection",
-		DataSourceTypeName: "datahub_connections",
-		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
-			all, err := c.ListConnectionURNs(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("listing connection URNs: %w", err)
-			}
-			const prefix = "urn:li:dataHubConnection:"
-			var filtered []string
-			for _, urn := range all {
-				id := strings.TrimPrefix(urn, prefix)
-				if strings.HasPrefix(id, "urn_li_") || strings.HasPrefix(id, "__") {
-					continue
-				}
-				filtered = append(filtered, urn)
-			}
-			return filtered, nil
-		},
-		IDFromURN: func(urn string) string {
-			return strings.TrimPrefix(urn, "urn:li:dataHubConnection:")
-		},
-		OSSCompatible: true,
-	})
-
-	importtarget.Register(importtarget.Target{
-		ResourceTypeName: "datahub_remote_executor_pool",
-		IDFromURN: func(urn string) string {
-			return strings.TrimPrefix(urn, "urn:li:dataHubRemoteExecutorPool:")
-		},
-		OSSCompatible: false,
-	})
-
-	importtarget.Register(importtarget.Target{
-		ResourceTypeName:   "datahub_secret",
-		DataSourceTypeName: "datahub_secrets",
-		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
-			return c.ListSecretURNs(ctx)
-		},
-		IDFromURN:     func(urn string) string { return urn },
-		OSSCompatible: true,
-	})
-}
 
 // TestRunImportTF_importBlocksPerType verifies that Run with SkipTerraform writes
 // import.tf with the correct number of import blocks per resource type, and that
@@ -153,9 +95,13 @@ func TestRunImportTF_importBlocksPerType(t *testing.T) {
 
 	outDir := t.TempDir()
 	opts := Options{
-		GmsURL:        srv.URL,
-		GmsToken:      "test-token",
-		OutputDir:     outDir,
+		GmsURL:    srv.URL,
+		GmsToken:  "test-token",
+		OutputDir: outDir,
+		// Scope the run to the types this test seeds and asserts on, so that
+		// adding an unrelated target to the registry cannot change the counts
+		// below.
+		Types:         "datahub_ingestion_source,datahub_connection,datahub_secret,datahub_remote_executor_pool",
 		SkipTerraform: true,
 	}
 	if err := Run(ctx, opts); err != nil {

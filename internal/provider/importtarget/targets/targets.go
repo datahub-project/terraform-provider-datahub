@@ -207,11 +207,40 @@ func init() {
 		ResourceTypeName:   "datahub_ownership_type",
 		DataSourceTypeName: "datahub_ownership_types",
 		Enumerate: func(ctx context.Context, c *datahub.Client) ([]string, error) {
-			urns, err := c.ListOwnershipTypeURNs(ctx)
+			all, err := c.ListOwnershipTypeURNs(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("listing ownership type URNs: %w", err)
 			}
-			return urns, nil
+			// Skip the built-in ownership types that the provider cannot
+			// manage. DataHub bootstraps every instance with types whose id
+			// begins with "__system__" (technical_owner, business_owner,
+			// data_steward, agent_owner, none -- the set grows between
+			// releases, so match the prefix rather than a fixed list). The
+			// datahub_ownership_type resource refuses them at plan time with
+			// "Reserved type_id prefix", and terraform plan
+			// -generate-config-out fails the whole run on any single resource
+			// error rather than skipping it, so one built-in takes every other
+			// resource in the deployment down with it.
+			//
+			// The filter belongs here and not in ListOwnershipTypeURNs,
+			// because that client function also backs the
+			// datahub_ownership_types data source, which must keep returning
+			// the built-ins: users reference __system__technical_owner and
+			// friends from datahub_entity_ownership, and the singular
+			// datahub_ownership_type data source exists so a built-in can be
+			// referenced without being taken into state. Contrast
+			// datahub_ingestion_source, which filters SYSTEM sources in
+			// ListIngestionSourceURNs: nothing else needs those, so the client
+			// layer is the right place for that one.
+			const prefix = "urn:li:ownershipType:"
+			var filtered []string
+			for _, urn := range all {
+				if strings.HasPrefix(strings.TrimPrefix(urn, prefix), "__system__") {
+					continue
+				}
+				filtered = append(filtered, urn)
+			}
+			return filtered, nil
 		},
 		IDFromURN:     func(urn string) string { return strings.TrimPrefix(urn, "urn:li:ownershipType:") },
 		OSSCompatible: true,

@@ -43,7 +43,12 @@ func (d *ownershipTypesDataSource) Schema(_ context.Context, _ datasource.Schema
 			"principal, including built-in system types (`__system__technical_owner`, etc.).\n\n" +
 			"Backed by the `listOwnershipTypes` GraphQL query. Use the returned `urns` list as " +
 			"the `for_each` value in `import {}` blocks to bulk-import existing custom ownership " +
-			"types into Terraform state.",
+			"types into Terraform state.\n\n" +
+			"**Filter out the built-in types before importing.** DataHub reserves the " +
+			"`__system__` prefix and refuses to manage a type that uses it, so feeding this " +
+			"list into `import {}` unfiltered fails the entire plan with `Reserved type_id " +
+			"prefix`. `datahub-tf-extract enumerate` excludes them for you; on the manual " +
+			"path, exclude them yourself.",
 		Attributes: map[string]schema.Attribute{
 			"urns": schema.ListAttribute{
 				ElementType:         types.StringType,
