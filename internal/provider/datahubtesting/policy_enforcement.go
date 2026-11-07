@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -324,62 +323,13 @@ func (tg *Target) EnsureDatasetEntityInDomain(t *testing.T, entityURN, domainURN
 		return
 	}
 
-	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
-	token := os.Getenv("DATAHUB_GMS_TOKEN")
-
-	body, err := json.Marshal([]map[string]any{
-		{
-			"urn": entityURN,
-			"datasetProperties": map[string]any{
-				"value": map[string]any{"name": "TF Provider Enforcement Fixture"},
-			},
-			"domains": map[string]any{
-				"value": map[string]any{"domains": []string{domainURN}},
-			},
+	ensureDataset(t, "EnsureDatasetEntityInDomain", entityURN, map[string]any{
+		"datasetProperties": map[string]any{
+			"value": map[string]any{"name": "TF Provider Enforcement Fixture"},
 		},
-	})
-	if err != nil {
-		t.Fatalf("EnsureDatasetEntityInDomain: marshal: %v", err)
-	}
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		gmsURL+"/openapi/v3/entity/dataset", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("EnsureDatasetEntityInDomain: build request: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		t.Fatalf("EnsureDatasetEntityInDomain: POST /openapi/v3/entity/dataset: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 400 {
-		t.Fatalf("EnsureDatasetEntityInDomain: POST returned HTTP %d for URN %q", resp.StatusCode, entityURN)
-	}
-
-	t.Cleanup(func() {
-		deleteURL := gmsURL + "/openapi/v3/entity/dataset/" + url.PathEscape(entityURN)
-		delReq, delErr := http.NewRequestWithContext(context.Background(), http.MethodDelete, deleteURL, nil)
-		if delErr != nil {
-			t.Logf("EnsureDatasetEntityInDomain cleanup: build delete request: %v", delErr)
-			return
-		}
-		delReq.Header.Set("Authorization", "Bearer "+token)
-		delResp, delErr := httpClient.Do(delReq)
-		if delErr != nil {
-			t.Errorf("EnsureDatasetEntityInDomain cleanup: DELETE %q: %v; the fixture dataset may be left behind", entityURN, delErr)
-			return
-		}
-		defer func() { _ = delResp.Body.Close() }()
-		if delResp.StatusCode >= 400 && delResp.StatusCode != http.StatusNotFound {
-			t.Errorf("EnsureDatasetEntityInDomain cleanup: DELETE %q returned HTTP %d; the fixture dataset is left behind",
-				entityURN, delResp.StatusCode)
-			return
-		}
-		t.Logf("EnsureDatasetEntityInDomain cleanup: deleted dataset %q (HTTP %d)", entityURN, delResp.StatusCode)
+		"domains": map[string]any{
+			"value": map[string]any{"domains": []string{domainURN}},
+		},
 	})
 }
 
