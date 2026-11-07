@@ -8,7 +8,7 @@ description: |-
   Action pipelines are a newer DataHub Cloud capability. DataHub Cloud upgrades on its own release cadence, so a release may occasionally affect this resource; fixes are handled in the provider. Pin the provider version for client-side stability and upgrade it to pick up fixes (including any needed for backend changes), and please open an issue if you hit one.
   This resource manages the pipeline definition (name, type, recipe, executor). It does not model run state (running/stopped): a freshly created pipeline is started by DataHub, and an update leaves a pipeline that was stopped in DataHub stopped. DataHub restarts a pipeline whenever its definition is saved, so the provider stops a previously stopped pipeline again straight after the update; it can run briefly in between. This is a DataHub issue, tracked as PFP-7563.
   Argument Reference
-  action_id (Optional) Unique id (URN suffix). If omitted, derived from name as <sanitized-name>-<hash>. Changing it forces a new resource.name (Required) Human-friendly name shown in the DataHub UI.type (Required) Action class string, e.g. dataplex_metadata_sync or datahub_integrations.propagation.bigquery.tag_propagator.BigqueryTagPropagatorAction. The set is open and Cloud-version-dependent; not validated against an enum.recipe (Required) Action recipe as a JSON string. Build it with jsonencode({...}).category (Optional) UI grouping category (e.g. Data Discovery).description (Optional) Human-readable description.executor_id (Optional) Executor that runs the action (e.g. default).version (Optional, Deprecated) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.debug_mode (Optional, Deprecated) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.
+  action_id (Optional) Unique id (URN suffix). If omitted, derived from name as <sanitized-name>-<hash>. Changing it forces a new resource.name (Required) Human-friendly name shown in the DataHub UI.type (Required) Action class string, e.g. dataplex_metadata_sync or datahub_integrations.propagation.bigquery.tag_propagator.BigqueryTagPropagatorAction. The set is open and Cloud-version-dependent; not validated against an enum.recipe (Required) Action recipe as a JSON string. Build it with jsonencode({...}).category (Optional) UI grouping category (e.g. Data Discovery).description (Optional) Human-readable description.executor_id (Optional) Executor pool that runs the action. Defaults to default, the embedded executor.version (Optional, Deprecated) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.debug_mode (Optional, Deprecated) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.
   Security Note
   Warning: The recipe is stored in DataHub. Do not embed credentials directly.
   Recommended: Use DataHub Secrets / environment variable substitution (e.g. ${SECRET_NAME}); placeholders are stored verbatim and resolved at execution time.
@@ -35,7 +35,7 @@ This resource manages the pipeline **definition** (name, type, recipe, executor)
 - `recipe` (Required) Action recipe as a JSON string. Build it with `jsonencode({...})`.
 - `category` (Optional) UI grouping category (e.g. `Data Discovery`).
 - `description` (Optional) Human-readable description.
-- `executor_id` (Optional) Executor that runs the action (e.g. `default`).
+- `executor_id` (Optional) Executor pool that runs the action. Defaults to `default`, the embedded executor.
 - `version` (Optional, **Deprecated**) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.
 - `debug_mode` (Optional, **Deprecated**) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.
 
@@ -97,7 +97,7 @@ resource "datahub_action_pipeline" "dataplex_glossary_sync" {
 - `category` (String) UI grouping category (e.g. `Data Discovery`).
 - `debug_mode` (Boolean, Deprecated) Has no effect: DataHub accepts this value but has never stored or used it, so setting it produces a plan diff on every run. Remove it from your configuration.
 - `description` (String) Human-readable description of what this action pipeline does.
-- `executor_id` (String) Executor that runs the action (e.g. `default`). If omitted, DataHub's default is used.
+- `executor_id` (String) Executor pool that runs the action. If omitted, the embedded executor `default` is used, and that is the value recorded in state.
 - `version` (String, Deprecated) Has no effect: DataHub accepts this value but has never stored or used it, so setting it produces a plan diff on every run. Remove it from your configuration.
 
 ### Read-Only

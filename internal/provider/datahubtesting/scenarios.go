@@ -5767,8 +5767,13 @@ resource "datahub_action_pipeline" "test" {
 
 	return []resource.TestStep{
 		{
+			// The config sets no executor_id: the provider must send the
+			// default executor, since the server rejects an upsert without one.
 			Config: cfg("Before stop"),
-			Check:  checkStopped(false),
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr(addr, "executor_id", datahub.ActionPipelineDefaultExecutorID),
+				checkStopped(false),
+			),
 		},
 		{
 			// A live server records INACTIVE before it reports whether the

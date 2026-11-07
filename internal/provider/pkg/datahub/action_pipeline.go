@@ -49,6 +49,16 @@ const ActionPipelineURNPrefix = "urn:li:dataHubAction:"
 // pipeline that has been stopped. An absent state means ACTIVE (the PDL default).
 const ActionPipelineStateInactive = "INACTIVE"
 
+// ActionPipelineDefaultExecutorID is the executor pool an action pipeline runs
+// on when none is chosen: the embedded executor. It is the documented default of
+// dataHubActionInfo.config.executorId, the value the DataHub UI fills in, and the
+// value DataHub's GraphQL API reports for a pipeline stored without one.
+//
+// UpsertActionPipeline sends it when the caller leaves ExecutorID empty, because
+// upsertActionPipeline declares config.executorId optional but fails with a
+// NullPointerException, writing nothing, whenever it is omitted or null.
+const ActionPipelineDefaultExecutorID = "default"
+
 // isActionPipelineCloudOnlyError returns true when the GraphQL error indicates
 // the mutation/query or the dataHubAction type is absent from the OSS schema.
 func isActionPipelineCloudOnlyError(msg string) bool {
@@ -146,10 +156,13 @@ mutation upsertActionPipeline($urn: String!, $input: UpdateActionPipelineInput!)
   upsertActionPipeline(urn: $urn, input: $input)
 }`
 
-	config := map[string]any{"recipe": in.Recipe}
-	if in.ExecutorID != "" {
-		config["executorId"] = in.ExecutorID
+	// executorId is always sent: the server cannot store an upsert without it
+	// (see ActionPipelineDefaultExecutorID).
+	executorID := in.ExecutorID
+	if executorID == "" {
+		executorID = ActionPipelineDefaultExecutorID
 	}
+	config := map[string]any{"recipe": in.Recipe, "executorId": executorID}
 	if in.Version != "" {
 		config["version"] = in.Version
 	}
