@@ -2,11 +2,11 @@
 go = "1.27.3"
 terraform = "1.17.1"
 golangci-lint = "2.15.0"
-goreleaser = "2.19.0"
+goreleaser = "2.20.0"
 jq = "1.8.2"
-yq = "4.54.1"
+yq = "4.54.2"
 python = "3.11.15"
-uv = "0.13.6"
+uv = "0.13.7"
 
 [env]
 _.file = ".mise.env"
