@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -134,11 +135,6 @@ func (tg *Target) Name(base string) string {
 	return base + "-" + strings.ToLower(acctest.RandString(8))
 }
 
-// EnsureDatasetEntity creates a minimal dataset entity on a live target so that
-// assertion monitor mutations (which require the referenced dataset to exist in
-// DataHub) succeed. A t.Cleanup is registered to hard-delete the entity after
-// the test ends. On the in-memory mock this is a no-op: the mock does not
-// validate entity existence before accepting GraphQL mutations.
 // AssertEntityAbsent fails the test if the entity exists, reading through the
 // strongly-consistent OpenAPI v3 entity endpoint so there is no index-lag
 // window. entityPath is the lowercase path segment (e.g. "corpgroup").
@@ -183,64 +179,21 @@ func (tg *Target) AssertEntityAbsent(t *testing.T, entityPath, entityURN string)
 		"destroy cannot remove it", entityURN, resp.StatusCode)
 }
 
+// EnsureDatasetEntity creates a minimal dataset entity on a live target so that
+// mutations which require the referenced dataset to exist (assertion monitor
+// upserts, upsertDataContract) succeed. The entity is guaranteed to exist when
+// this returns; see ensureDataset. A t.Cleanup is registered to hard-delete it
+// after the test ends. On the in-memory mock this is a no-op: the mock does not
+// validate entity existence before accepting GraphQL mutations.
 func (tg *Target) EnsureDatasetEntity(t *testing.T, entityURN string) {
 	t.Helper()
 	if tg.Kind == TargetMock {
 		return
 	}
-
-	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
-	token := os.Getenv("DATAHUB_GMS_TOKEN")
-
-	body, err := json.Marshal([]map[string]any{
-		{
-			"urn": entityURN,
-			"datasetProperties": map[string]any{
-				"value": map[string]any{
-					"name": "TF Provider Test Dataset",
-				},
-			},
+	ensureDataset(t, "EnsureDatasetEntity", entityURN, map[string]any{
+		"datasetProperties": map[string]any{
+			"value": map[string]any{"name": "TF Provider Test Dataset"},
 		},
-	})
-	if err != nil {
-		t.Fatalf("EnsureDatasetEntity: marshal: %v", err)
-	}
-
-	httpClient := &http.Client{Timeout: 15 * time.Second}
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		gmsURL+"/openapi/v3/entity/dataset", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("EnsureDatasetEntity: build request: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		t.Fatalf("EnsureDatasetEntity: POST /openapi/v3/entity/dataset: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		t.Fatalf("EnsureDatasetEntity: POST returned HTTP %d for URN %q", resp.StatusCode, entityURN)
-	}
-	t.Logf("EnsureDatasetEntity: created dataset entity %q (HTTP %d)", entityURN, resp.StatusCode)
-
-	t.Cleanup(func() {
-		deleteURL := gmsURL + "/openapi/v3/entity/dataset/" + url.PathEscape(entityURN)
-		delReq, delErr := http.NewRequestWithContext(context.Background(), http.MethodDelete, deleteURL, nil)
-		if delErr != nil {
-			t.Logf("EnsureDatasetEntity cleanup: build delete request: %v", delErr)
-			return
-		}
-		delReq.Header.Set("Authorization", "Bearer "+token)
-		delResp, delErr := httpClient.Do(delReq)
-		if delErr != nil {
-			t.Logf("EnsureDatasetEntity cleanup: DELETE %q: %v", entityURN, delErr)
-			return
-		}
-		defer delResp.Body.Close()
-		t.Logf("EnsureDatasetEntity cleanup: deleted dataset entity %q (HTTP %d)", entityURN, delResp.StatusCode)
 	})
 }
 
@@ -253,61 +206,134 @@ func (tg *Target) EnsureDatasetEntityWithSchema(t *testing.T, entityURN string) 
 	if tg.Kind == TargetMock {
 		return
 	}
+	ensureDataset(t, "EnsureDatasetEntityWithSchema", entityURN, map[string]any{
+		"datasetProperties": map[string]any{"value": map[string]any{"name": "TF Provider Test Dataset"}},
+		"schemaMetadata": map[string]any{"value": map[string]any{
+			"schemaName":     "tf_test",
+			"platform":       "urn:li:dataPlatform:sqlite",
+			"version":        0,
+			"hash":           "",
+			"platformSchema": map[string]any{"com.linkedin.schema.OtherSchema": map[string]any{"rawSchema": ""}},
+			"fields": []map[string]any{
+				{"fieldPath": "id", "nativeDataType": "INTEGER", "type": map[string]any{"type": map[string]any{"com.linkedin.schema.NumberType": map[string]any{}}}},
+				{"fieldPath": "email", "nativeDataType": "VARCHAR", "type": map[string]any{"type": map[string]any{"com.linkedin.schema.StringType": map[string]any{}}}},
+			},
+		}},
+	})
+}
+
+// ensureDataset is the single write path behind every Ensure*Dataset* fixture.
+// It POSTs the aspects for entityURN, requires proof that the entity now
+// exists, and registers a hard delete for cleanup. aspects maps aspect name to
+// its {"value": ...} envelope.
+//
+// The write is sent with async=false, and nothing short of HTTP 200 is
+// accepted. Without that flag the v3 collection POST hands the proposal to the
+// Kafka ingest topic and answers 202 before anything is persisted, so the
+// dataset exists only once a consumer gets to it. Every caller of these
+// fixtures then makes a call that checks existence -- upsertDataContract
+// rejects a missing dataset with "Provided entity ... does not exist!", and
+// the assertion monitor upserts likewise -- so an async fixture races the very
+// call it exists to satisfy. It usually wins, which is why the failure was
+// intermittent and appeared only under consumer lag on a busy instance.
+//
+// After the write it reads the entity back through the strongly-consistent
+// entity endpoint and fails if it is absent. That is the condition the caller
+// depends on, so the fixture asserts it directly instead of inferring it from
+// a status code.
+//
+// It takes testing.TB rather than *testing.T so the failure paths can be
+// unit-tested without failing the test that exercises them.
+func ensureDataset(t testing.TB, caller, entityURN string, aspects map[string]any) {
+	t.Helper()
 
 	gmsURL := strings.TrimRight(os.Getenv("DATAHUB_GMS_URL"), "/")
 	token := os.Getenv("DATAHUB_GMS_TOKEN")
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	entityURL := gmsURL + "/openapi/v3/entity/dataset/" + url.PathEscape(entityURN)
 
-	body, err := json.Marshal([]map[string]any{
-		{
-			"urn":               entityURN,
-			"datasetProperties": map[string]any{"value": map[string]any{"name": "TF Provider Test Dataset"}},
-			"schemaMetadata": map[string]any{"value": map[string]any{
-				"schemaName":     "tf_test",
-				"platform":       "urn:li:dataPlatform:sqlite",
-				"version":        0,
-				"hash":           "",
-				"platformSchema": map[string]any{"com.linkedin.schema.OtherSchema": map[string]any{"rawSchema": ""}},
-				"fields": []map[string]any{
-					{"fieldPath": "id", "nativeDataType": "INTEGER", "type": map[string]any{"type": map[string]any{"com.linkedin.schema.NumberType": map[string]any{}}}},
-					{"fieldPath": "email", "nativeDataType": "VARCHAR", "type": map[string]any{"type": map[string]any{"com.linkedin.schema.StringType": map[string]any{}}}},
-				},
-			}},
-		},
-	})
+	entity := map[string]any{"urn": entityURN}
+	for name, aspect := range aspects {
+		entity[name] = aspect
+	}
+	body, err := json.Marshal([]map[string]any{entity})
 	if err != nil {
-		t.Fatalf("EnsureDatasetEntityWithSchema: marshal: %v", err)
+		t.Fatalf("%s: marshal: %v", caller, err)
 	}
 
-	httpClient := &http.Client{Timeout: 15 * time.Second}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		gmsURL+"/openapi/v3/entity/dataset", bytes.NewReader(body))
+		gmsURL+"/openapi/v3/entity/dataset?async=false", bytes.NewReader(body))
 	if err != nil {
-		t.Fatalf("EnsureDatasetEntityWithSchema: build request: %v", err)
+		t.Fatalf("%s: build request: %v", caller, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		t.Fatalf("EnsureDatasetEntityWithSchema: POST: %v", err)
+		t.Fatalf("%s: POST /openapi/v3/entity/dataset: %v", caller, err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		t.Fatalf("EnsureDatasetEntityWithSchema: POST returned HTTP %d for URN %q", resp.StatusCode, entityURN)
-	}
-	t.Logf("EnsureDatasetEntityWithSchema: created dataset %q (HTTP %d)", entityURN, resp.StatusCode)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	_ = resp.Body.Close()
 
-	t.Cleanup(func() {
-		deleteURL := gmsURL + "/openapi/v3/entity/dataset/" + url.PathEscape(entityURN)
-		delReq, delErr := http.NewRequestWithContext(context.Background(), http.MethodDelete, deleteURL, nil)
-		if delErr != nil {
-			return
-		}
-		delReq.Header.Set("Authorization", "Bearer "+token)
-		if delResp, e := httpClient.Do(delReq); e == nil {
-			delResp.Body.Close()
-		}
-	})
+	// Any 2xx means the server accepted the write, so register the delete
+	// before judging the status: a 202 still materialises the entity later,
+	// and failing without cleanup would leave it behind on a shared instance.
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		t.Cleanup(func() { deleteFixtureDataset(t, caller, httpClient, entityURL, token, entityURN) })
+	}
+	switch {
+	case resp.StatusCode == http.StatusAccepted:
+		t.Fatalf("%s: POST for %q returned HTTP 202: the server queued the write asynchronously "+
+			"despite async=false, so the dataset may not exist yet and the dependent call would race it",
+			caller, entityURN)
+	case resp.StatusCode != http.StatusOK:
+		t.Fatalf("%s: POST for %q returned HTTP %d, want 200: %s", caller, entityURN, resp.StatusCode, respBody)
+	}
+
+	getReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, entityURL, nil)
+	if err != nil {
+		t.Fatalf("%s: build read-back request: %v", caller, err)
+	}
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	getResp, err := httpClient.Do(getReq)
+	if err != nil {
+		t.Fatalf("%s: read-back GET %q: %v", caller, entityURN, err)
+	}
+	_ = getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("%s: POST for %q returned 200 but the read-back returned HTTP %d: "+
+			"the write did not land", caller, entityURN, getResp.StatusCode)
+	}
+
+	t.Logf("%s: created dataset %q (HTTP %d, read back HTTP %d)",
+		caller, entityURN, resp.StatusCode, getResp.StatusCode)
+}
+
+// deleteFixtureDataset hard-deletes a fixture dataset. A failure is reported as
+// a test error rather than a log line: the fixture URNs are fixed strings on a
+// shared instance, so a dataset left behind is debris someone has to sweep.
+// 404 is success -- the test itself may already have removed it.
+func deleteFixtureDataset(t testing.TB, caller string, httpClient *http.Client, entityURL, token, entityURN string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, entityURL, nil)
+	if err != nil {
+		t.Errorf("%s cleanup: build delete request: %v; the fixture dataset %q may be left behind", caller, err, entityURN)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		t.Errorf("%s cleanup: DELETE %q: %v; the fixture dataset may be left behind", caller, entityURN, err)
+		return
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
+		t.Errorf("%s cleanup: DELETE %q returned HTTP %d; the fixture dataset is left behind",
+			caller, entityURN, resp.StatusCode)
+		return
+	}
+	t.Logf("%s cleanup: deleted dataset %q (HTTP %d)", caller, entityURN, resp.StatusCode)
 }
 
 // CleanupOrphanedMonitors searches for and deletes any DataHub monitor entities
