@@ -1,0 +1,178 @@
+name: Cloud Live
+
+# Nightly run of the live acceptance suite against DataHub Cloud: the shared
+# internal instance named by the demo-acryl-io environment. nightly-live.yml
+# covers OSS through a throw-away Quickstart; this covers the Cloud-only
+# resources and the server behaviours that differ on Cloud, which until now
+# were exercised only when someone ran `make testacc-remote` by hand -- and
+# several Cloud-only regressions were found exactly that way, after release.
+#
+# A standalone workflow rather than another job in nightly-live.yml, for three
+# reasons, each of which would be undone by consolidating:
+#
+#   - The token must never be reachable from pull-request code. nightly-live.yml
+#     has a pull_request trigger (the run-live-ci label); this file has none, so
+#     no PR can run a workflow that names the environment. The environment's
+#     deployment-branch rule (main only) is the second lock on the same door.
+#   - nightly-live.yml cancels in-progress runs on every push to main. Cancelling
+#     a run against a shared instance mid-suite strands whatever the interrupted
+#     tests had created, so this run must never be cancelled by another.
+#   - The concurrency group below is keyed on the instance, not the ref, so any
+#     future workflow touching the same instance (for example the runnable
+#     examples against Cloud) can share it and never overlap with this one.
+#
+# Triggers are schedule and workflow_dispatch only. Do NOT add pull_request,
+# pull_request_target or a label trigger here.
+#
+# Setup (environment, secret, variable, service account) and the rules for
+# working on a shared instance: BUILDING.md, "Nightly live tests against
+# DataHub Cloud".
+on:
+  # 05:23 UTC: the middle of the night in the Americas, where most use of the
+  # shared instance is, and away from nightly-live.yml's 14:00. Off the hour
+  # because scheduled runs queued on the hour are the ones GitHub delays.
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: datahub-cloud-demo-acryl-io
+  cancel-in-progress: false
+
+jobs:
+  cloud-acceptance:
+    name: Live Acceptance (DataHub Cloud)
+    # Forks inherit the schedule but not the environment; without this they
+    # would fail every night on a missing token.
+    if: github.repository == 'datahub-project/terraform-provider-datahub'
+    runs-on: ubuntu-latest
+    environment:
+      name: demo-acryl-io
+      url: ${{ vars.DATAHUB_GMS_URL }}
+    # Test step 40 + debris snapshot and report 10 each, plus setup.
+    timeout-minutes: 65
+    env:
+      # A variable, not a secret: it is not sensitive, and a secret would mask
+      # the URL everywhere it appears in the log.
+      DATAHUB_GMS_URL: ${{ vars.DATAHUB_GMS_URL }}
+    # The token is deliberately not in the job-level env: it is passed only to
+    # the steps that use it, so third-party actions below never see it.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # terraform (the acceptance tests drive the real CLI) and jq (the debris
+      # report) both come from mise.toml.
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fail in a second with a message naming what is missing, rather than
+      # after a build with whatever the Makefile or the first test says.
+      - name: Check environment configuration
+        id: config
+        env:
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+        run: |
+          missing=0
+          if [ -z "$DATAHUB_GMS_URL" ]; then
+            echo "::error::Variable DATAHUB_GMS_URL is not set on the demo-acryl-io environment."
+            missing=1
+          fi
+          if [ -z "$DATAHUB_GMS_TOKEN" ]; then
+            echo "::error::Secret DATAHUB_GMS_TOKEN is not set on the demo-acryl-io environment."
+            missing=1
+          fi
+          [ "$missing" -eq 0 ] || exit 1
+          echo "Target: $DATAHUB_GMS_URL"
+
+      # Recorded before the tests so the report afterwards can tell this run's
+      # leaks from debris that was already there. Read-only. Never fails the job.
+      - name: Snapshot pre-existing debris
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+        run: scripts/cloud-debris-report.sh --out "$RUNNER_TEMP/debris-before.tsv"
+
+      - name: Run acceptance tests against DataHub Cloud
+        # The Makefile runs go test with -timeout 30m; this step's timeout sits
+        # above that so a hang surfaces as go test's own panic and stack dump,
+        # and below the job's so the debris report still gets to run.
+        timeout-minutes: 40
+        env:
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+          # Forced rather than auto-detected. testacc-remote and SetupTarget
+          # fall back to OSS mode when the /config probe fails, which against
+          # this instance would skip every Cloud-only test -- the tests this
+          # workflow exists to run -- and could still go green.
+          DATAHUB_CLOUD: "1"
+          # Pinned at WARN deliberately -- do NOT raise this to DEBUG or TRACE.
+          # tflog writes exactly the map it is handed and is not governed by
+          # the schema's Sensitive/WriteOnly markers, which cover state and plan
+          # rendering only. That channel logged a user's password, an invite
+          # token and an Authorization bearer from v0.4.0 until v0.19.1. These
+          # logs upload as an artifact readable by anyone with repo read access,
+          # and unlike step logs GitHub does not mask secrets in artifacts, so
+          # the level is a security boundary, not a verbosity preference. Here
+          # it guards a long-lived token on a shared instance rather than a
+          # one-hour token on a Quickstart that is discarded with the runner.
+          TF_ACC_LOG: WARN
+          TF_ACC_LOG_PATH: ${{ github.workspace }}/provider-logs/acceptance.log
+        run: |
+          mkdir -p provider-logs
+          make testacc-remote
+
+      # Belt to WARN's braces: artifacts are not masked, so refuse to upload a
+      # log that contains the token at all. grep -q prints nothing, and the
+      # message names the file, never the match.
+      - name: Check provider logs for the token
+        if: failure()
+        env:
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+        run: |
+          [ -d provider-logs ] || exit 0
+          if [ -z "$DATAHUB_GMS_TOKEN" ]; then
+            rm -rf provider-logs
+            exit 0
+          fi
+          if grep -rqF -- "$DATAHUB_GMS_TOKEN" provider-logs; then
+            rm -rf provider-logs
+            echo "::error::The provider log contained the access token, so it was deleted rather than uploaded. Find the log call that emits it, and rotate the token (BUILDING.md)."
+            exit 1
+          fi
+
+      - name: Upload provider logs on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cloud-provider-logs
+          path: provider-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Always, and last. The instance is shared, so whatever the suite left
+      # behind is someone else's clutter until a person sweeps it. This only
+      # reports: it lists, never deletes, and never fails the job. Skipped only
+      # when the configuration check failed, since it would have nothing to
+      # authenticate with.
+      - name: Debris report
+        if: always() && steps.config.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
+        run: >-
+          scripts/cloud-debris-report.sh
+          --out "$RUNNER_TEMP/debris-after.tsv"
+          --baseline "$RUNNER_TEMP/debris-before.tsv"
+          --summary

@@ -13,6 +13,11 @@ name: Nightly Live
 # release workflow now dispatches the smoke test directly instead.
 #
 # Uses the live-acceptance reusable workflow (same logic as the release gate).
+#
+# The same suite against DataHub Cloud runs from cloud-live.yml, not from here,
+# and must stay out of this file: this workflow has a pull_request trigger and
+# cancels in-progress runs on push, and neither is acceptable for a job holding
+# the shared instance's token. See the header of cloud-live.yml.
 on:
   workflow_dispatch:
   push:

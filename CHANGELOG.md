@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The live acceptance suite now also runs nightly against DataHub Cloud, not only against an OSS Quickstart. The Cloud-only resources, and the server behaviours that differ on Cloud, were previously tested only when a maintainer ran the suite by hand, which is how several of the Cloud fixes below were found after release rather than before. Nothing here changes the provider's behaviour.
+
 ### Fixed
 
 - **Creating a typed assertion on DataHub Cloud no longer leaves an untracked assertion and monitor behind when DataHub is slow to link them.** `datahub_volume_assertion`, `datahub_freshness_assertion`, `datahub_sql_assertion`, `datahub_field_assertion` and `datahub_schema_assertion` each create an assertion and a monitor in one request, then wait for DataHub to link the two so the monitor can be recorded in `monitor_urn`. DataHub indexes that link asynchronously for API callers, and on a busy DataHub Cloud tenant it took longer than the 30 seconds the provider waited, so the apply failed with `monitor not visible within timeout` after both entities had been created. Neither was recorded in state, so the next apply tried to create a second pair, and the first monitor kept counting toward the tenant's monitor limit. The provider now waits up to about three minutes, polling with a growing interval, which still records `monitor_urn` at create in the normal case. If the link is still missing after that, the apply succeeds with a warning, the assertion is recorded with `monitor_urn` empty, and the next refresh fills it in without changing the assertion. A create that fails later on, while applying the provider's default tags, now also records the assertion, which Terraform then replaces on the next apply instead of creating a second one. Updates made while the link is missing used to fail with `Monitor for assertion ... does not exist`; they now wait for the link and retry within the same budget. Destroying an assertion whose `monitor_urn` was never filled in warns that its monitor may have been left behind instead of passing silently.
