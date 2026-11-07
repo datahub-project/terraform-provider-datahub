@@ -374,24 +374,7 @@ func TestMetadataTestResource_softDeletedIDTaken_mock(t *testing.T) {
 	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
 
 	const id = "tf-example-soft-deleted-id"
-	gql := func(query string) {
-		t.Helper()
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-			server.URL+"/api/graphql", strings.NewReader(query))
-		if err != nil {
-			t.Fatalf("seeding the mock: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("seeding the mock: %v", err)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusOK || strings.Contains(string(body), `"errors"`) {
-			t.Fatalf("seeding the mock: HTTP %d: %s", resp.StatusCode, body)
-		}
-	}
+	gql := func(query string) { mockGraphQL(t, server.URL, query) }
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -421,6 +404,71 @@ resource "datahub_metadata_test" "taken" {
 }
 `,
 				ExpectError: regexp.MustCompile(`(?s)already exists, soft-deleted.*import it.*and destroy it`),
+			},
+		},
+	})
+}
+
+// mockGraphQL sends a raw GraphQL request to the acceptance mock, standing in
+// for a change made outside Terraform, and fails the test on any error.
+func mockGraphQL(t *testing.T, serverURL, query string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		serverURL+"/api/graphql", strings.NewReader(query))
+	if err != nil {
+		t.Fatalf("seeding the mock: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("seeding the mock: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || strings.Contains(string(body), `"errors"`) {
+		t.Fatalf("seeding the mock: HTTP %d: %s", resp.StatusCode, body)
+	}
+}
+
+// TestMetadataTestResource_softDeletedInState_mock covers a managed test that
+// is soft-deleted outside Terraform: deleted in the DataHub Cloud UI, or left
+// that way by a provider version whose destroy stopped at deleteTest and then
+// re-imported. Refresh must keep it in state (with a warning) rather than
+// drop it, because dropping it would plan a create that DataHub refuses while
+// the soft-deleted test holds the id; and destroy must then finish the delete
+// so the id is free again.
+func TestMetadataTestResource_softDeletedInState_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	const id = "tf-example-soft-deleted-in-state"
+	const cfg = `
+provider "datahub" {}
+
+resource "datahub_metadata_test" "soft" {
+  test_id  = "` + id + `"
+  name     = "TF Example - Soft Deleted In State"
+  category = "Governance"
+  definition_json = jsonencode({
+    on    = { types = ["dataset"] }
+    rules = { property = "ownership.owners.owner", operator = "exists" }
+  })
+}
+`
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.MetadataTestCheckDestroy,
+		Steps: []resource.TestStep{
+			{Config: cfg},
+			{
+				// deleteTest alone soft-deletes on DataHub Cloud and on the mock.
+				PreConfig: func() {
+					mockGraphQL(t, server.URL, `{"query":"mutation d($urn: String!) { deleteTest(urn: $urn) }",`+
+						`"variables":{"urn":"urn:li:test:`+id+`"}}`)
+				},
+				Config:   cfg,
+				PlanOnly: true,
 			},
 		},
 	})

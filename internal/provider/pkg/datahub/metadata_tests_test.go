@@ -369,6 +369,7 @@ type cloudSoftDeleteServer struct {
 	removed          bool
 	ignoreHardDelete bool
 	hardDeleteStatus int
+	getStatus        int
 }
 
 func (s *cloudSoftDeleteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -394,6 +395,11 @@ func (s *cloudSoftDeleteServer) ServeHTTP(w http.ResponseWriter, r *http.Request
 		}
 		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodGet && r.URL.Path == itemPath:
+		if s.getStatus != 0 {
+			w.WriteHeader(s.getStatus)
+			_, _ = w.Write([]byte(`{"message":"read failed"}`))
+			return
+		}
 		if !s.present {
 			http.NotFound(w, r)
 			return
@@ -468,6 +474,45 @@ func TestDeleteMetadataTest_HardDeleteRejected(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
+	}
+}
+
+// TestDeleteMetadataTest_HardDeleteServerError verifies that a server error
+// on the hard delete fails the delete with its status and body, and is not
+// misreported as a permission problem.
+func TestDeleteMetadataTest_HardDeleteServerError(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, hardDeleteStatus: http.StatusInternalServerError}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+	if err == nil {
+		t.Fatal("expected an error when the hard delete fails")
+	}
+	for _, want := range []string{"HTTP 500", "urn:li:test:x", "denied"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "MANAGE_TESTS") {
+		t.Errorf("a server error must not be reported as missing permission: %q", err)
+	}
+}
+
+// TestDeleteMetadataTest_ConfirmReadFails verifies that when the read that
+// confirms the test is gone fails, the delete fails too: claiming success
+// without confirmation is what let the Cloud soft delete go unnoticed.
+func TestDeleteMetadataTest_ConfirmReadFails(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, getStatus: http.StatusInternalServerError}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+	if err == nil {
+		t.Fatal("expected an error when the confirming read fails")
+	}
+	if !strings.Contains(err.Error(), "confirming metadata test urn:li:test:x was deleted") {
+		t.Errorf("error %q does not name the failed confirmation", err)
 	}
 }
 
