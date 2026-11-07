@@ -29,6 +29,9 @@ type mockMetadataTest struct {
 	Category       string
 	Description    string
 	DefinitionJSON string // stored verbatim (the server stores the string as sent)
+	// Removed is status.removed. DataHub Cloud's deleteTest soft-deletes: it
+	// writes status.removed=true and leaves testKey and testInfo in place.
+	Removed bool
 }
 
 // validateMockTestDefinition mirrors the shape checks the DataHub Cloud test
@@ -134,6 +137,9 @@ func (s *mockServer) handleUpdateTest(w http.ResponseWriter, variables map[strin
 		Category:       category,
 		Description:    description,
 		DefinitionJSON: definitionJSON,
+		// updateTest writes testInfo only; the separate status aspect, and
+		// with it a soft delete, is left as it was.
+		Removed: s.metadataTests[id].Removed,
 	}
 	s.mu.Unlock()
 
@@ -142,15 +148,29 @@ func (s *mockServer) handleUpdateTest(w http.ResponseWriter, variables map[strin
 	})
 }
 
-// handleDeleteTest handles the deleteTest GraphQL mutation (hard delete).
+// handleDeleteTest handles the deleteTest GraphQL mutation as DataHub Cloud
+// implements it (the mock simulates Cloud): a SOFT delete. An absent test is
+// rejected with a NOT_FOUND error; an existing one, soft-deleted or not, gets
+// status.removed=true and keeps every other aspect, so it still reads back
+// from the OpenAPI v3 entity endpoint and still blocks createTest of the same
+// id. OSS DataHub's deleteTest hard-deletes instead; the provider follows the
+// mutation with a hard delete so both servers end up in the same state.
 func (s *mockServer) handleDeleteTest(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 	id := strings.TrimPrefix(urn, mockMetadataTestURNPrefix)
 
 	s.mu.Lock()
-	delete(s.metadataTests, id)
+	mt, ok := s.metadataTests[id]
+	if ok {
+		mt.Removed = true
+		s.metadataTests[id] = mt
+	}
 	s.mu.Unlock()
 
+	if !ok {
+		graphQLError(w, fmt.Sprintf("Test with urn %s not found", urn))
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data": map[string]any{"deleteTest": true},
 	})
@@ -160,7 +180,12 @@ func (s *mockServer) handleDeleteTest(w http.ResponseWriter, variables map[strin
 func (s *mockServer) handleListTests(w http.ResponseWriter, _ map[string]any) {
 	s.mu.Lock()
 	tests := make([]map[string]any, 0, len(s.metadataTests))
-	for id := range s.metadataTests {
+	for id, mt := range s.metadataTests {
+		// listTests is search-backed, and search excludes soft-deleted
+		// entities.
+		if mt.Removed {
+			continue
+		}
 		tests = append(tests, map[string]any{"urn": mockMetadataTestURNPrefix + id})
 	}
 	s.mu.Unlock()
@@ -213,16 +238,27 @@ func (s *mockServer) handleReformatTestDefinitions(w http.ResponseWriter, r *htt
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleMetadataTestItem handles GET /openapi/v3/entity/test/{urn}. The
-// response mimics the Cloud read shape, including the server-computed
-// definition.md5 the provider must tolerate and ignore.
+// handleMetadataTestItem handles GET and DELETE on
+// /openapi/v3/entity/test/{urn}. The GET response mimics the Cloud read
+// shape, including the server-computed definition.md5 the provider must
+// tolerate and ignore, and the status aspect once the test is soft-deleted.
+// DELETE is a hard delete of every aspect and, like the real endpoint,
+// answers 200 whether or not the entity existed.
 func (s *mockServer) handleMetadataTestItem(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/test/")
+	id := strings.TrimPrefix(urn, mockMetadataTestURNPrefix)
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodDelete:
+		s.mu.Lock()
+		delete(s.metadataTests, id)
+		s.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		return
+	default:
 		http.NotFound(w, r)
 		return
 	}
-	urn := strings.TrimPrefix(r.URL.Path, "/openapi/v3/entity/test/")
-	id := strings.TrimPrefix(urn, mockMetadataTestURNPrefix)
 
 	s.mu.Lock()
 	mt, ok := s.metadataTests[id]
@@ -258,12 +294,16 @@ func (s *mockServer) handleMetadataTestItem(w http.ResponseWriter, r *http.Reque
 		infoValue["description"] = mt.Description
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	entity := map[string]any{
 		"urn":      mockMetadataTestURNPrefix + id,
 		"testKey":  map[string]any{"value": map[string]any{"id": id}},
 		"testInfo": map[string]any{"value": infoValue},
-	})
+	}
+	if mt.Removed {
+		entity["status"] = map[string]any{"value": map[string]any{"removed": true}}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(entity)
 }
 
 // MetadataTestLifecycleSteps returns test steps for datahub_metadata_test:

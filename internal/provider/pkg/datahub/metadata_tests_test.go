@@ -294,38 +294,242 @@ func TestCreateMetadataTest_URNFallback(t *testing.T) {
 
 // TestDeleteMetadataTest_Tolerance verifies both directions of the
 // already-absent tolerance: a not-found style error is treated as success (so
-// destroying a test deleted out-of-band cannot wedge terraform destroy), and
-// any other error still surfaces (so the tolerance cannot swallow a real
-// failure, e.g. missing MANAGE_TESTS, and drop state while the entity lives).
+// destroying a test deleted out-of-band cannot wedge terraform destroy) and
+// the hard delete still runs, clearing a test an earlier delete left
+// soft-deleted; any other error still surfaces before anything else is sent
+// (so the tolerance cannot swallow a real failure, e.g. missing MANAGE_TESTS,
+// and drop state while the entity lives).
 func TestDeleteMetadataTest_Tolerance(t *testing.T) {
 	cases := []struct {
 		name    string
 		message string
 		wantErr bool
 	}{
-		{name: "not found tolerated", message: "Failed to perform delete against Test with urn urn:li:test:x: not found", wantErr: false},
+		{name: "cloud not found tolerated", message: "Test with urn urn:li:test:x not found", wantErr: false},
 		{name: "does not exist tolerated", message: "Entity urn:li:test:x does not exist", wantErr: false},
 		{name: "authorization error surfaces", message: "Unauthorized to perform this action. Please contact your DataHub administrator.", wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				resp, _ := json.Marshal(map[string]any{
-					"errors": []map[string]string{{"message": tc.message}},
-				})
-				_, _ = w.Write(resp)
+			var calls []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls = append(calls, r.Method+" "+r.URL.Path)
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/api/graphql":
+					w.Header().Set("Content-Type", "application/json")
+					resp, _ := json.Marshal(map[string]any{
+						"errors": []map[string]string{{"message": tc.message}},
+					})
+					_, _ = w.Write(resp)
+				case r.Method == http.MethodDelete:
+					w.WriteHeader(http.StatusOK)
+				default:
+					http.NotFound(w, r)
+				}
 			}))
 			defer server.Close()
 
 			err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
-			if tc.wantErr && (err == nil || !strings.Contains(err.Error(), tc.message)) {
-				t.Errorf("expected error containing %q, got %v", tc.message, err)
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), tc.message) {
+					t.Errorf("expected error containing %q, got %v", tc.message, err)
+				}
+				if len(calls) != 1 {
+					t.Errorf("a rejected deleteTest must stop the delete, got requests %v", calls)
+				}
+				return
 			}
-			if !tc.wantErr && err != nil {
+			if err != nil {
 				t.Errorf("expected tolerated delete, got error %v", err)
 			}
+			if !containsCall(calls, "DELETE /openapi/v3/entity/test/urn:li:test:x") {
+				t.Errorf("a not-found deleteTest must still be followed by the hard delete, got requests %v", calls)
+			}
 		})
+	}
+}
+
+func containsCall(calls []string, want string) bool {
+	for _, c := range calls {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+// cloudSoftDeleteServer models DataHub Cloud's delete path for one test:
+// deleteTest only marks it removed, the OpenAPI v3 DELETE removes it (unless
+// ignoreHardDelete simulates a server that accepts the DELETE without acting
+// on it), and GET reads back whatever is left. hardDeleteStatus overrides the
+// DELETE response code when non-zero.
+type cloudSoftDeleteServer struct {
+	calls            []string
+	present          bool
+	removed          bool
+	ignoreHardDelete bool
+	hardDeleteStatus int
+	getStatus        int
+}
+
+func (s *cloudSoftDeleteServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.calls = append(s.calls, r.Method+" "+r.URL.Path)
+	const itemPath = "/openapi/v3/entity/test/urn:li:test:x"
+	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/api/graphql":
+		w.Header().Set("Content-Type", "application/json")
+		if !s.present {
+			_, _ = w.Write([]byte(`{"errors":[{"message":"Test with urn urn:li:test:x not found"}],"data":{"deleteTest":null}}`))
+			return
+		}
+		s.removed = true
+		_, _ = w.Write([]byte(`{"data":{"deleteTest":true}}`))
+	case r.Method == http.MethodDelete && r.URL.Path == itemPath:
+		if s.hardDeleteStatus != 0 {
+			w.WriteHeader(s.hardDeleteStatus)
+			_, _ = w.Write([]byte(`{"message":"denied"}`))
+			return
+		}
+		if !s.ignoreHardDelete {
+			s.present = false
+		}
+		w.WriteHeader(http.StatusOK)
+	case r.Method == http.MethodGet && r.URL.Path == itemPath:
+		if s.getStatus != 0 {
+			w.WriteHeader(s.getStatus)
+			_, _ = w.Write([]byte(`{"message":"read failed"}`))
+			return
+		}
+		if !s.present {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"urn":"urn:li:test:x","testKey":{"value":{"id":"x"}},` +
+			`"testInfo":{"value":{"name":"n","category":"c","definition":{"json":"{}"}}},` +
+			`"status":{"value":{"removed":` + map[bool]string{true: "true", false: "false"}[s.removed] + `}}}`))
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// TestDeleteMetadataTest_HardDeletesAfterSoftDelete pins the fix for DataHub
+// Cloud, whose deleteTest only soft-deletes: the delete must follow the
+// mutation with a hard delete and confirm the test is gone. Stopping at the
+// mutation left every destroyed test in place, still holding its id.
+func TestDeleteMetadataTest_HardDeletesAfterSoftDelete(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	if err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x"); err != nil {
+		t.Fatalf("DeleteMetadataTest: %v", err)
+	}
+	want := []string{
+		"POST /api/graphql",
+		"DELETE /openapi/v3/entity/test/urn:li:test:x",
+		"GET /openapi/v3/entity/test/urn:li:test:x",
+	}
+	if strings.Join(srv.calls, "|") != strings.Join(want, "|") {
+		t.Errorf("requests = %v, want %v", srv.calls, want)
+	}
+	if srv.present {
+		t.Error("the test still exists after DeleteMetadataTest returned success")
+	}
+}
+
+// TestDeleteMetadataTest_FailsWhenTestSurvives verifies the confirming read:
+// a server that accepts both deletes yet keeps the test must fail the delete,
+// so Terraform keeps it in state instead of reporting a destroy that did not
+// happen.
+func TestDeleteMetadataTest_FailsWhenTestSurvives(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, ignoreHardDelete: true}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+	if err == nil {
+		t.Fatal("expected an error when the test survives the delete")
+	}
+	for _, want := range []string{"urn:li:test:x still exists", "soft-deleted: true"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+// TestDeleteMetadataTest_HardDeleteRejected verifies that a refused hard
+// delete surfaces with the status, the server's message and what state the
+// test was left in, rather than being mistaken for success.
+func TestDeleteMetadataTest_HardDeleteRejected(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, hardDeleteStatus: http.StatusForbidden}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+	if err == nil {
+		t.Fatal("expected an error when the hard delete is refused")
+	}
+	for _, want := range []string{"HTTP 403", "MANAGE_TESTS", "soft-deleted", "denied"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+// TestDeleteMetadataTest_HardDeleteServerError verifies that a server error
+// on the hard delete fails the delete with its status and body, and is not
+// misreported as a permission problem.
+func TestDeleteMetadataTest_HardDeleteServerError(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, hardDeleteStatus: http.StatusInternalServerError}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+	if err == nil {
+		t.Fatal("expected an error when the hard delete fails")
+	}
+	for _, want := range []string{"HTTP 500", "urn:li:test:x", "denied"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "MANAGE_TESTS") {
+		t.Errorf("a server error must not be reported as missing permission: %q", err)
+	}
+}
+
+// TestDeleteMetadataTest_ConfirmReadFails verifies that when the read that
+// confirms the test is gone fails, the delete fails too: claiming success
+// without confirmation is what let the Cloud soft delete go unnoticed.
+func TestDeleteMetadataTest_ConfirmReadFails(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, getStatus: http.StatusInternalServerError}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	err := newTestClient(t, server).DeleteMetadataTest(t.Context(), "x")
+	if err == nil {
+		t.Fatal("expected an error when the confirming read fails")
+	}
+	if !strings.Contains(err.Error(), "confirming metadata test urn:li:test:x was deleted") {
+		t.Errorf("error %q does not name the failed confirmation", err)
+	}
+}
+
+// TestGetMetadataTestByID_SoftDeleted verifies status.removed is surfaced, so
+// Read can warn about a soft-deleted test and Create can explain why its id
+// is taken.
+func TestGetMetadataTestByID_SoftDeleted(t *testing.T) {
+	srv := &cloudSoftDeleteServer{present: true, removed: true}
+	server := httptest.NewServer(srv)
+	defer server.Close()
+
+	info, err := newTestClient(t, server).GetMetadataTestByID(t.Context(), "x")
+	if err != nil {
+		t.Fatalf("GetMetadataTestByID: %v", err)
+	}
+	if info == nil || !info.Removed {
+		t.Fatalf("expected a soft-deleted test, got %+v", info)
 	}
 }
 

@@ -12,7 +12,9 @@ description: |-
   URN
   The URN is urn:li:test:<test_id> (deterministic, matching the Python SDK's TestUrn). When test_id is omitted the provider derives <sanitized-name>-<hash> client-side, because the server would otherwise mint a random UUID. ImportState accepts either the full URN or a bare test_id, so UUID-suffixed tests created via the DataHub Cloud UI can be adopted.
   Delete behavior
-  Destroy issues deleteTest, a hard delete of the test entity. Test results already recorded on other entities keep referencing the deleted URN until the next test run recomputes them (on OSS, where nothing runs tests, such references persist indefinitely).
+  Destroy issues deleteTest and then a hard delete of the test entity through the OpenAPI entity endpoint, and confirms the test is gone. Both steps are needed because the servers differ: OSS deleteTest hard-deletes, while DataHub Cloud deleteTest only soft-deletes, which stops the test running but leaves it holding its test_id, so the same id could not be created again. The OpenAPI endpoint authorizes the hard delete separately, so the principal needs permission to delete the entity there as well as MANAGE_TESTS.
+  A test that is soft-deleted in DataHub -- deleted in the DataHub Cloud UI, or destroyed by an earlier provider version -- still reads back, and refresh reports it with a warning. Running terraform destroy on it finishes the delete; to clear one Terraform no longer manages, import it and destroy it.
+  On DataHub Cloud, deleteTest also clears the test's results from the entities it was evaluated against. On OSS, where nothing runs tests, results recorded against other entities keep referencing the deleted URN.
 ---
 
 # datahub_metadata_test (Resource)
@@ -35,7 +37,11 @@ The URN is `urn:li:test:<test_id>` (deterministic, matching the Python SDK's `Te
 
 ## Delete behavior
 
-Destroy issues `deleteTest`, a **hard delete** of the test entity. Test results already recorded on other entities keep referencing the deleted URN until the next test run recomputes them (on OSS, where nothing runs tests, such references persist indefinitely).
+Destroy issues `deleteTest` and then a **hard delete** of the test entity through the OpenAPI entity endpoint, and confirms the test is gone. Both steps are needed because the servers differ: OSS `deleteTest` hard-deletes, while DataHub Cloud `deleteTest` only soft-deletes, which stops the test running but leaves it holding its `test_id`, so the same id could not be created again. The OpenAPI endpoint authorizes the hard delete separately, so the principal needs permission to delete the entity there as well as `MANAGE_TESTS`.
+
+A test that is soft-deleted in DataHub -- deleted in the DataHub Cloud UI, or destroyed by an earlier provider version -- still reads back, and refresh reports it with a warning. Running `terraform destroy` on it finishes the delete; to clear one Terraform no longer manages, import it and destroy it.
+
+On DataHub Cloud, `deleteTest` also clears the test's results from the entities it was evaluated against. On OSS, where nothing runs tests, results recorded against other entities keep referencing the deleted URN.
 
 ## Example Usage
 

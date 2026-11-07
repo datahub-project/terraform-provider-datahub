@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`terraform destroy` of a `datahub_metadata_test` removes the test on DataHub Cloud.** The resource deleted with the `deleteTest` mutation, which hard-deletes on OSS DataHub but only soft-deletes on DataHub Cloud: the test stopped running and disappeared from the UI, but stayed in DataHub holding its `test_id`, so applying the same configuration again failed with `This Test already exists!`, and so did the create half of every replacement. Destroy now follows `deleteTest` with a hard delete through the OpenAPI entity endpoint and confirms the test is gone, failing and keeping it in state if it is not. `deleteTest` still runs first, because on DataHub Cloud it is also what clears the test's results from the assets it was evaluated against. The hard delete is authorized separately, so the principal needs permission to delete the entity through the OpenAPI entity endpoint as well as `MANAGE_TESTS`. Tests already left soft-deleted, whether by an earlier provider version or by the DataHub Cloud UI, now warn on refresh, and creating a test whose id one of them holds fails with a message saying so: import it and destroy it to free the id.
+
 ## [0.29.0] - 2026-11-07
 
 ### Fixed

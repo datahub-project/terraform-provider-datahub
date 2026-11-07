@@ -73,6 +73,11 @@ type MetadataTestInfo struct {
 	Category       string
 	Description    string
 	DefinitionJSON string
+	// Removed is status.removed: the test is soft-deleted. DataHub Cloud's
+	// deleteTest leaves a test in this state, and DataHub Cloud then neither
+	// lists nor runs it, but it still occupies its id: createTest of the
+	// same id is rejected as already existing.
+	Removed bool
 }
 
 // metadataTestEntity is the OpenAPI v3 response shape for
@@ -96,6 +101,11 @@ type metadataTestEntity struct {
 			} `json:"definition"`
 		} `json:"value"`
 	} `json:"testInfo,omitempty"`
+	Status *struct {
+		Value struct {
+			Removed bool `json:"removed"`
+		} `json:"value"`
+	} `json:"status,omitempty"`
 }
 
 // metadataTestGraphQLInput builds the shared name/category/description/definition
@@ -250,6 +260,9 @@ func (c *Client) GetMetadataTestByID(ctx context.Context, testID string) (*Metad
 	}
 
 	out := &MetadataTestInfo{ID: testID}
+	if entity.Status != nil {
+		out.Removed = entity.Status.Value.Removed
+	}
 	if entity.Key != nil && entity.Key.Value.ID != "" {
 		out.ID = entity.Key.Value.ID
 	}
@@ -263,10 +276,29 @@ func (c *Client) GetMetadataTestByID(ctx context.Context, testID string) (*Metad
 	return out, nil
 }
 
-// DeleteMetadataTest hard-deletes a metadata test by id via the deleteTest
-// GraphQL mutation. A not-found result is treated as success (the entity is
-// already gone). Test results previously recorded against other entities keep
-// referencing the deleted URN until the next test run recomputes them.
+// DeleteMetadataTest removes a metadata test entirely, in two steps.
+//
+// First the deleteTest GraphQL mutation, which carries the service-layer side
+// effects: on DataHub Cloud it invalidates the test engine's cache and clears
+// the test's results from the entities it was evaluated against. What it does
+// to the test itself differs by server. OSS DataHub hard-deletes it. DataHub
+// Cloud only soft-deletes it (status.removed = true): the entity keeps its
+// testKey and testInfo, still reads back, and still occupies the id, so a
+// later createTest of the same id is rejected as already existing.
+//
+// Second a hard delete through the OpenAPI v3 entity endpoint, which removes
+// whatever the mutation left behind, so terraform destroy means the same
+// thing on both servers and the id can be reused. On OSS there is nothing
+// left and the endpoint answers success regardless.
+//
+// Finally a read confirms the test is gone, so a delete the server reports as
+// successful but does not perform fails here rather than surfacing later as a
+// test that cannot be re-created.
+//
+// A not-found result from the mutation is treated as success (the entity is
+// already gone, or was never created) and the hard delete still runs, which
+// also clears a test that an earlier destroy, or the DataHub Cloud UI, left
+// soft-deleted.
 func (c *Client) DeleteMetadataTest(ctx context.Context, testID string) error {
 	if c == nil {
 		return errors.New("client is nil")
@@ -275,6 +307,7 @@ func (c *Client) DeleteMetadataTest(ctx context.Context, testID string) error {
 	if testID == "" {
 		return errors.New("test ID is required")
 	}
+	urn := MetadataTestURNPrefix + testID
 
 	const q = `
 mutation deleteTest($urn: String!) {
@@ -282,7 +315,7 @@ mutation deleteTest($urn: String!) {
 }`
 	body := map[string]any{
 		"query":     q,
-		"variables": map[string]any{"urn": MetadataTestURNPrefix + testID},
+		"variables": map[string]any{"urn": urn},
 	}
 	var gqlResp genericGraphQLErrors
 	if err := c.doGraphQL(ctx, body, &gqlResp); err != nil {
@@ -290,12 +323,53 @@ mutation deleteTest($urn: String!) {
 	}
 	if len(gqlResp.Errors) > 0 {
 		msg := gqlResp.Errors[0].Message
-		if strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist") {
-			return nil
+		if !strings.Contains(msg, "not found") && !strings.Contains(msg, "does not exist") {
+			return fmt.Errorf("DataHub API error: %s", msg)
 		}
-		return fmt.Errorf("DataHub API error: %s", msg)
+	}
+
+	if err := c.hardDeleteMetadataTest(ctx, urn); err != nil {
+		return err
+	}
+
+	info, err := c.GetMetadataTestByID(ctx, testID)
+	if err != nil {
+		return fmt.Errorf("confirming metadata test %s was deleted: %w", urn, err)
+	}
+	if info != nil {
+		return fmt.Errorf("metadata test %s still exists after DataHub accepted both the deleteTest mutation "+
+			"and the hard delete (soft-deleted: %t); it has not been removed from Terraform state, and running "+
+			"terraform destroy again retries the delete", urn, info.Removed)
 	}
 	return nil
+}
+
+// hardDeleteMetadataTest removes every aspect of a test via the OpenAPI v3
+// entity endpoint. The endpoint answers success for an absent entity; a 404
+// is tolerated too.
+func (c *Client) hardDeleteMetadataTest(ctx context.Context, urn string) error {
+	path := fmt.Sprintf("/openapi/v3/entity/test/%s", urn)
+	req, err := c.NewRequest(ctx, http.MethodDelete, path, nil)
+	if err != nil {
+		return err
+	}
+	res, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusNotFound || res.StatusCode < http.StatusBadRequest {
+		return nil
+	}
+	respBody, _ := io.ReadAll(res.Body)
+	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("DataHub rejected the hard delete of metadata test %s (HTTP %d): the calling principal "+
+			"needs permission to delete the entity through the OpenAPI entity endpoint as well as MANAGE_TESTS. "+
+			"On DataHub Cloud the test is left soft-deleted, which stops it running; running terraform destroy "+
+			"again retries the hard delete. DataHub said: %s", urn, res.StatusCode, respBody)
+	}
+	return fmt.Errorf("unexpected HTTP %d hard-deleting metadata test %s: %s", res.StatusCode, urn, respBody)
 }
 
 // ListMetadataTestURNs returns the URNs of all metadata tests visible to the
