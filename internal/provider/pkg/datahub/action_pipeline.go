@@ -57,6 +57,8 @@ const ActionPipelineStateInactive = "INACTIVE"
 // UpsertActionPipeline sends it when the caller leaves ExecutorID empty, because
 // upsertActionPipeline declares config.executorId optional but fails with a
 // NullPointerException, writing nothing, whenever it is omitted or null.
+// Tracked upstream as PFP-7730; once every supported DataHub Cloud release
+// applies the default itself, sending it here becomes redundant but harmless.
 const ActionPipelineDefaultExecutorID = "default"
 
 // isActionPipelineCloudOnlyError returns true when the GraphQL error indicates
