@@ -38,6 +38,14 @@ func (c *Client) ListConnectionURNs(ctx context.Context) ([]string, error) {
 
 // listURNsByEntityType is the generic paged search helper used by per-type
 // list functions that have no dedicated GraphQL list query.
+//
+// It bypasses DataHub's search result cache (searchFlags.skipCache, available
+// since v0.10.1). An identical wildcard query is otherwise answered from the
+// cache, so an entity created moments ago can stay missing from the list --
+// and from every data source and import enumeration built on it -- for
+// minutes, and retrying does not help because each retry is the same cached
+// query. The index itself is current within seconds. The structured property
+// delete barrier sends the same flag for the same reason.
 func listURNsByEntityType(ctx context.Context, c *Client, entityType string) ([]string, error) {
 	const q = `
 query searchAcrossEntities($input: SearchAcrossEntitiesInput!) {
@@ -60,10 +68,11 @@ query searchAcrossEntities($input: SearchAcrossEntitiesInput!) {
 			"query": q,
 			"variables": map[string]any{
 				"input": map[string]any{
-					"types": []string{entityType},
-					"query": "*",
-					"start": start,
-					"count": pageSize,
+					"types":       []string{entityType},
+					"query":       "*",
+					"start":       start,
+					"count":       pageSize,
+					"searchFlags": map[string]any{"skipCache": true},
 				},
 			},
 		}

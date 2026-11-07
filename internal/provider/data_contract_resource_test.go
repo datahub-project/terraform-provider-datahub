@@ -132,11 +132,20 @@ resource "datahub_data_contract" "test" {
 	})
 }
 
-// contractTestDataset is the dataset the lifecycle test provisions for itself
-// (via EnsureDatasetEntity) when DATAHUB_TEST_DATASET_URN is not set. Named
-// distinctly from the assertion tests' tf_assertion_test dataset so a parallel
-// test's cleanup cannot delete it out from under the contract.
-const contractTestDataset = "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_contract_test.orders,PROD)"
+// contractTestDataset returns the dataset the lifecycle test provisions for
+// itself (via EnsureDatasetEntity) when DATAHUB_TEST_DATASET_URN is not set.
+// Named distinctly from the assertion tests' tf_assertion_test dataset so a
+// parallel test's cleanup cannot delete it out from under the contract.
+//
+// The table name is unique per live run. A data contract's URN is derived
+// from its dataset URN, so a fixed dataset gave every run the same contract
+// URN, and the list step could then pass on a stale search result that still
+// carried the previous run's contract instead of proving this run's contract
+// was found. A fresh URN per run can only be found if it was really indexed.
+// The mock keeps the stable name.
+func contractTestDataset(tg *datahubtesting.Target) string {
+	return "urn:li:dataset:(urn:li:dataPlatform:sqlite,tf_contract_test." + tg.Name("orders") + ",PROD)"
+}
 
 // TestAcc_DataContract_Lifecycle validates the resource end-to-end against a
 // live DataHub (OSS or Cloud). A data contract requires the referenced dataset
@@ -153,7 +162,7 @@ func TestAcc_DataContract_Lifecycle(t *testing.T) {
 
 	datasetURN := os.Getenv("DATAHUB_TEST_DATASET_URN")
 	if datasetURN == "" {
-		datasetURN = contractTestDataset
+		datasetURN = contractTestDataset(tg)
 		// No-op on the mock, which does not validate entity existence.
 		tg.EnsureDatasetEntity(t, datasetURN)
 	}
@@ -231,11 +240,26 @@ data "datahub_data_contracts" "all" {
 	})
 }
 
-// waitForDataContractIndexed polls ListDataContractURNs until wantURN appears
-// or the budget is exhausted. The mock's list is strongly consistent, so this
-// returns on the first probe there; on a live target it absorbs the OpenSearch
-// indexing lag between the contract's create and its first appearance in
-// search results.
+// dataContractIndexBudget bounds waitForDataContractIndexed. The poll returns
+// as soon as the contract appears, so the budget only costs time when the
+// contract never shows up. With the list bypassing DataHub's search result
+// cache a fresh contract appears within seconds; before that, a poll could
+// sit on a cached empty result for minutes, which no budget fixed.
+const dataContractIndexBudget = 60 * time.Second
+
+// dataContractStableProbes is how many consecutive probes must list the
+// contract before the wait returns. One sighting is not enough on a live
+// target: a search served by an index copy that has refreshed can be followed
+// by one served by a copy that has not, so the data source read that comes
+// next can miss a contract the poll has just seen. Requiring a run of
+// sightings a couple of seconds apart lets every copy catch up first.
+const dataContractStableProbes = 3
+
+// waitForDataContractIndexed polls ListDataContractURNs until wantURN has been
+// listed by dataContractStableProbes consecutive probes, or the budget is
+// exhausted. The mock's list is strongly consistent, so this returns after the
+// first few probes there; on a live target it absorbs the indexing lag between
+// the contract's create and its consistent appearance in search results.
 func waitForDataContractIndexed(t *testing.T, wantURN string) {
 	t.Helper()
 	client, err := datahub.NewClient(os.Getenv("DATAHUB_GMS_URL"), os.Getenv("DATAHUB_GMS_TOKEN"))
@@ -247,25 +271,36 @@ func waitForDataContractIndexed(t *testing.T, wantURN string) {
 	// indexing lag that was never the cause. Track whether any probe has
 	// succeeded: if none has by the deadline, the list call is broken and the
 	// message says so.
-	deadline := time.Now().Add(60 * time.Second)
+	start := time.Now()
+	deadline := start.Add(dataContractIndexBudget)
 	var anySucceeded bool
 	var lastErr error
+	var seen int
 	for {
 		urns, listErr := client.ListDataContractURNs(t.Context())
 		if listErr == nil {
 			anySucceeded = true
 			if slices.Contains(urns, wantURN) {
-				return
+				seen++
+				if seen >= dataContractStableProbes {
+					t.Logf("data contract %s listed by %d consecutive probes after %s",
+						wantURN, seen, time.Since(start).Round(time.Second))
+					return
+				}
+			} else {
+				seen = 0
 			}
 		} else {
+			seen = 0
 			lastErr = listErr
 		}
 		if time.Now().After(deadline) {
 			if !anySucceeded {
-				t.Fatalf("listing data contracts failed on every probe for 60s, so %s was never searched for "+
-					"-- this is a failing query, not indexing lag: %v", wantURN, lastErr)
+				t.Fatalf("listing data contracts failed on every probe for %s, so %s was never searched for "+
+					"-- this is a failing query, not indexing lag: %v", dataContractIndexBudget, wantURN, lastErr)
 			}
-			t.Fatalf("data contract %s did not appear in the list within 60s, though the query itself succeeded", wantURN)
+			t.Fatalf("data contract %s was not listed by %d consecutive probes within %s, though the query itself succeeded",
+				wantURN, dataContractStableProbes, dataContractIndexBudget)
 		}
 		time.Sleep(2 * time.Second)
 	}
