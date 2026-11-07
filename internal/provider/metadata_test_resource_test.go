@@ -30,17 +30,18 @@ func TestMetadataTestResource_lifecycle_mock(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.MetadataTestCheckDestroy,
-		Steps:                    datahubtesting.MetadataTestLifecycleSteps(),
+		Steps:                    datahubtesting.MetadataTestLifecycleSteps("tfprovider-mdtest"),
 	})
 }
 
 func TestAcc_MetadataTest_Lifecycle(t *testing.T) {
-	datahubtesting.SetupTarget(t)
+	tg := datahubtesting.SetupTarget(t)
+	testID := tg.Name("tfprovider-mdtest")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.MetadataTestCheckDestroy,
-		Steps:                    datahubtesting.MetadataTestLifecycleSteps(),
+		Steps:                    datahubtesting.MetadataTestLifecycleSteps(testID),
 	})
 }
 
@@ -440,18 +441,19 @@ func TestMetadataTestValidationDataSource_mock(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.MetadataTestCheckDestroy,
-		Steps:                    datahubtesting.MetadataTestValidationDataSourceSteps(),
+		Steps:                    datahubtesting.MetadataTestValidationDataSourceSteps("tfprovider-mdtest-validated"),
 	})
 }
 
 func TestAcc_MetadataTestValidationDataSource(t *testing.T) {
 	tg := datahubtesting.SetupTarget(t)
 	tg.RequireCloud(t) // Cloud-only data source; skips on live OSS targets
+	testID := tg.Name("tfprovider-mdtest-validated")
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		CheckDestroy:             datahubtesting.MetadataTestCheckDestroy,
-		Steps:                    datahubtesting.MetadataTestValidationDataSourceSteps(),
+		Steps:                    datahubtesting.MetadataTestValidationDataSourceSteps(testID),
 	})
 }
 

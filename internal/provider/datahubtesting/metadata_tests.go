@@ -267,17 +267,18 @@ func (s *mockServer) handleMetadataTestItem(w http.ResponseWriter, r *http.Reque
 }
 
 // MetadataTestLifecycleSteps returns test steps for datahub_metadata_test:
-// create (deterministic test_id + a definition with on/rules blocks), update
+// create (caller-supplied test_id + a definition with on/rules blocks), update
 // the description + definition, then import and verify.
-func MetadataTestLifecycleSteps() []resource.TestStep {
+func MetadataTestLifecycleSteps(testID string) []resource.TestStep {
 	const addr = "datahub_metadata_test.test"
+	urn := mockMetadataTestURNPrefix + testID
 
 	return []resource.TestStep{
 		{
-			Config: providerBlock + `
+			Config: providerBlock + fmt.Sprintf(`
 resource "datahub_metadata_test" "test" {
-  test_id     = "tf-example-dataset-ownership"
-  name        = "TF Example - Dataset Ownership"
+  test_id     = %q
+  name        = "TF Provider Test - Dataset Ownership"
   category    = "Governance"
   description = "Every dataset must have at least one owner."
   definition_json = jsonencode({
@@ -290,19 +291,19 @@ resource "datahub_metadata_test" "test" {
     }
   })
 }
-`,
+`, testID),
 			ConfigStateChecks: []statecheck.StateCheck{
-				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact("urn:li:test:tf-example-dataset-ownership")),
-				statecheck.ExpectKnownValue(addr, tfjsonpath.New("test_id"), knownvalue.StringExact("tf-example-dataset-ownership")),
-				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("TF Example - Dataset Ownership")),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("urn"), knownvalue.StringExact(urn)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("test_id"), knownvalue.StringExact(testID)),
+				statecheck.ExpectKnownValue(addr, tfjsonpath.New("name"), knownvalue.StringExact("TF Provider Test - Dataset Ownership")),
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("category"), knownvalue.StringExact("Governance")),
 			},
 		},
 		{
-			Config: providerBlock + `
+			Config: providerBlock + fmt.Sprintf(`
 resource "datahub_metadata_test" "test" {
-  test_id     = "tf-example-dataset-ownership"
-  name        = "TF Example - Dataset Ownership"
+  test_id     = %q
+  name        = "TF Provider Test - Dataset Ownership"
   category    = "Governance"
   description = "Every PROD dataset must have at least one owner."
   definition_json = jsonencode({
@@ -320,7 +321,7 @@ resource "datahub_metadata_test" "test" {
     }
   })
 }
-`,
+`, testID),
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue(addr, tfjsonpath.New("description"), knownvalue.StringExact("Every PROD dataset must have at least one owner.")),
 			},
@@ -426,10 +427,10 @@ data "datahub_metadata_tests" "all" {
 // datahub_metadata_test_validation data source: a valid definition passes
 // through, and the definition_json output can feed the resource so the
 // validation is ordered ahead of the write.
-func MetadataTestValidationDataSourceSteps() []resource.TestStep {
+func MetadataTestValidationDataSourceSteps(testID string) []resource.TestStep {
 	return []resource.TestStep{
 		{
-			Config: providerBlock + `
+			Config: providerBlock + fmt.Sprintf(`
 data "datahub_metadata_test_validation" "check" {
   definition_json = jsonencode({
     on    = { types = ["dataset"] }
@@ -438,15 +439,15 @@ data "datahub_metadata_test_validation" "check" {
 }
 
 resource "datahub_metadata_test" "validated" {
-  test_id         = "tf-example-validated-terms"
-  name            = "TF Example - Validated Glossary Terms"
+  test_id         = %q
+  name            = "TF Provider Test - Validated Glossary Terms"
   category        = "Governance"
   definition_json = data.datahub_metadata_test_validation.check.definition_json
 }
-`,
+`, testID),
 			ConfigStateChecks: []statecheck.StateCheck{
 				statecheck.ExpectKnownValue("datahub_metadata_test.validated", tfjsonpath.New("urn"),
-					knownvalue.StringExact("urn:li:test:tf-example-validated-terms")),
+					knownvalue.StringExact(mockMetadataTestURNPrefix+testID)),
 			},
 		},
 	}
