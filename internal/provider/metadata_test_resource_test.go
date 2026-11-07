@@ -5,6 +5,7 @@ package provider_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 
 	"github.com/datahub-project/terraform-provider-datahub/internal/provider/datahubtesting"
@@ -302,6 +304,123 @@ resource "datahub_metadata_test" "drift" {
 				},
 				RefreshState:       true,
 				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
+// TestMetadataTestResource_destroyThenRecreateSameID_mock verifies that
+// destroy leaves nothing behind and frees the id. DataHub Cloud's deleteTest
+// only soft-deletes: the entity keeps testKey and testInfo, still reads back,
+// and createTest of the same id is then rejected as "already exists". A
+// destroy that stopped at the mutation therefore left every destroyed test in
+// place and made destroy-then-apply of the same configuration fail.
+func TestMetadataTestResource_destroyThenRecreateSameID_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	const id = "tf-example-recreate-same-id"
+	const cfg = `
+provider "datahub" {}
+
+resource "datahub_metadata_test" "recreate" {
+  test_id  = "` + id + `"
+  name     = "TF Example - Recreate Same Id"
+  category = "Governance"
+  definition_json = jsonencode({
+    on    = { types = ["dataset"] }
+    rules = { property = "ownership.owners.owner", operator = "exists" }
+  })
+}
+`
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		CheckDestroy:             datahubtesting.MetadataTestCheckDestroy,
+		Steps: []resource.TestStep{
+			{Config: cfg},
+			{
+				// Removing the resource from the configuration destroys it.
+				Config: `provider "datahub" {}`,
+				Check: func(_ *terraform.State) error {
+					client, err := datahub.NewClient(server.URL, "test-token")
+					if err != nil {
+						return fmt.Errorf("building client: %w", err)
+					}
+					info, err := client.GetMetadataTestByID(context.Background(), id)
+					if err != nil {
+						return fmt.Errorf("reading test after destroy: %w", err)
+					}
+					if info != nil {
+						return fmt.Errorf("urn:li:test:%s still exists after destroy (soft-deleted: %t)", id, info.Removed)
+					}
+					return nil
+				},
+			},
+			{Config: cfg},
+		},
+	})
+}
+
+// TestMetadataTestResource_softDeletedIDTaken_mock verifies the diagnostic
+// when the id is held by a soft-deleted test, as DataHub Cloud's deleteTest
+// leaves behind (from the UI, or from an earlier provider version's
+// destroy). The server's "already exists" names no reason, and the test is
+// invisible in the DataHub UI, so without the soft-deleted hint the user has
+// no way to see what holds the id or how to free it.
+func TestMetadataTestResource_softDeletedIDTaken_mock(t *testing.T) {
+	server := datahubtesting.NewServer(t)
+	t.Setenv("DATAHUB_GMS_URL", server.URL)
+	t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+	const id = "tf-example-soft-deleted-id"
+	gql := func(query string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+			server.URL+"/api/graphql", strings.NewReader(query))
+		if err != nil {
+			t.Fatalf("seeding the mock: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("seeding the mock: %v", err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || strings.Contains(string(body), `"errors"`) {
+			t.Fatalf("seeding the mock: HTTP %d: %s", resp.StatusCode, body)
+		}
+	}
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				// A test created and then deleted outside Terraform with the
+				// deleteTest mutation alone, which on DataHub Cloud (and the
+				// mock) only soft-deletes it.
+				PreConfig: func() {
+					gql(`{"query":"mutation c($input: CreateTestInput!) { createTest(input: $input) }",` +
+						`"variables":{"input":{"id":"` + id + `","name":"n","category":"Governance",` +
+						`"definition":{"json":"{\"on\":{},\"rules\":{}}"}}}}`)
+					gql(`{"query":"mutation d($urn: String!) { deleteTest(urn: $urn) }",` +
+						`"variables":{"urn":"urn:li:test:` + id + `"}}`)
+				},
+				Config: `
+provider "datahub" {}
+
+resource "datahub_metadata_test" "taken" {
+  test_id  = "` + id + `"
+  name     = "TF Example - Soft Deleted Id"
+  category = "Governance"
+  definition_json = jsonencode({
+    on    = { types = ["dataset"] }
+    rules = { property = "ownership.owners.owner", operator = "exists" }
+  })
+}
+`,
+				ExpectError: regexp.MustCompile(`(?s)already exists, soft-deleted.*import it.*and destroy it`),
 			},
 		},
 	})

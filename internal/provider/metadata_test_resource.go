@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
@@ -82,9 +83,19 @@ func (r *metadataTestResource) Schema(_ context.Context, _ resource.SchemaReques
 			"full URN or a bare `test_id`, so UUID-suffixed tests created via the DataHub Cloud UI " +
 			"can be adopted.\n\n" +
 			"## Delete behavior\n\n" +
-			"Destroy issues `deleteTest`, a **hard delete** of the test entity. Test results already " +
-			"recorded on other entities keep referencing the deleted URN until the next test run " +
-			"recomputes them (on OSS, where nothing runs tests, such references persist indefinitely).",
+			"Destroy issues `deleteTest` and then a **hard delete** of the test entity through the OpenAPI " +
+			"entity endpoint, and confirms the test is gone. Both steps are needed because the servers " +
+			"differ: OSS `deleteTest` hard-deletes, while DataHub Cloud `deleteTest` only soft-deletes, " +
+			"which stops the test running but leaves it holding its `test_id`, so the same id could not be " +
+			"created again. The OpenAPI endpoint authorizes the hard delete separately, so the principal " +
+			"needs permission to delete the entity there as well as `MANAGE_TESTS`.\n\n" +
+			"A test that is soft-deleted in DataHub -- deleted in the DataHub Cloud UI, or destroyed by an " +
+			"earlier provider version -- still reads back, and refresh reports it with a warning. " +
+			"Running `terraform destroy` on it finishes the delete; to clear one Terraform no longer " +
+			"manages, import it and destroy it.\n\n" +
+			"On DataHub Cloud, `deleteTest` also clears the test's results from the entities it was " +
+			"evaluated against. On OSS, where nothing runs tests, results recorded against other entities " +
+			"keep referencing the deleted URN.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -148,6 +159,15 @@ func (r *metadataTestResource) Create(ctx context.Context, req resource.CreateRe
 	urn, err := r.client.CreateMetadataTest(ctx, in)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
+			if existing, getErr := r.client.GetMetadataTestByID(ctx, testID); getErr == nil && existing != nil && existing.Removed {
+				resp.Diagnostics.AddError("Metadata test already exists, soft-deleted",
+					"DataHub reports a test at urn:li:test:"+testID+" already exists. It is soft-deleted -- "+
+						"deleted in the DataHub Cloud UI, or destroyed by an earlier provider version -- "+
+						"which hides it but keeps its id taken. To free the id, import it with `terraform import` "+
+						"and destroy it, which hard-deletes it; or choose a different test_id. "+
+						"Underlying error: "+err.Error())
+				return
+			}
 			resp.Diagnostics.AddError("Metadata test already exists",
 				"DataHub reports a test at urn:li:test:"+testID+" already exists. "+
 					"Import it with `terraform import` to adopt it, or choose a different test_id. "+
@@ -258,6 +278,16 @@ func (r *metadataTestResource) Read(ctx context.Context, req resource.ReadReques
 	if info == nil {
 		resp.State.RemoveResource(ctx)
 		return
+	}
+	if info.Removed {
+		// A soft-deleted test reads like any other, but DataHub Cloud neither
+		// lists nor runs it, and it still holds its id. This happens when it
+		// was deleted in the DataHub Cloud UI, or destroyed by a provider
+		// version that stopped at deleteTest.
+		resp.Diagnostics.AddWarning(
+			"Metadata test is soft-deleted in DataHub",
+			fmt.Sprintf("%s%s is soft-deleted in DataHub, so DataHub does not run it, and applying changes to it "+
+				"does not restore it. Run terraform destroy to finish deleting it.", datahub.MetadataTestURNPrefix, testID))
 	}
 
 	state.TestID = types.StringValue(info.ID)
