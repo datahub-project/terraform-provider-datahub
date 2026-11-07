@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-11-07
+
 ### Fixed
 
 - **`datahub-tf-extract enumerate` no longer offers to import DataHub's built-in ownership types.** Every DataHub instance ships ownership types whose id begins with `__system__` (Technical Owner, Business Owner, Data Steward, Agent Owner, None), and `datahub_ownership_type` refuses to manage them, so enumeration produced import blocks the provider was guaranteed to reject. Because `terraform plan -generate-config-out` fails the whole run on a single resource error instead of skipping that resource, config generation produced nothing until those entries were deleted from `import.tf` by hand -- on one DataHub Cloud deployment every ownership type present was a built-in, and 227 unrelated resources failed to generate alongside them. They are now excluded by prefix, so built-ins added in a later DataHub release need no change here. The `datahub_ownership_types` data source still lists them: `datahub_entity_ownership` attaches ownership by referencing `__system__technical_owner` and friends, and the singular `datahub_ownership_type` data source exists so a built-in can be read without being taken into Terraform state.
@@ -606,7 +608,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.26.0...v0.27.0
