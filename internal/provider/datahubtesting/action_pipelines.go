@@ -28,6 +28,12 @@ type mockActionPipeline struct {
 // the aspect from the input: state falls back to its ACTIVE default, and
 // config.version / config.debugMode are accepted but not stored (DataHub has
 // never stored them; PFP-7564).
+//
+// config.executorId is nullable in the GraphQL schema, but the server copies it
+// into the aspect without tolerating null, so an upsert that omits it (or sends
+// null) fails with a NullPointerException before anything is written. The mock
+// rejects it the same way, so a provider change that stops sending it fails here
+// rather than only against DataHub Cloud.
 func (s *mockServer) handleUpsertActionPipeline(w http.ResponseWriter, variables map[string]any) {
 	urn, _ := variables["urn"].(string)
 	input, _ := variables["input"].(map[string]any)
@@ -41,6 +47,12 @@ func (s *mockServer) handleUpsertActionPipeline(w http.ResponseWriter, variables
 	if cfg, ok := input["config"].(map[string]any); ok {
 		ap.Recipe, _ = cfg["recipe"].(string)
 		ap.ExecutorID, _ = cfg["executorId"].(string)
+	}
+	if ap.ExecutorID == "" {
+		graphQLError(w, "java.lang.NullPointerException: Cannot set field executorId of "+
+			"com.linkedin.action.DataHubActionConfig to null. Root cause: Cannot set field executorId of "+
+			"com.linkedin.action.DataHubActionConfig to null")
+		return
 	}
 
 	s.mu.Lock()

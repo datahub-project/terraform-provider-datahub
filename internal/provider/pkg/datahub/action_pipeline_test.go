@@ -4,6 +4,7 @@
 package datahub
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -87,5 +88,52 @@ func TestListActionPipelineURNs(t *testing.T) {
 	}
 	if len(urns) != 2 || urns[0] != "urn:li:dataHubAction:a" || urns[1] != "urn:li:dataHubAction:b" {
 		t.Errorf("urns = %v", urns)
+	}
+}
+
+// TestUpsertActionPipeline_ExecutorID verifies config.executorId is always on
+// the wire: upsertActionPipeline declares it optional but fails with a
+// NullPointerException when it is omitted, so an empty ExecutorID is sent as
+// the default executor and an explicit one is sent unchanged.
+func TestUpsertActionPipeline_ExecutorID(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, want string
+	}{
+		{name: "unset sends default", in: "", want: ActionPipelineDefaultExecutorID},
+		{name: "explicit is kept", in: "remote-pool", want: "remote-pool"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var sent map[string]any
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req struct {
+					Variables struct {
+						Input struct {
+							Config map[string]any `json:"config"`
+						} `json:"input"`
+					} `json:"variables"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("decoding request: %v", err)
+				}
+				sent = req.Variables.Input.Config
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":{"upsertActionPipeline":"urn:li:dataHubAction:x"}}`))
+			}))
+			defer server.Close()
+
+			_, err := newTestClient(t, server).UpsertActionPipeline(t.Context(), ActionPipelineInput{
+				ActionID:   "x",
+				Name:       "X",
+				Type:       "dataplex_metadata_sync",
+				Recipe:     "{}",
+				ExecutorID: tc.in,
+			})
+			if err != nil {
+				t.Fatalf("UpsertActionPipeline() error = %v", err)
+			}
+			if got, ok := sent["executorId"]; !ok || got != tc.want {
+				t.Errorf("config.executorId = %v (present %t), want %q", got, ok, tc.want)
+			}
+		})
 	}
 }

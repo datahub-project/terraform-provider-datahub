@@ -91,7 +91,7 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"- `recipe` (Required) Action recipe as a JSON string. Build it with `jsonencode({...})`.\n" +
 			"- `category` (Optional) UI grouping category (e.g. `Data Discovery`).\n" +
 			"- `description` (Optional) Human-readable description.\n" +
-			"- `executor_id` (Optional) Executor that runs the action (e.g. `default`).\n" +
+			"- `executor_id` (Optional) Executor pool that runs the action. Defaults to `default`, the embedded executor.\n" +
 			"- `version` (Optional, **Deprecated**) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.\n" +
 			"- `debug_mode` (Optional, **Deprecated**) Has no effect: DataHub accepts this value but has never stored or used it. Remove it from your configuration.\n\n" +
 			"## Security Note\n\n" +
@@ -144,7 +144,7 @@ func (r *actionPipelineResource) Schema(_ context.Context, _ resource.SchemaRequ
 			"executor_id": schema.StringAttribute{
 				Optional:            true,
 				Computed:            true,
-				MarkdownDescription: "Executor that runs the action (e.g. `default`). If omitted, DataHub's default is used.",
+				MarkdownDescription: "Executor pool that runs the action. If omitted, the embedded executor `default` is used, and that is the value recorded in state.",
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			// version and debug_mode mirror inputs of upsertActionPipeline that
@@ -304,7 +304,13 @@ func (r *actionPipelineResource) upsert(ctx context.Context, plan *actionPipelin
 	plan.URN = types.StringValue(urn)
 	plan.Category = nullIfEmpty(strVal(plan.Category))
 	plan.Description = nullIfEmpty(strVal(plan.Description))
-	plan.ExecutorID = nullIfEmpty(strVal(plan.ExecutorID))
+	// An unset executor_id is sent as the default executor (the server rejects
+	// an upsert without one), so record what was actually stored.
+	executorID := strVal(plan.ExecutorID)
+	if executorID == "" {
+		executorID = datahub.ActionPipelineDefaultExecutorID
+	}
+	plan.ExecutorID = types.StringValue(executorID)
 	plan.Version = nullIfEmpty(strVal(plan.Version))
 }
 
