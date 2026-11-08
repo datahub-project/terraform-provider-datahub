@@ -52,8 +52,8 @@ jobs:
     environment:
       name: demo-acryl-io
       url: ${{ vars.DATAHUB_GMS_URL }}
-    # Test step 40 + debris snapshot and report 10 each, plus setup.
-    timeout-minutes: 65
+    # Test step 55 + debris snapshot and report 10 each, plus setup.
+    timeout-minutes: 80
     env:
       # A variable, not a secret: it is not sensitive, and a secret would mask
       # the URL everywhere it appears in the log.
@@ -105,10 +105,11 @@ jobs:
         run: scripts/cloud-debris-report.sh --out "$RUNNER_TEMP/debris-before.tsv"
 
       - name: Run acceptance tests against DataHub Cloud
-        # The Makefile runs go test with -timeout 30m; this step's timeout sits
+        # The Makefile runs go test with -timeout 45m (TESTACC_REMOTE_TIMEOUT;
+        # a full Cloud run takes about 22 minutes); this step's timeout sits
         # above that so a hang surfaces as go test's own panic and stack dump,
         # and below the job's so the debris report still gets to run.
-        timeout-minutes: 40
+        timeout-minutes: 55
         env:
           DATAHUB_GMS_TOKEN: ${{ secrets.DATAHUB_GMS_TOKEN }}
           # Forced rather than auto-detected. testacc-remote and SetupTarget
