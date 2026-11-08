@@ -288,25 +288,35 @@ func DatasetReadableAs(t *testing.T, as UserPrincipal, datasetURN string) bool {
 	return payload.Dataset != nil && payload.Dataset.Urn == datasetURN
 }
 
-// AwaitPolicyEffect polls the probe until it succeeds (no GraphQL errors).
-// GMS caches policies and refreshes on an interval
-// (POLICY_CACHE_REFRESH_INTERVAL_SECONDS, default 120s), so a policy created
-// moments ago is legitimately not yet in force; a probe that is still denied
-// after a full refresh window has genuinely failed. Assertions that expect a
-// DENY must run only after this returns, so they are evaluated against the
-// same cache generation that admitted the policy.
-func AwaitPolicyEffect(t *testing.T, timeout time.Duration, probe func() GraphQLResult) {
+// AwaitPolicyEffect polls the probe until it succeeds (no GraphQL errors),
+// failing the test with why's explanation if it is still denied at the
+// deadline. A grant can be legitimately late for two reasons, and callers name
+// which one they are waiting out:
+//
+//   - GMS caches policies and refreshes on an interval
+//     (POLICY_CACHE_REFRESH_INTERVAL_SECONDS, default 120s), so a policy
+//     created moments ago is not yet in force.
+//   - A DOMAIN criterion cascades to sub-domains by expanding the asset's
+//     domain ancestors through DataHub's graph, and for API writes the graph
+//     is indexed asynchronously, so the parent link of a domain created
+//     moments ago can trail the policy itself.
+//
+// Assertions that expect a DENY must run only after every expected ALLOW has
+// been awaited, so they are evaluated against a policy that is demonstrably in
+// force rather than one that has not arrived yet.
+func AwaitPolicyEffect(t *testing.T, timeout time.Duration, why string, probe func() GraphQLResult) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
 	var last GraphQLResult
 	for {
 		last = probe()
 		if !last.Denied() {
+			t.Logf("AwaitPolicyEffect: %s granted after %s", why, time.Since(start).Round(time.Second))
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("AwaitPolicyEffect: probe still failing after %s (policy cache refresh is 120s, so the policy is genuinely not granting): %v",
-				timeout, last.Errors)
+			t.Fatalf("AwaitPolicyEffect: %s still denied after %s: %v", why, timeout, last.Errors)
 		}
 		time.Sleep(5 * time.Second)
 	}
@@ -497,21 +507,33 @@ resource "datahub_policy" "stewards" {
 			Check: resource.ComposeTestCheckFunc(
 				setupFixtures,
 				func(_ *terraform.State) error {
-					// Wait out the policy cache (120s refresh), then evaluate
-					// the whole matrix against that same cache generation.
-					AwaitPolicyEffect(t, 3*time.Minute+30*time.Second, func() GraphQLResult {
-						return AddTagAs(t, steward, tagURN, dsFinance)
-					})
+					// Wait out the policy cache (120s refresh) on the direct
+					// domain, then the sub-domain cascade, both within one
+					// budget, before evaluating the denials.
+					const budget = 3*time.Minute + 30*time.Second
+					start := time.Now()
+					AwaitPolicyEffect(t, budget,
+						"direct-domain addTag (policy cache refresh, 120s)",
+						func() GraphQLResult { return AddTagAs(t, steward, tagURN, dsFinance) })
+
+					// Allow: sub-domain, via the DOMAIN criterion's descendant
+					// cascade -- the policy names only the parent. Awaited, not
+					// probed once: the cascade resolves the sub-domain's parent
+					// through the graph index, which can still be catching up
+					// with the domain this test created when the policy cache
+					// admits the policy. A one-shot check failed on DataHub
+					// Cloud for exactly that reason.
+					remaining := budget - time.Since(start)
+					if remaining < 30*time.Second {
+						remaining = 30 * time.Second
+					}
+					AwaitPolicyEffect(t, remaining,
+						"sub-domain addTag via the DOMAIN cascade (graph indexing of the parent link)",
+						func() GraphQLResult { return AddTagAs(t, steward, tagURN, dsBilling) })
 
 					var failures []string
 					record := func(format string, args ...any) {
 						failures = append(failures, fmt.Sprintf(format, args...))
-					}
-
-					// Allow: sub-domain, via the DOMAIN criterion's descendant
-					// cascade -- the policy names only the parent.
-					if res := AddTagAs(t, steward, tagURN, dsBilling); res.Denied() {
-						record("sub-domain addTag should be ALLOWED (cascade), got: %v", res.Errors)
 					}
 					// Deny: unrelated domain.
 					if res := AddTagAs(t, steward, tagURN, dsMarketing); !res.Unauthorized() {
