@@ -16,9 +16,11 @@ package datahubtesting
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -187,6 +189,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/v2/graphql", s.handleGraphQL)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource", s.handleIngestionSourceCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubingestionsource/", s.handleIngestionSourceItem)
+	mux.HandleFunc("/openapi/v3/entity/datahubsecret", s.handleSecretCollection)
 	mux.HandleFunc("/openapi/v3/entity/datahubsecret/", s.handleSecretItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubremoteexecutorpool/", s.handleExecutorPoolItem)
 	mux.HandleFunc("/openapi/v3/entity/datahubconnection/", s.handleConnectionItem)
@@ -723,8 +726,22 @@ func (s *mockServer) handleSecretItem(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleIngestionSourceCollection handles POST to the collection endpoint.
+// handleIngestionSourceCollection handles the collection endpoint: GET lists
+// (the scroll the provider's ListIngestionSourceURNs uses), POST writes.
 func (s *mockServer) handleIngestionSourceCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.mu.Lock()
+		entities := make([]map[string]any, 0, len(s.ingestionSources))
+		for _, src := range s.ingestionSources {
+			entities = append(entities, map[string]any{
+				"urn":                        src.Urn,
+				"dataHubIngestionSourceInfo": src.DataHubIngestionSourceInfo,
+			})
+		}
+		s.mu.Unlock()
+		writeEntityListPage(w, r, "dataHubIngestionSourceInfo", entities)
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.NotFound(w, r)
 		return
@@ -746,6 +763,48 @@ func (s *mockServer) handleIngestionSourceCollection(w http.ResponseWriter, r *h
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// handleSecretCollection serves GET /openapi/v3/entity/datahubsecret, the
+// scroll the provider's ListSecretURNs uses. Like the real server it returns
+// only the URN and the requested dataHubSecretValue aspect; the mock never
+// held a real value, so the encrypted field carries a placeholder.
+func (s *mockServer) handleSecretCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	s.mu.Lock()
+	entities := make([]map[string]any, 0, len(s.secrets))
+	for _, sec := range s.secrets {
+		entities = append(entities, map[string]any{
+			"urn": sec.URN,
+			"dataHubSecretValue": map[string]any{
+				"value": map[string]any{"name": sec.Name, "value": "encrypted"},
+			},
+		})
+	}
+	s.mu.Unlock()
+	writeEntityListPage(w, r, "dataHubSecretValue", entities)
+}
+
+// writeEntityListPage writes a single-page OpenAPI v3 entity list response
+// (no scrollId, so the client stops after one request). An aspects parameter
+// naming a different aspect than the one served yields no entities, as on the
+// real server, so a client asking for the wrong aspect sees an empty list
+// rather than a silently correct one.
+func writeEntityListPage(w http.ResponseWriter, r *http.Request, aspect string, entities []map[string]any) {
+	if a := r.URL.Query().Get("aspects"); a != "" && a != aspect {
+		entities = []map[string]any{}
+	}
+	sort.Slice(entities, func(i, j int) bool {
+		return fmt.Sprint(entities[i]["urn"]) < fmt.Sprint(entities[j]["urn"])
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"entities":   entities,
+		"totalCount": len(entities),
+	})
 }
 
 // poolGQL builds the GraphQL JSON shape for a mockExecutorPool.

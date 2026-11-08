@@ -159,29 +159,41 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 // waitForURNsInList polls ListSecretURNs and ListIngestionSourceURNs until all
 // of the given URNs appear, or fails the test after timeout. Used on live
 // targets to absorb the eventual-consistency lag between entity creation and
-// OpenSearch indexing.
+// OpenSearch indexing, which is seconds. It used to time out on DataHub Cloud
+// because the lists were answered from a search result cache that writes do
+// not evict; they now bypass it (see listEntityURNs), so a minute is ample.
 func waitForURNsInList(ctx context.Context, t *testing.T, client *datahub.Client, urns []string, timeout time.Duration) {
 	t.Helper()
-	needed := make(map[string]bool, len(urns))
-	for _, u := range urns {
-		needed[u] = true
-	}
-	deadline := time.Now().Add(timeout)
+	start := time.Now()
+	deadline := start.Add(timeout)
+	var missing, lastErrs []string
 	for time.Now().Before(deadline) {
-		secretURNs, _ := client.ListSecretURNs(ctx)
-		ingestionURNs, _ := client.ListIngestionSourceURNs(ctx)
-		found := 0
+		lastErrs = lastErrs[:0]
+		secretURNs, err := client.ListSecretURNs(ctx)
+		if err != nil {
+			lastErrs = append(lastErrs, "secrets: "+err.Error())
+		}
+		ingestionURNs, err := client.ListIngestionSourceURNs(ctx)
+		if err != nil {
+			lastErrs = append(lastErrs, "ingestion sources: "+err.Error())
+		}
+		listed := make(map[string]bool, len(secretURNs)+len(ingestionURNs))
 		for _, u := range append(secretURNs, ingestionURNs...) {
-			if needed[u] {
-				found++
+			listed[u] = true
+		}
+		missing = missing[:0]
+		for _, u := range urns {
+			if !listed[u] {
+				missing = append(missing, u)
 			}
 		}
-		if found == len(needed) {
+		if len(missing) == 0 {
+			t.Logf("seeded URNs listed after %s", time.Since(start).Round(time.Second))
 			return
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatalf("timed out after %s waiting for URNs to appear in list APIs: %v", timeout, urns)
+	t.Fatalf("timed out after %s waiting for URNs to appear in list APIs; still missing %v (last list errors: %v)", timeout, missing, lastErrs)
 }
 
 // findProviderBinDir resolves the provider binary directory, failing the test

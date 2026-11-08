@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   DataHub ✅ | DataHub Cloud ✅
   Returns the URNs of all DataHub Ingestion Sources visible to the authenticated principal.
-  Backed by the listIngestionSources GraphQL query (OpenSearch). Entities created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing ingestion sources into Terraform state.
+  Backed by the search index (OpenSearch), read past DataHub's search result cache. Entities created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing ingestion sources into Terraform state.
 ---
 
 # datahub_ingestion_sources (Data Source)
@@ -14,7 +14,7 @@ description: |-
 
 Returns the URNs of all DataHub Ingestion Sources visible to the authenticated principal.
 
-Backed by the `listIngestionSources` GraphQL query (OpenSearch). Entities created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing ingestion sources into Terraform state.
+Backed by the search index (OpenSearch), read past DataHub's search result cache. Entities created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing ingestion sources into Terraform state.
 
 ## Example Usage
 

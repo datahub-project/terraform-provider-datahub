@@ -5,7 +5,7 @@ subcategory: ""
 description: |-
   DataHub ✅ | DataHub Cloud ✅
   Returns the URNs of all DataHub Secrets visible to the authenticated principal.
-  Backed by the listSecrets GraphQL query (OpenSearch). Entities created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing secrets into Terraform state.
+  Backed by the search index (OpenSearch), read past DataHub's search result cache. Entities created within the last few seconds may not yet appear. Use the returned urns list as the for_each value in import {} blocks to bulk-import existing secrets into Terraform state.
   Secret values are never returned. Only the URN (and internally the name) is used.
 ---
 
@@ -15,7 +15,7 @@ description: |-
 
 Returns the URNs of all DataHub Secrets visible to the authenticated principal.
 
-Backed by the `listSecrets` GraphQL query (OpenSearch). Entities created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing secrets into Terraform state.
+Backed by the search index (OpenSearch), read past DataHub's search result cache. Entities created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` value in `import {}` blocks to bulk-import existing secrets into Terraform state.
 
 Secret *values* are never returned. Only the URN (and internally the name) is used.
 
