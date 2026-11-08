@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -95,6 +97,95 @@ func TestDeleteAssertionAndMonitor_WarnsWhenMonitorUnknown(t *testing.T) {
 			}
 			if got := diags.WarningsCount() == 1; got != c.wantWarning {
 				t.Errorf("warnings = %v, want a warning: %v", diags.Warnings(), c.wantWarning)
+			}
+		})
+	}
+}
+
+// TestImportMonitorURN covers the monitor_urn an import starts with: the
+// monitor once the link is visible, null with a warning when the wait runs
+// out, an error when the lookup fails, and null at once, without waiting or
+// any diagnostic, for an assertion the source guard will refuse.
+func TestImportMonitorURN(t *testing.T) {
+	t.Cleanup(datahub.SetMonitorLinkBackoffForTesting(time.Millisecond, 4*time.Millisecond, 100*time.Millisecond))
+	const assertionURN = "urn:li:assertion:a1"
+	const monitorURN = "urn:li:monitor:m1"
+
+	cases := []struct {
+		name string
+		// source is the assertion's source; hidden is how many lookups see no
+		// monitor first (-1: all of them); lookupErr makes every lookup fail.
+		source      string
+		hidden      int
+		lookupErr   bool
+		want        types.String
+		wantLookups int // -1: more than one, the exact count depending on timing
+		wantWarning bool
+		wantError   bool
+	}{
+		{name: "linked_after_lag", source: "NATIVE", hidden: 2, want: types.StringValue(monitorURN), wantLookups: 3},
+		{name: "empty_source_waits_too", source: "", hidden: 1, want: types.StringValue(monitorURN), wantLookups: 2},
+		{name: "never_linked", source: "NATIVE", hidden: -1, want: types.StringNull(), wantLookups: -1, wantWarning: true},
+		{name: "lookup_fails", source: "NATIVE", lookupErr: true, want: types.StringNull(), wantLookups: 1, wantError: true},
+		{name: "external_skips_wait", source: "EXTERNAL", hidden: -1, want: types.StringNull(), wantLookups: 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var mu sync.Mutex
+			lookups := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				body, _ := io.ReadAll(r.Body)
+				if r.URL.Path != "/api/graphql" || !strings.Contains(string(body), "getAssertionMonitor") {
+					http.NotFound(w, r)
+					return
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				lookups++
+				switch {
+				case c.lookupErr:
+					_, _ = w.Write([]byte(`{"errors":[{"message":"simulated lookup failure"}]}`))
+				case c.hidden < 0 || lookups <= c.hidden:
+					_, _ = w.Write([]byte(`{"data":{"assertion":{"monitor":null}}}`))
+				default:
+					_, _ = w.Write([]byte(`{"data":{"assertion":{"monitor":{"urn":"` + monitorURN + `"}}}}`))
+				}
+			}))
+			defer srv.Close()
+			client, err := datahub.NewClient(srv.URL, "test-token")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var diags diag.Diagnostics
+			got := importMonitorURN(t.Context(), client, "datahub_freshness_assertion",
+				&datahub.AssertionInfo{URN: assertionURN, Source: c.source}, &diags)
+			if !got.Equal(c.want) {
+				t.Errorf("monitor_urn = %v, want %v", got, c.want)
+			}
+			mu.Lock()
+			n := lookups
+			mu.Unlock()
+			if c.wantLookups >= 0 && n != c.wantLookups {
+				t.Errorf("lookups = %d, want %d", n, c.wantLookups)
+			}
+			if c.wantLookups < 0 && n < 2 {
+				t.Errorf("lookups = %d, want several: the import did not wait", n)
+			}
+			if diags.HasError() != c.wantError {
+				t.Errorf("error diagnostics = %v, want an error: %v", diags.Errors(), c.wantError)
+			}
+			if got := diags.WarningsCount(); got != map[bool]int{true: 1, false: 0}[c.wantWarning] {
+				t.Fatalf("warnings = %v, want a warning: %v", diags.Warnings(), c.wantWarning)
+			}
+			if c.wantWarning {
+				detail := diags.Warnings()[0].Detail()
+				for _, want := range []string{assertionURN, "datahub_freshness_assertion", "imported", "monitor_urn", "next refresh"} {
+					if !strings.Contains(detail, want) {
+						t.Errorf("warning detail does not mention %q:\n%s", want, detail)
+					}
+				}
 			}
 		})
 	}

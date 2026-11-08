@@ -563,6 +563,11 @@ func (r *sqlAssertionResource) ImportState(ctx context.Context, req resource.Imp
 		state.FailureSeverity = nullIfEmpty(ai.FailureSeverity)
 	}
 
+	state.MonitorURN = importMonitorURN(ctx, r.client, "datahub_sql_assertion", ai, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, assertionEntityPath, ai.URN)
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())

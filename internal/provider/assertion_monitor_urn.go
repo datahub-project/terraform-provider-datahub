@@ -26,8 +26,8 @@ import (
 // lookup: DataHub's deleteAssertion mutation leaves the Monitor entity behind,
 // so the provider must delete it explicitly, and resolving the monitor at
 // delete time uses a graph-backed query that can transiently fail or miss.
-// Persisting the URN at create time -- and refreshing it on read, which is also
-// how imported and pre-upgrade states acquire it -- gives Delete a reference
+// Persisting the URN at create and import time -- and refreshing it on read,
+// which is also how pre-upgrade states acquire it -- gives Delete a reference
 // that does not need resolving. An orphaned monitor counts toward a DataHub
 // Cloud tenant's monitor limit and blocks recreating an assertion of the same
 // type on the same dataset; orphan accumulation has exhausted tenant limits in
@@ -36,11 +36,12 @@ func monitorURNSchema() schema.StringAttribute {
 	return schema.StringAttribute{
 		Computed: true,
 		MarkdownDescription: "URN of the DataHub Monitor entity backing this assertion " +
-			"(e.g. `urn:li:monitor:<id>`). Captured when the assertion is created and " +
-			"refreshed on read. DataHub links a new monitor to its assertion asynchronously; " +
-			"if it has not done so within a few minutes of the create, the apply succeeds " +
-			"with a warning, this attribute stays empty, and the next refresh fills it in " +
-			"without changing the assertion. The provider deletes this monitor explicitly on destroy: " +
+			"(e.g. `urn:li:monitor:<id>`). Captured when the assertion is created or imported, " +
+			"and refreshed on read. DataHub links a new monitor to its assertion asynchronously; " +
+			"if it has not done so within a few minutes of the create (or a minute into an " +
+			"import), the apply or import succeeds with a warning, this attribute stays empty, " +
+			"and the next refresh fills it in without changing the assertion. " +
+			"The provider deletes this monitor explicitly on destroy: " +
 			"DataHub's `deleteAssertion` leaves the monitor in place, and an orphaned " +
 			"monitor counts toward the DataHub Cloud monitor limit and blocks recreating " +
 			"an assertion of the same type on the same dataset.",
@@ -82,6 +83,56 @@ func acceptMonitorPending(err error, resourceType string, diags *diag.Diagnostic
 			resourceType, pending.AssertionURN, pending.Cause),
 	)
 	return nil
+}
+
+// importMonitorURN returns the monitor_urn an imported typed assertion should
+// start with, waiting for DataHub to link the assertion to its monitor for up
+// to the import budget (see datahub.AwaitAssertionMonitorForImport for why
+// import waits and a normal refresh does not).
+//
+// It lives in ImportState, not Read, because ImportState runs only on import:
+// Read cannot tell an import from a refresh except by inference from the
+// prior state, and getting that inference wrong in either direction is costly
+// -- a wait on every plan, or no wait on the import that needs it. Read then
+// keeps the value this returns even when its own lookup comes back empty,
+// exactly as it keeps one recorded at create.
+//
+// When the link is still not visible at the end of the wait, the import goes
+// ahead with monitor_urn null and a warning, consistent with a create that
+// outlasts its wait (acceptMonitorPending). A failed lookup is an error, as it
+// is on Read, which would otherwise fail the import on the same lookup a
+// moment later.
+//
+// A non-NATIVE assertion has no monitor to wait for. It returns null at once
+// and leaves refusing the import to the source guard (nonNativeAssertionError),
+// rather than making the user wait out the budget before seeing that error.
+func importMonitorURN(ctx context.Context, client *datahub.Client, resourceType string, ai *datahub.AssertionInfo, diags *diag.Diagnostics) types.String {
+	if _, nonNative := nonNativeAssertionError(ai.URN, ai.Source); nonNative {
+		return types.StringNull()
+	}
+	monitorURN, err := client.AwaitAssertionMonitorForImport(ctx, ai.URN)
+	if err == nil {
+		return types.StringValue(monitorURN)
+	}
+	if !datahub.IsMonitorLinkWaitExhausted(err) {
+		diags.AddError("DataHub API Error", err.Error())
+		return types.StringNull()
+	}
+	diags.AddWarning(
+		"Assertion monitor not yet linked",
+		fmt.Sprintf("The %s %s was imported, but DataHub had not finished linking its monitor to the "+
+			"assertion when the provider stopped waiting (%v). This is expected for an assertion "+
+			"created moments ago.\n\n"+
+			"The assertion has been imported with monitor_urn empty. Nothing needs to be done: the "+
+			"next refresh (any terraform plan or apply) fills monitor_urn in once DataHub catches up, "+
+			"without changing the assertion.\n\n"+
+			"If monitor_urn is still empty after several minutes, either DataHub is not processing "+
+			"updates or the assertion has no monitor; check the assertion in the DataHub UI. Avoid "+
+			"destroying the resource while monitor_urn is empty, because the provider may not be "+
+			"able to find the monitor to delete it.",
+			resourceType, ai.URN, err),
+	)
+	return types.StringNull()
 }
 
 // recordCreatedAssertionOnError writes a just-created assertion into state

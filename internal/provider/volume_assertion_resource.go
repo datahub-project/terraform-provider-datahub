@@ -646,6 +646,11 @@ func (r *volumeAssertionResource) ImportState(ctx context.Context, req resource.
 		state.SingleValue = nullIfEmpty(ai.Volume.Value)
 	}
 
+	state.MonitorURN = importMonitorURN(ctx, r.client, "datahub_volume_assertion", ai, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, assertionEntityPath, ai.URN)
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())

@@ -16,8 +16,8 @@
 // no strongly consistent way to find it in the meantime.
 //
 // This file holds the bounded, backed-off wait that bridges that gap on create
-// (to learn the monitor URN) and on update (where the server refuses to write
-// until it can resolve the monitor itself).
+// and on import (to learn the monitor URN) and on update (where the server
+// refuses to write until it can resolve the monitor itself).
 
 package datahub
 
@@ -53,6 +53,39 @@ var defaultMonitorLinkBackoff = monitorLinkBackoff{
 	initial: 500 * time.Millisecond,
 	max:     5 * time.Second,
 	budget:  3 * time.Minute,
+}
+
+// importMonitorLinkBudget caps the wait for the assertion-to-monitor link
+// during terraform import, which is shorter than the create budget because the
+// two waits trade off differently.
+//
+// Import waits at all because it starts with no state: Read keeps a stored
+// monitor_urn across a lookup that comes back empty, but an import has nothing
+// stored, so one empty lookup would record the assertion with monitor_urn null
+// and leave the next destroy depending on the same lagging lookup. Importing an
+// assertion created moments earlier is the case that meets the lag, and it is
+// common: a create in one configuration followed by an import into another.
+//
+// A normal refresh does not wait, and must not. It runs on every plan for every
+// assertion, its stored monitor_urn already survives an empty lookup, and the
+// null it can hold after a create warning is filled by whichever later refresh
+// sees the link. Waiting there would only slow terraform plan.
+//
+// A minute rather than the create budget's three because the failure costs
+// less: the import still succeeds and records the assertion, so a slow link
+// costs a warning and a later refresh rather than a leaked monitor. And an
+// assertion that genuinely has no monitor (its monitor deleted outside
+// Terraform, say) makes every import of it spend the whole budget, which should
+// stay tolerable for something run by hand. The link normally appears within
+// seconds, so a minute still covers a busy tenant comfortably.
+const importMonitorLinkBudget = time.Minute
+
+// forImport returns b with its budget capped at importMonitorLinkBudget. A
+// test override shorter than that is kept, so tests that shorten the wait
+// shorten the import wait too.
+func (b monitorLinkBackoff) forImport() monitorLinkBackoff {
+	b.budget = min(b.budget, importMonitorLinkBudget)
+	return b
 }
 
 // monitorLinkBackoffOverride, when set, replaces defaultMonitorLinkBackoff.
@@ -149,16 +182,33 @@ func isMonitorNotLinkedError(msg string) bool {
 	return monitorNotLinkedPattern.MatchString(msg)
 }
 
-// waitForAssertionMonitor polls the assertion.monitor lookup with the monitor
-// link backoff until it returns the monitor's URN. It returns an error wrapping
+// IsMonitorLinkWaitExhausted reports whether err is a wait for the
+// assertion-to-monitor link that ran out of budget with the link still not
+// visible, as opposed to a lookup that failed or a cancelled context.
+func IsMonitorLinkWaitExhausted(err error) bool {
+	return errors.Is(err, errMonitorLinkBudgetSpent)
+}
+
+// AwaitAssertionMonitorForImport returns the URN of an assertion's monitor for
+// terraform import, waiting up to importMonitorLinkBudget for DataHub to link
+// the two (see that constant for why import waits and refresh does not). When
+// the link is still not visible at the end of the wait it returns an error for
+// which IsMonitorLinkWaitExhausted is true; a failed lookup or an ended ctx
+// returns that error instead.
+func (c *Client) AwaitAssertionMonitorForImport(ctx context.Context, assertionURN string) (string, error) {
+	return c.waitForAssertionMonitor(ctx, currentMonitorLinkBackoff().forImport(), assertionURN)
+}
+
+// waitForAssertionMonitor polls the assertion.monitor lookup with backoff b
+// until it returns the monitor's URN. It returns an error wrapping
 // errMonitorLinkBudgetSpent when the link is still not visible at the end of
 // the budget, ctx's error when ctx ends first, and the lookup's own error when
 // a lookup fails.
-func (c *Client) waitForAssertionMonitor(ctx context.Context, assertionURN string) (string, error) {
+func (c *Client) waitForAssertionMonitor(ctx context.Context, b monitorLinkBackoff, assertionURN string) (string, error) {
 	var monitorURN string
 	start := time.Now()
 	lookups := 0
-	err := currentMonitorLinkBackoff().poll(ctx, func() (bool, error) {
+	err := b.poll(ctx, func() (bool, error) {
 		lookups++
 		urn, err := c.GetAssertionMonitorURN(ctx, assertionURN)
 		if err != nil {
@@ -177,6 +227,7 @@ func (c *Client) waitForAssertionMonitor(ctx context.Context, assertionURN strin
 		"monitor_urn":   monitorURN,
 		"lookups":       lookups,
 		"elapsed_ms":    time.Since(start).Milliseconds(),
+		"budget_ms":     b.budget.Milliseconds(),
 	})
 	if err != nil {
 		return "", err
@@ -235,7 +286,7 @@ func (c *Client) upsertAssertionMonitor(ctx context.Context, body map[string]any
 	if err != nil {
 		return "", "", err
 	}
-	monitorURN, err := c.waitForAssertionMonitor(ctx, assertionURN)
+	monitorURN, err := c.waitForAssertionMonitor(ctx, currentMonitorLinkBackoff(), assertionURN)
 	if err != nil {
 		return assertionURN, "", &MonitorPendingError{
 			AssertionURN: assertionURN,
@@ -258,7 +309,7 @@ func (c *Client) upsertAssertionMonitor(ctx context.Context, body map[string]any
 func (c *Client) sendAssertionMonitorUpdate(ctx context.Context, assertionURN string, send func() (string, error)) (string, error) {
 	b := currentMonitorLinkBackoff()
 	start := time.Now()
-	if _, err := c.waitForAssertionMonitor(ctx, assertionURN); err != nil && ctx.Err() != nil {
+	if _, err := c.waitForAssertionMonitor(ctx, b, assertionURN); err != nil && ctx.Err() != nil {
 		return "", fmt.Errorf("updating assertion %q: %w", assertionURN, ctx.Err())
 	}
 	b.budget -= time.Since(start)

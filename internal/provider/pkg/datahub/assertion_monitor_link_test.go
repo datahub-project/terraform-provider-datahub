@@ -297,3 +297,67 @@ func TestUpsertAssertionMonitor_UpdateDoesNotRetryOtherErrors(t *testing.T) {
 		t.Errorf("mutation sent %d times, want once: only the monitor refusal is retried", s.sends)
 	}
 }
+
+// TestMonitorLinkBackoffForImport pins the import wait's budget: capped at
+// importMonitorLinkBudget, shorter than the create wait, and never longer
+// than a test override, with the retry intervals left alone.
+func TestMonitorLinkBackoffForImport(t *testing.T) {
+	got := defaultMonitorLinkBackoff.forImport()
+	if got.budget != importMonitorLinkBudget {
+		t.Errorf("default import budget = %s, want %s", got.budget, importMonitorLinkBudget)
+	}
+	if got.budget >= defaultMonitorLinkBackoff.budget {
+		t.Errorf("import budget %s is not shorter than the create budget %s", got.budget, defaultMonitorLinkBackoff.budget)
+	}
+	if got.initial != defaultMonitorLinkBackoff.initial || got.max != defaultMonitorLinkBackoff.max {
+		t.Errorf("import intervals = (%s, %s), want the create intervals (%s, %s)",
+			got.initial, got.max, defaultMonitorLinkBackoff.initial, defaultMonitorLinkBackoff.max)
+	}
+
+	short := monitorLinkBackoff{initial: time.Millisecond, max: 2 * time.Millisecond, budget: 50 * time.Millisecond}
+	if b := short.forImport(); b != short {
+		t.Errorf("forImport() of a shorter override = %+v, want it unchanged (%+v)", b, short)
+	}
+}
+
+func TestAwaitAssertionMonitorForImport(t *testing.T) {
+	t.Run("waits_out_the_lag", func(t *testing.T) {
+		fastMonitorLinkWait(t)
+		s := &monitorLinkServer{hiddenLookups: 3}
+		c := s.start(t)
+
+		got, err := c.AwaitAssertionMonitorForImport(t.Context(), linkTestAssertion)
+		if err != nil {
+			t.Fatalf("AwaitAssertionMonitorForImport() error = %v", err)
+		}
+		if got != linkTestMonitor || s.lookups != 4 {
+			t.Errorf("got %q after %d lookups, want %q after 4 (three hidden, then found)", got, s.lookups, linkTestMonitor)
+		}
+	})
+
+	t.Run("gives_up_at_the_budget", func(t *testing.T) {
+		fastMonitorLinkWait(t)
+		s := &monitorLinkServer{hiddenLookups: -1}
+		c := s.start(t)
+
+		got, err := c.AwaitAssertionMonitorForImport(t.Context(), linkTestAssertion)
+		if got != "" || !IsMonitorLinkWaitExhausted(err) {
+			t.Errorf("got (%q, %v), want an empty URN and an exhausted wait", got, err)
+		}
+	})
+
+	t.Run("lookup_failure_is_not_exhaustion", func(t *testing.T) {
+		fastMonitorLinkWait(t)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"errors":[{"message":"simulated lookup failure"}]}`))
+		}))
+		t.Cleanup(srv.Close)
+		c := newTestClient(t, srv)
+
+		_, err := c.AwaitAssertionMonitorForImport(t.Context(), linkTestAssertion)
+		if err == nil || IsMonitorLinkWaitExhausted(err) || !strings.Contains(err.Error(), "simulated lookup failure") {
+			t.Errorf("error = %v, want the lookup's own failure, not an exhausted wait", err)
+		}
+	})
+}
