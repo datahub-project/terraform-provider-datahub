@@ -26,7 +26,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // ErrAssertionCloudOnly is returned when a monitor mutation is attempted
@@ -615,11 +614,16 @@ func (c *Client) deleteAssertionEntity(ctx context.Context, urn string) error {
 // observes an assertion deletion. DeleteMonitor tolerates an absent monitor
 // for exactly that reason: even deleting the monitor first, a hook triggered
 // by an earlier partial failure may have removed it already.
-func (c *Client) DeleteCloudAssertionWithMonitor(ctx context.Context, assertionURN, monitorURN string) error {
+//
+// It returns the URN of the monitor it deleted (or found already absent), or
+// an empty string when it knew of no monitor: monitorURN was empty and the
+// fallback lookup returned nothing. Callers use the empty case to warn that a
+// monitor whose link DataHub has not yet indexed may have been left behind.
+func (c *Client) DeleteCloudAssertionWithMonitor(ctx context.Context, assertionURN, monitorURN string) (string, error) {
 	if monitorURN == "" {
 		resolved, err := c.GetAssertionMonitorURN(ctx, assertionURN)
 		if err != nil {
-			return fmt.Errorf("could not resolve the monitor attached to assertion %q: %w. "+
+			return "", fmt.Errorf("could not resolve the monitor attached to assertion %q: %w. "+
 				"The delete was aborted before removing anything: deleting the assertion without its "+
 				"monitor would leave the monitor behind as an orphan, which counts toward the DataHub "+
 				"Cloud monitor limit and blocks recreating an assertion of the same type on the same "+
@@ -629,10 +633,10 @@ func (c *Client) DeleteCloudAssertionWithMonitor(ctx context.Context, assertionU
 	}
 	if monitorURN != "" {
 		if err := c.DeleteMonitor(ctx, monitorURN); err != nil {
-			return fmt.Errorf("deleting monitor %q for assertion %q: %w. Nothing was removed; retry the destroy", monitorURN, assertionURN, err)
+			return "", fmt.Errorf("deleting monitor %q for assertion %q: %w. Nothing was removed; retry the destroy", monitorURN, assertionURN, err)
 		}
 	}
-	return c.DeleteAssertion(ctx, assertionURN)
+	return monitorURN, c.DeleteAssertion(ctx, assertionURN)
 }
 
 // GetAssertionMonitorURN looks up the monitor entity URN associated with the
@@ -720,33 +724,6 @@ func (c *Client) DeleteMonitor(ctx context.Context, monitorURN string) error {
 		return fmt.Errorf("unexpected HTTP %d deleting monitor %q: %s", res.StatusCode, monitorURN, body)
 	}
 	return nil
-}
-
-// waitForAssertionMonitor polls until the monitor entity linked to assertionURN
-// is visible, and returns that monitor's URN. DataHub Cloud creates the monitor
-// asynchronously after the upsert mutation returns; without this wait an
-// immediate update fails with "Monitor for assertion X does not exist." Poll
-// interval is 500ms; the caller controls the timeout via ctx (30s is sufficient
-// in practice).
-//
-// Returning the resolved URN lets Create persist it in Terraform state without
-// a second lookup, so Delete no longer depends on the eventually-consistent
-// monitor query at destroy time.
-func (c *Client) waitForAssertionMonitor(ctx context.Context, assertionURN string) (string, error) {
-	for {
-		monURN, err := c.GetAssertionMonitorURN(ctx, assertionURN)
-		if err != nil {
-			return "", fmt.Errorf("polling assertion monitor: %w", err)
-		}
-		if monURN != "" {
-			return monURN, nil
-		}
-		select {
-		case <-ctx.Done():
-			return "", fmt.Errorf("assertion %q: monitor not visible within timeout; retry the apply if the instance is still processing", assertionURN)
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
 }
 
 // UpsertCustomAssertionInput groups the inputs for upsertCustomAssertion.
@@ -842,9 +819,12 @@ type FreshnessAssertionInput struct {
 // Requires DataHub Cloud; returns ErrAssertionCloudOnly on OSS.
 //
 // Returns the assertion URN and, on create (empty in.AssertionURN), the URN of
-// the monitor DataHub created for it -- resolved by the wait for the monitor
-// this call already performs, so no extra query is spent. On update the monitor
-// URN is returned empty: the caller already holds it in state.
+// the monitor DataHub created for it, learned by waiting for DataHub to link the
+// two. When that link does not appear within the wait, the assertion URN is
+// returned together with a *MonitorPendingError: the assertion exists and the
+// caller must record it. On update the monitor URN is returned empty (the
+// caller already holds it in state), and a refusal caused by the same link lag
+// is retried. See upsertAssertionMonitor.
 func (c *Client) UpsertFreshnessAssertion(ctx context.Context, in FreshnessAssertionInput) (string, string, error) {
 	if c == nil {
 		return "", "", errors.New("client is nil")
@@ -903,39 +883,7 @@ mutation upsertDatasetFreshnessAssertionMonitor($assertionUrn: String, $input: U
 	}
 
 	body := map[string]any{"query": q, "variables": vars}
-
-	var raw struct {
-		Data struct {
-			UpsertDatasetFreshnessAssertionMonitor struct {
-				URN string `json:"urn"`
-			} `json:"upsertDatasetFreshnessAssertionMonitor"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if err := c.doGraphQL(ctx, body, &raw); err != nil {
-		return "", "", err
-	}
-	if len(raw.Errors) > 0 {
-		msg := raw.Errors[0].Message
-		if isAssertionCloudOnlyError(msg) {
-			return "", "", ErrAssertionCloudOnly
-		}
-		return "", "", fmt.Errorf("DataHub API error: %s", msg)
-	}
-	assertionURN := raw.Data.UpsertDatasetFreshnessAssertionMonitor.URN
-	monitorURN := ""
-	if in.AssertionURN == "" {
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		var waitErr error
-		monitorURN, waitErr = c.waitForAssertionMonitor(waitCtx, assertionURN)
-		if waitErr != nil {
-			return "", "", fmt.Errorf("freshness assertion created but monitor not ready: %w", waitErr)
-		}
-	}
-	return assertionURN, monitorURN, nil
+	return c.upsertAssertionMonitor(ctx, body, "upsertDatasetFreshnessAssertionMonitor", "freshness", in.AssertionURN)
 }
 
 // VolumeAssertionInput groups inputs for upsertDatasetVolumeAssertionMonitor.
@@ -1034,39 +982,7 @@ mutation upsertDatasetVolumeAssertionMonitor($assertionUrn: String, $input: Upse
 	}
 
 	body := map[string]any{"query": q, "variables": vars}
-
-	var raw struct {
-		Data struct {
-			UpsertDatasetVolumeAssertionMonitor struct {
-				URN string `json:"urn"`
-			} `json:"upsertDatasetVolumeAssertionMonitor"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if err := c.doGraphQL(ctx, body, &raw); err != nil {
-		return "", "", err
-	}
-	if len(raw.Errors) > 0 {
-		msg := raw.Errors[0].Message
-		if isAssertionCloudOnlyError(msg) {
-			return "", "", ErrAssertionCloudOnly
-		}
-		return "", "", fmt.Errorf("DataHub API error: %s", msg)
-	}
-	assertionURN := raw.Data.UpsertDatasetVolumeAssertionMonitor.URN
-	monitorURN := ""
-	if in.AssertionURN == "" {
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		var waitErr error
-		monitorURN, waitErr = c.waitForAssertionMonitor(waitCtx, assertionURN)
-		if waitErr != nil {
-			return "", "", fmt.Errorf("volume assertion created but monitor not ready: %w", waitErr)
-		}
-	}
-	return assertionURN, monitorURN, nil
+	return c.upsertAssertionMonitor(ctx, body, "upsertDatasetVolumeAssertionMonitor", "volume", in.AssertionURN)
 }
 
 // SQLAssertionInput groups inputs for upsertDatasetSqlAssertionMonitor.
@@ -1145,39 +1061,7 @@ mutation upsertDatasetSqlAssertionMonitor($assertionUrn: String, $input: UpsertD
 	}
 
 	body := map[string]any{"query": q, "variables": vars}
-
-	var raw struct {
-		Data struct {
-			UpsertDatasetSQLAssertionMonitor struct {
-				URN string `json:"urn"`
-			} `json:"upsertDatasetSqlAssertionMonitor"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if err := c.doGraphQL(ctx, body, &raw); err != nil {
-		return "", "", err
-	}
-	if len(raw.Errors) > 0 {
-		msg := raw.Errors[0].Message
-		if isAssertionCloudOnlyError(msg) {
-			return "", "", ErrAssertionCloudOnly
-		}
-		return "", "", fmt.Errorf("DataHub API error: %s", msg)
-	}
-	assertionURN := raw.Data.UpsertDatasetSQLAssertionMonitor.URN
-	monitorURN := ""
-	if in.AssertionURN == "" {
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		var waitErr error
-		monitorURN, waitErr = c.waitForAssertionMonitor(waitCtx, assertionURN)
-		if waitErr != nil {
-			return "", "", fmt.Errorf("sql assertion created but monitor not ready: %w", waitErr)
-		}
-	}
-	return assertionURN, monitorURN, nil
+	return c.upsertAssertionMonitor(ctx, body, "upsertDatasetSqlAssertionMonitor", "sql", in.AssertionURN)
 }
 
 // SchemaFieldInput is one expected column in a schema assertion's field list.
@@ -1252,39 +1136,7 @@ mutation upsertDatasetSchemaAssertionMonitor($assertionUrn: String, $input: Upse
 		vars["assertionUrn"] = in.AssertionURN
 	}
 	body := map[string]any{"query": q, "variables": vars}
-
-	var raw struct {
-		Data struct {
-			UpsertDatasetSchemaAssertionMonitor struct {
-				URN string `json:"urn"`
-			} `json:"upsertDatasetSchemaAssertionMonitor"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if err := c.doGraphQL(ctx, body, &raw); err != nil {
-		return "", "", err
-	}
-	if len(raw.Errors) > 0 {
-		msg := raw.Errors[0].Message
-		if isAssertionCloudOnlyError(msg) {
-			return "", "", ErrAssertionCloudOnly
-		}
-		return "", "", fmt.Errorf("DataHub API error: %s", msg)
-	}
-	assertionURN := raw.Data.UpsertDatasetSchemaAssertionMonitor.URN
-	monitorURN := ""
-	if in.AssertionURN == "" {
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		var waitErr error
-		monitorURN, waitErr = c.waitForAssertionMonitor(waitCtx, assertionURN)
-		if waitErr != nil {
-			return "", "", fmt.Errorf("schema assertion created but monitor not ready: %w", waitErr)
-		}
-	}
-	return assertionURN, monitorURN, nil
+	return c.upsertAssertionMonitor(ctx, body, "upsertDatasetSchemaAssertionMonitor", "schema", in.AssertionURN)
 }
 
 // FieldAssertionInput groups inputs for upsertDatasetFieldAssertionMonitor.
@@ -1398,39 +1250,7 @@ mutation upsertDatasetFieldAssertionMonitor($assertionUrn: String, $input: Upser
 		vars["assertionUrn"] = in.AssertionURN
 	}
 	body := map[string]any{"query": q, "variables": vars}
-
-	var raw struct {
-		Data struct {
-			UpsertDatasetFieldAssertionMonitor struct {
-				URN string `json:"urn"`
-			} `json:"upsertDatasetFieldAssertionMonitor"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	if err := c.doGraphQL(ctx, body, &raw); err != nil {
-		return "", "", err
-	}
-	if len(raw.Errors) > 0 {
-		msg := raw.Errors[0].Message
-		if isAssertionCloudOnlyError(msg) {
-			return "", "", ErrAssertionCloudOnly
-		}
-		return "", "", fmt.Errorf("DataHub API error: %s", msg)
-	}
-	assertionURN := raw.Data.UpsertDatasetFieldAssertionMonitor.URN
-	monitorURN := ""
-	if in.AssertionURN == "" {
-		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-		var waitErr error
-		monitorURN, waitErr = c.waitForAssertionMonitor(waitCtx, assertionURN)
-		if waitErr != nil {
-			return "", "", fmt.Errorf("field assertion created but monitor not ready: %w", waitErr)
-		}
-	}
-	return assertionURN, monitorURN, nil
+	return c.upsertAssertionMonitor(ctx, body, "upsertDatasetFieldAssertionMonitor", "field", in.AssertionURN)
 }
 
 // buildActionsInput converts string slices to the AssertionActionsInput shape.

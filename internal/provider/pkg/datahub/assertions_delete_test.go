@@ -106,9 +106,12 @@ func TestDeleteCloudAssertionWithMonitor_KnownMonitorURN(t *testing.T) {
 	srv := &deleteMonitorTestServer{}
 	c := newTestClient(t, srv.start(t))
 
-	err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "urn:li:monitor:m1")
+	deleted, err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "urn:li:monitor:m1")
 	if err != nil {
 		t.Fatalf("DeleteCloudAssertionWithMonitor() error = %v", err)
+	}
+	if deleted != "urn:li:monitor:m1" {
+		t.Errorf("deleted monitor = %q, want urn:li:monitor:m1", deleted)
 	}
 	assertEvents(t, srv.recorded(), []string{"deleteMonitor", "deleteAssertion"})
 }
@@ -120,9 +123,12 @@ func TestDeleteCloudAssertionWithMonitor_FallbackLookup(t *testing.T) {
 	srv := &deleteMonitorTestServer{lookupMonitorURN: "urn:li:monitor:m1"}
 	c := newTestClient(t, srv.start(t))
 
-	err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "")
+	deleted, err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "")
 	if err != nil {
 		t.Fatalf("DeleteCloudAssertionWithMonitor() error = %v", err)
+	}
+	if deleted != "urn:li:monitor:m1" {
+		t.Errorf("deleted monitor = %q, want the looked-up urn:li:monitor:m1", deleted)
 	}
 	assertEvents(t, srv.recorded(), []string{"lookupMonitor", "deleteMonitor", "deleteAssertion"})
 }
@@ -136,7 +142,7 @@ func TestDeleteCloudAssertionWithMonitor_FallbackLookupError(t *testing.T) {
 	srv := &deleteMonitorTestServer{lookupFails: true}
 	c := newTestClient(t, srv.start(t))
 
-	err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "")
+	_, err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "")
 	if err == nil {
 		t.Fatal("DeleteCloudAssertionWithMonitor() = nil error, want failure when the monitor lookup errors")
 	}
@@ -156,9 +162,12 @@ func TestDeleteCloudAssertionWithMonitor_NoMonitor(t *testing.T) {
 	srv := &deleteMonitorTestServer{lookupMonitorURN: ""}
 	c := newTestClient(t, srv.start(t))
 
-	err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "")
+	deleted, err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "")
 	if err != nil {
 		t.Fatalf("DeleteCloudAssertionWithMonitor() error = %v", err)
+	}
+	if deleted != "" {
+		t.Errorf("deleted monitor = %q, want empty: no monitor was known or found", deleted)
 	}
 	assertEvents(t, srv.recorded(), []string{"lookupMonitor", "deleteAssertion"})
 }
@@ -172,7 +181,7 @@ func TestDeleteCloudAssertionWithMonitor_MonitorAlreadyDeleted(t *testing.T) {
 	srv := &deleteMonitorTestServer{monitorDeleteStatus: http.StatusNotFound}
 	c := newTestClient(t, srv.start(t))
 
-	err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "urn:li:monitor:m1")
+	_, err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "urn:li:monitor:m1")
 	if err != nil {
 		t.Fatalf("DeleteCloudAssertionWithMonitor() error = %v, want already-deleted monitor treated as success", err)
 	}
@@ -187,7 +196,7 @@ func TestDeleteCloudAssertionWithMonitor_MonitorDeleteError(t *testing.T) {
 	srv := &deleteMonitorTestServer{monitorDeleteStatus: http.StatusInternalServerError}
 	c := newTestClient(t, srv.start(t))
 
-	err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "urn:li:monitor:m1")
+	_, err := c.DeleteCloudAssertionWithMonitor(t.Context(), "urn:li:assertion:a1", "urn:li:monitor:m1")
 	if err == nil {
 		t.Fatal("DeleteCloudAssertionWithMonitor() = nil error, want failure when the monitor delete errors")
 	}
