@@ -38,9 +38,15 @@ func TestAcc_OAuthAuthorizationServer_SecretRotation(t *testing.T) {
 		tg.RequireCloud(t)
 	}
 
+	serverID := tg.Name("tf-acc-oauth-rotation")
+	// Rotating and then clearing leaves the two superseded client secrets
+	// behind server-side (DataHub never deletes them); remove them once the
+	// test has destroyed the server.
+	tg.CleanupSupersededOAuthSecrets(t, serverID)
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps:                    datahubtesting.OAuthAuthorizationServerRotationSteps(tg.Name("tf-acc-oauth-rotation")),
+		Steps:                    datahubtesting.OAuthAuthorizationServerRotationSteps(serverID),
 	})
 }
 
