@@ -375,6 +375,11 @@ testacc-local: install
 	@TOKEN=$$(DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) TOKEN_ACTOR=$(TOKEN_ACTOR) scripts/quickstart-token.sh) || { echo "Failed to mint PAT against $(QUICKSTART_GMS_URL)"; exit 1; }; \
 	TF_ACC=1 DATAHUB_GMS_URL=$(QUICKSTART_GMS_URL) DATAHUB_GMS_TOKEN="$$TOKEN" $(GO) test -v -timeout 30m ./...
 
+# A full run against DataHub Cloud takes about 22 minutes (round trips to a
+# remote instance, the Cloud-only tests, and waits for Cloud's asynchronous
+# indexing), so the 30m used for local runs leaves too little headroom.
+TESTACC_REMOTE_TIMEOUT ?= 45m
+
 testacc-remote: install
 	@if [ -z "$$DATAHUB_GMS_URL" ] || [ -z "$$DATAHUB_GMS_TOKEN" ]; then \
 		echo "DATAHUB_GMS_URL and DATAHUB_GMS_TOKEN must be set; see BUILDING.md."; \
@@ -414,7 +419,7 @@ testacc-remote: install
 	@echo "==> Starting in 3s. Ctrl-C to abort."
 	@echo ""
 	@sleep 3
-	TF_ACC=1 $(GO) test -v -timeout 30m ./...
+	TF_ACC=1 $(GO) test -v -timeout $(TESTACC_REMOTE_TIMEOUT) ./...
 
 # Sets TF_ACC=1, so it carries the same install prerequisite as testacc. This
 # is also the target the CI Test job runs, which is how CI came to build the

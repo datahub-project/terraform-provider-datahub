@@ -153,7 +153,7 @@ make quickstart-down
 - `testacc-local` and `testacc-quickstart` always hit `http://localhost:8080`. Any `DATAHUB_GMS_URL` or `DATAHUB_GMS_TOKEN` in your shell is ignored; the Makefile mints a fresh PAT for each run.
 - If a previous `datahub init` left a stale `~/.datahubenv`, the provider falls back to it when the env vars are empty. Either keep the env vars exported per session or remove `~/.datahubenv`.
 - A test that crashes between Create and Destroy can leak resources. Re-running is safe (names are randomized), but stale entities accumulate in DataHub until `datahub docker nuke`.
-- Live tests run in CI on release tag pushes (as a gate before GoReleaser), on a nightly schedule, and on PRs labeled `run-live-ci`.
+- Live tests run in CI on release tag pushes (as a gate before GoReleaser), on a nightly schedule, and on PRs labeled `run-live-ci`. The same suite also runs nightly against DataHub Cloud; see [Nightly live tests against DataHub Cloud](#nightly-live-tests-against-datahub-cloud).
 
 ### Live execution of the runnable examples
 
@@ -201,6 +201,36 @@ DATAHUB_CLOUD=0 make testacc-remote   # force OSS mode
 ```
 
 Use a tenant set up specifically for smoke-testing. Resources carry the `tfprovider-` prefix so a future sweeper can identify and clean up anything that leaks.
+
+### Nightly live tests against DataHub Cloud
+
+`.github/workflows/cloud-live.yml` runs `make testacc-remote` every night against the shared internal DataHub Cloud instance `https://demo.acryl.io`, with `DATAHUB_CLOUD=1` forced so a failed detection probe cannot quietly skip the Cloud-only tests. It is the Cloud counterpart of the Quickstart-backed nightly, and it exists because Cloud-only regressions were otherwise found only when someone ran `testacc-remote` by hand.
+
+It runs only on `schedule` and `workflow_dispatch`. There is deliberately no `pull_request` or label trigger, so the token is never reachable from pull-request code; a change that needs a Cloud run before merge is run by a maintainer with `make testacc-remote` locally. To run it on demand: Actions -> Cloud Live -> Run workflow, on `main` (the environment refuses any other branch).
+
+**GitHub configuration** (Settings -> Environments -> `demo-acryl-io`):
+
+| Setting | Value |
+|---|---|
+| Deployment branches and tags | Selected branches: `main` only |
+| Required reviewers | none -- a reviewer gate would hold every scheduled run until someone approved it |
+| Environment secret `DATAHUB_GMS_TOKEN` | a personal access token of the dedicated service account (below) |
+| Environment variable `DATAHUB_GMS_URL` | `https://demo.acryl.io` |
+
+The names match what `make testacc-remote` reads, and are passed straight through. `DATAHUB_GMS_URL` is a variable rather than a secret because it is not sensitive, and a secret would mask the hostname throughout the log.
+
+**The service account.** Create a dedicated service account on the instance for this workflow alone (the kind of identity `datahub_service_account` manages), so its tokens can be revoked without touching anyone's personal access, and its activity is attributable in the instance's audit trail. It needs the privileges of the whole suite, which manages policies, users, groups, secrets, ingestion sources, executor pools, organisation settings and more, and hard-deletes some entities through the OpenAPI entity endpoint (a metadata test, for example, after `deleteTest` only soft-deletes it on Cloud). That endpoint delete is authorised separately from the GraphQL privileges and has been verified to need admin, so in practice the account needs the **Admin** role. Mint its token with the longest expiry the instance allows and record the expiry date where the maintainers will see it.
+
+**Rotating the token.** Mint a new token for the service account, replace the `DATAHUB_GMS_TOKEN` environment secret, dispatch the workflow once to confirm it authenticates, then revoke the old token on the instance. Rotate immediately, not on schedule, if the token-in-log check below ever fires. An expired token shows up as the whole suite failing with 401, and the debris report saying no entity type could be read.
+
+**Rules for a shared instance.** The instance is used by other people, for demonstrations among other things, so:
+
+- Only one run touches it at a time. The workflow's concurrency group, `datahub-cloud-demo-acryl-io`, queues rather than cancels, because cancelling a run part-way strands whatever its tests had created. Any future workflow that writes to the same instance should join the same group.
+- Every test entity must carry a recognisable prefix (`tfprovider-`, `tf-acc-`, `tf-example-`, `RT_`, `rt-source`) and, on a live target, a random suffix from `tg.Name()`, so concurrent and repeated runs cannot collide and leftovers can be attributed. A test using a fixed id collides with its own debris on the next night.
+- Tests clean up after themselves. Nothing in CI deletes anything else: the last step of the job, the debris report, lists entities carrying those prefixes (soft-deleted ones included) into the job summary, marks which appeared during this run, and raises a warning, but never deletes and never fails the job. Sweeping is done by a person, after reading the list. The same report runs by hand: `DATAHUB_GMS_URL=... DATAHUB_GMS_TOKEN=... scripts/cloud-debris-report.sh --out debris.tsv --summary`.
+- Provider logs stay at `TF_ACC_LOG=WARN` for the same reason as in the Quickstart workflow, with more at stake: the token is long-lived and the instance shared. Because GitHub does not mask secrets inside artifacts, the job also refuses to upload a provider log that contains the token, and deletes it instead.
+
+Running the runnable examples (`make test-examples-live`) against Cloud is not part of this workflow yet.
 
 ### Inspect-then-destroy workflow
 
