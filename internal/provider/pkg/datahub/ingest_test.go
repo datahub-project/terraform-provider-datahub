@@ -279,11 +279,11 @@ func TestDeleteIngestionSourceByID(t *testing.T) {
 }
 
 func TestListIngestionSourceURNs_FiltersSystem(t *testing.T) {
-	resp := `{"data":{"listIngestionSources":{"total":3,"ingestionSources":[` +
-		`{"urn":"urn:li:dataHubIngestionSource:real-1","source":null},` +
-		`{"urn":"urn:li:dataHubIngestionSource:datahub-gc","source":{"type":"SYSTEM"}},` +
-		`{"urn":"urn:li:dataHubIngestionSource:real-2","source":null}` +
-		`]}}}`
+	resp := `{"totalCount":3,"entities":[` +
+		`{"urn":"urn:li:dataHubIngestionSource:real-1","dataHubIngestionSourceInfo":{"value":{"name":"a","type":"mysql"}}},` +
+		`{"urn":"urn:li:dataHubIngestionSource:datahub-gc","dataHubIngestionSourceInfo":{"value":{"name":"gc","type":"datahub-gc","source":{"type":"SYSTEM"}}}},` +
+		`{"urn":"urn:li:dataHubIngestionSource:real-2","dataHubIngestionSourceInfo":{"value":{"name":"b","type":"mysql","source":{"type":"BATCH"}}}}` +
+		`]}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(resp))

@@ -40,8 +40,8 @@ func (d *ingestionSourcesDataSource) Schema(_ context.Context, _ datasource.Sche
 	resp.Schema = schema.Schema{
 		MarkdownDescription: ossAndCloudBadge +
 			"Returns the URNs of all DataHub Ingestion Sources visible to the authenticated principal.\n\n" +
-			"Backed by the `listIngestionSources` GraphQL query (OpenSearch). Entities created within " +
-			"the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` " +
+			"Backed by the search index (OpenSearch), read past DataHub's search result cache. Entities " +
+			"created within the last few seconds may not yet appear. Use the returned `urns` list as the `for_each` " +
 			"value in `import {}` blocks to bulk-import existing ingestion sources into Terraform state.",
 		Attributes: map[string]schema.Attribute{
 			"urns": schema.ListAttribute{
