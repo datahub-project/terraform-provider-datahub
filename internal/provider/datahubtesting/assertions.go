@@ -185,6 +185,10 @@ func (s *mockServer) handleUpsertVolumeAssertion(w http.ResponseWriter, variable
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.refuseUnlinkedMonitorUpdateLocked(w, urnRaw) {
+		return
+	}
+
 	urn := urnRaw
 	if urn == "" {
 		urn = "urn:li:assertion:" + nextAssertionID()
@@ -238,6 +242,10 @@ func (s *mockServer) handleUpsertFreshnessAssertion(w http.ResponseWriter, varia
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.refuseUnlinkedMonitorUpdateLocked(w, urnRaw) {
+		return
+	}
 
 	urn := urnRaw
 	if urn == "" {
@@ -294,6 +302,10 @@ func (s *mockServer) handleUpsertSQLAssertion(w http.ResponseWriter, variables m
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.refuseUnlinkedMonitorUpdateLocked(w, urnRaw) {
+		return
+	}
+
 	urn := urnRaw
 	if urn == "" {
 		urn = "urn:li:assertion:" + nextAssertionID()
@@ -348,6 +360,10 @@ func (s *mockServer) handleUpsertSchemaAssertion(w http.ResponseWriter, variable
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.refuseUnlinkedMonitorUpdateLocked(w, urnRaw) {
+		return
+	}
+
 	urn := urnRaw
 	if urn == "" {
 		urn = "urn:li:assertion:" + nextAssertionID()
@@ -395,6 +411,10 @@ func (s *mockServer) handleUpsertFieldAssertion(w http.ResponseWriter, variables
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.refuseUnlinkedMonitorUpdateLocked(w, urnRaw) {
+		return
+	}
 
 	urn := urnRaw
 	if urn == "" {
@@ -447,6 +467,9 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	failLookup := s.failMonitorLookup
 	_, assertionExists := s.assertions[urn]
 	_, monitorExists := s.monitors[mockMonitorURN(urn)]
+	// A link the graph index has not caught up with reads as no monitor, not
+	// as an error. See assertion_monitor_link.go.
+	linkHidden := !failLookup && s.monitorLinkHiddenLocked()
 	s.mu.Unlock()
 
 	if failLookup {
@@ -457,7 +480,7 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	}
 
 	var monitorVal any
-	if assertionExists && monitorExists {
+	if assertionExists && monitorExists && !linkHidden {
 		monitorVal = map[string]any{"urn": mockMonitorURN(urn)}
 	}
 

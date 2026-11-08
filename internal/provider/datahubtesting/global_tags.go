@@ -78,7 +78,34 @@ func (s *mockServer) handleCorpGroupCollection(w http.ResponseWriter, r *http.Re
 // Assertion creation and edits go through GraphQL upsert mutations, so the
 // only aspect write the provider sends here is globalTags.
 func (s *mockServer) handleAssertionCollection(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	fail := s.failNextAssertionTagsWrite && r.Method == http.MethodPost
+	if fail {
+		s.failNextAssertionTagsWrite = false
+	}
+	s.mu.Unlock()
+	if fail {
+		http.Error(w, "simulated assertion aspect write failure", http.StatusInternalServerError)
+		return
+	}
 	s.handleGlobalTagsOnlyCollection(w, r)
+}
+
+// handleFailNextAssertionTagsWrite arms a one-shot 500 for the next aspect
+// write to an assertion, which the provider sends only to apply tags. It lets
+// a test fail a create after the assertion itself has been written. Called
+// from test PreConfig via:
+//
+//	POST /test-control/fail-next-assertion-tags-write
+func (s *mockServer) handleFailNextAssertionTagsWrite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	s.failNextAssertionTagsWrite = true
+	s.mu.Unlock()
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGlobalTagsOnlyCollection is the shared collection-POST handler for

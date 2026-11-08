@@ -344,6 +344,13 @@ func deleteFixtureDataset(t testing.TB, caller string, httpClient *http.Client, 
 // dataset-per-type constraint. Call this before EnsureDatasetEntity in any
 // test that creates Cloud-only assertion monitors. This is a no-op on the mock
 // target.
+//
+// The search skips DataHub's search result cache (searchFlags.skipCache): on
+// DataHub Cloud an identical query can be answered from a cache that lives for
+// minutes and that writes do not evict, so a monitor created by a run that
+// just failed could be missing from the answer. It also pages through every
+// monitor rather than reading the first page, since on a shared instance the
+// orphans for one dataset can sit anywhere in the result set.
 func (tg *Target) CleanupOrphanedMonitors(t *testing.T, datasetURN string) {
 	t.Helper()
 	if tg.Kind == TargetMock {
@@ -354,52 +361,27 @@ func (tg *Target) CleanupOrphanedMonitors(t *testing.T, datasetURN string) {
 	token := os.Getenv("DATAHUB_GMS_TOKEN")
 	httpClient := &http.Client{Timeout: 15 * time.Second}
 
-	gqlBody, _ := json.Marshal(map[string]any{
-		"query": `query {
-  searchAcrossEntities(input: {types: [MONITOR], query: "*", count: 50}) {
-    searchResults {
-      entity { urn }
-    }
-  }
-}`,
-		"variables": map[string]any{},
-	})
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
-		gmsURL+"/api/graphql", bytes.NewReader(gqlBody))
-	if err != nil {
-		t.Logf("CleanupOrphanedMonitors: build request: %v", err)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		t.Logf("CleanupOrphanedMonitors: graphql search: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Data struct {
-			SearchAcrossEntities struct {
-				SearchResults []struct {
-					Entity struct {
-						URN string `json:"urn"`
-					} `json:"entity"`
-				} `json:"searchResults"`
-			} `json:"searchAcrossEntities"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		t.Logf("CleanupOrphanedMonitors: decode response: %v", err)
-		return
+	const pageSize = 100
+	const maxPages = 100
+	var monitors []string
+	for page := 0; ; page++ {
+		if page == maxPages {
+			t.Logf("CleanupOrphanedMonitors: still paging after %d pages; cleaning up what was found", maxPages)
+			break
+		}
+		urns, total, err := searchMonitorPage(httpClient, gmsURL, token, page*pageSize, pageSize)
+		if err != nil {
+			t.Logf("CleanupOrphanedMonitors: %v", err)
+			return
+		}
+		monitors = append(monitors, urns...)
+		if len(urns) < pageSize || (page+1)*pageSize >= total {
+			break
+		}
 	}
 
 	deleted := 0
-	for _, sr := range result.Data.SearchAcrossEntities.SearchResults {
-		urn := sr.Entity.URN
+	for _, urn := range monitors {
 		if !strings.Contains(urn, datasetURN) {
 			continue
 		}
@@ -422,6 +404,70 @@ func (tg *Target) CleanupOrphanedMonitors(t *testing.T, datasetURN string) {
 	if deleted > 0 {
 		t.Logf("CleanupOrphanedMonitors: deleted %d orphaned monitor(s) for dataset %q", deleted, datasetURN)
 	}
+}
+
+// searchMonitorPage returns one page of monitor URNs from searchAcrossEntities,
+// bypassing the search result cache, together with the total hit count.
+func searchMonitorPage(httpClient *http.Client, gmsURL, token string, start, count int) ([]string, int, error) {
+	gqlBody, _ := json.Marshal(map[string]any{
+		"query": `query monitors($start: Int!, $count: Int!) {
+  searchAcrossEntities(input: {types: [MONITOR], query: "*", start: $start, count: $count, searchFlags: {skipCache: true}}) {
+    total
+    searchResults {
+      entity { urn }
+    }
+  }
+}`,
+		"variables": map[string]any{"start": start, "count": count},
+	})
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		gmsURL+"/api/graphql", bytes.NewReader(gqlBody))
+	if err != nil {
+		return nil, 0, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("graphql search: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read search response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("graphql search: HTTP %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		Data struct {
+			SearchAcrossEntities struct {
+				Total         int `json:"total"`
+				SearchResults []struct {
+					Entity struct {
+						URN string `json:"urn"`
+					} `json:"entity"`
+				} `json:"searchResults"`
+			} `json:"searchAcrossEntities"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, 0, fmt.Errorf("decode search response: %w", err)
+	}
+	if len(result.Errors) > 0 {
+		return nil, 0, fmt.Errorf("graphql search: %s", result.Errors[0].Message)
+	}
+	urns := make([]string, 0, len(result.Data.SearchAcrossEntities.SearchResults))
+	for _, sr := range result.Data.SearchAcrossEntities.SearchResults {
+		urns = append(urns, sr.Entity.URN)
+	}
+	return urns, result.Data.SearchAcrossEntities.Total, nil
 }
 
 // SetupTarget selects the acceptance-test backend from the process

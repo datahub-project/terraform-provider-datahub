@@ -307,6 +307,9 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 		ExecutorID:          strVal(plan.ExecutorID),
 		BackfillStartDateMs: plan.BackfillStartDate.ValueInt64(),
 	})
+	// A monitor link DataHub has not indexed yet is a warning, not a failure:
+	// the assertion exists and must be recorded. See acceptMonitorPending.
+	err = acceptMonitorPending(err, "datahub_volume_assertion", &resp.Diagnostics)
 	if err != nil {
 		if errors.Is(err, datahub.ErrAssertionCloudOnly) {
 			resp.Diagnostics.AddError("DataHub Cloud Required",
@@ -319,18 +322,22 @@ func (r *volumeAssertionResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	if len(tagURNs) > 0 {
-		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, urn, tagURNs); err != nil {
-			resp.Diagnostics.AddError("DataHub API Error", err.Error())
-			return
-		}
-	}
-
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	// Persist the monitor URN resolved during create so destroy can delete the
-	// monitor without depending on the eventually-consistent lookup.
+	// monitor without depending on the eventually-consistent lookup. Null when
+	// DataHub had not linked the monitor yet; Read fills it in later.
 	plan.MonitorURN = nullIfEmpty(monitorURN)
+	// Resolved here, not left unknown, so a tag failure below can record the
+	// assertion: state written after apply may not hold unknown values.
+	plan.BackfillState = types.StringValue("")
+
+	if len(tagURNs) > 0 {
+		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, urn, tagURNs); err != nil {
+			recordCreatedAssertionOnError(ctx, &resp.State, &plan, &resp.Diagnostics, err)
+			return
+		}
+	}
 	plan.BackfillState = r.readBackfillState(ctx, urn, &resp.Diagnostics)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
@@ -569,8 +576,7 @@ func (r *volumeAssertionResource) Delete(ctx context.Context, req resource.Delet
 	// legacy state written before monitor_urn existed and assertions with no
 	// monitor: the client then falls back to resolving it, and aborts the delete
 	// rather than orphan the monitor when that fallback lookup fails.
-	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn, state.MonitorURN.ValueString()); err != nil {
-		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+	if !deleteAssertionAndMonitor(ctx, r.client, "datahub_volume_assertion", urn, state.MonitorURN, &resp.Diagnostics) {
 		return
 	}
 	resp.State.RemoveResource(ctx)

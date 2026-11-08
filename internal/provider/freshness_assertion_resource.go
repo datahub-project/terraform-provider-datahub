@@ -334,6 +334,9 @@ func (r *freshnessAssertionResource) Create(ctx context.Context, req resource.Cr
 		Mode:                  plan.Mode.ValueString(),
 		ExecutorID:            strVal(plan.ExecutorID),
 	})
+	// A monitor link DataHub has not indexed yet is a warning, not a failure:
+	// the assertion exists and must be recorded. See acceptMonitorPending.
+	err = acceptMonitorPending(err, "datahub_freshness_assertion", &resp.Diagnostics)
 	if err != nil {
 		if errors.Is(err, datahub.ErrAssertionCloudOnly) {
 			resp.Diagnostics.AddError("DataHub Cloud Required",
@@ -346,18 +349,19 @@ func (r *freshnessAssertionResource) Create(ctx context.Context, req resource.Cr
 		return
 	}
 
-	if len(tagURNs) > 0 {
-		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, urn, tagURNs); err != nil {
-			resp.Diagnostics.AddError("DataHub API Error", err.Error())
-			return
-		}
-	}
-
 	plan.ID = types.StringValue(urn)
 	plan.URN = types.StringValue(urn)
 	// Persist the monitor URN resolved during create so destroy can delete the
-	// monitor without depending on the eventually-consistent lookup.
+	// monitor without depending on the eventually-consistent lookup. Null when
+	// DataHub had not linked the monitor yet; Read fills it in later.
 	plan.MonitorURN = nullIfEmpty(monitorURN)
+
+	if len(tagURNs) > 0 {
+		if err := r.client.SetGlobalTags(ctx, assertionEntityPath, urn, tagURNs); err != nil {
+			recordCreatedAssertionOnError(ctx, &resp.State, &plan, &resp.Diagnostics, err)
+			return
+		}
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -561,8 +565,7 @@ func (r *freshnessAssertionResource) Delete(ctx context.Context, req resource.De
 	// legacy state written before monitor_urn existed and assertions with no
 	// monitor: the client then falls back to resolving it, and aborts the delete
 	// rather than orphan the monitor when that fallback lookup fails.
-	if err := r.client.DeleteCloudAssertionWithMonitor(ctx, urn, state.MonitorURN.ValueString()); err != nil {
-		resp.Diagnostics.AddError("DataHub API Error", err.Error())
+	if !deleteAssertionAndMonitor(ctx, r.client, "datahub_freshness_assertion", urn, state.MonitorURN, &resp.Diagnostics) {
 		return
 	}
 	resp.State.RemoveResource(ctx)

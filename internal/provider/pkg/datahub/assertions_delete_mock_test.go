@@ -83,7 +83,7 @@ func TestDeleteCloudAssertionWithMonitor_FallbackFailureAgainstMock(t *testing.T
 
 	// Arm the lookup failure and attempt a delete with no persisted monitor URN.
 	mockControl(t, http.MethodPost, server.URL+"/test-control/fail-monitor-lookup")
-	delErr := c.DeleteCloudAssertionWithMonitor(ctx, urn, "")
+	_, delErr := c.DeleteCloudAssertionWithMonitor(ctx, urn, "")
 	if delErr == nil {
 		t.Fatal("DeleteCloudAssertionWithMonitor() = nil error while the monitor lookup fails, want an aborted delete")
 	}
@@ -101,7 +101,7 @@ func TestDeleteCloudAssertionWithMonitor_FallbackFailureAgainstMock(t *testing.T
 	}
 
 	// With the lookup healthy again the same call converges.
-	if retryErr := c.DeleteCloudAssertionWithMonitor(ctx, urn, ""); retryErr != nil {
+	if _, retryErr := c.DeleteCloudAssertionWithMonitor(ctx, urn, ""); retryErr != nil {
 		t.Fatalf("retry after lookup recovery: %v", retryErr)
 	}
 	if a, getErr := c.GetAssertionByURN(ctx, urn); getErr != nil {
@@ -134,7 +134,7 @@ func TestDeleteCloudAssertionWithMonitor_HookWonRaceAgainstMock(t *testing.T) {
 		t.Fatalf("out-of-band DeleteMonitor: %v", err)
 	}
 
-	if err := c.DeleteCloudAssertionWithMonitor(ctx, urn, monitorURN); err != nil {
+	if _, err := c.DeleteCloudAssertionWithMonitor(ctx, urn, monitorURN); err != nil {
 		t.Fatalf("DeleteCloudAssertionWithMonitor() error = %v, want absent monitor treated as success", err)
 	}
 	if a, getErr := c.GetAssertionByURN(ctx, urn); getErr != nil {
