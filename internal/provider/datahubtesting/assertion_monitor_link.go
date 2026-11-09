@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 )
 
@@ -32,12 +33,18 @@ import (
 //	POST   /test-control/hide-monitor-links?resolutions=N hide for the next N resolutions
 //	DELETE /test-control/hide-monitor-links               reveal
 //	POST   /test-control/fail-monitor-updates?count=N     refuse the next N updates
+//	GET    /test-control/monitor-lookups                  {"lookups": N} so far
 //
 // A resolution is either an assertion.monitor lookup or an update mutation,
 // the two operations that walk the link. fail-monitor-updates refuses updates
 // while leaving lookups untouched, which is the window in which the provider's
 // lookup and the server's own read disagree: the provider has to recognise the
 // refusal itself rather than rely on having seen the link first.
+//
+// monitor-lookups counts every assertion.monitor lookup the server has
+// answered. It lets a scenario prove that an operation did not wait for the
+// link, which elapsed time cannot show reliably once Terraform's own start-up
+// is in the measurement.
 
 // monitorNotLinkedMessage is the error DataHub Cloud returns when an assertion
 // update cannot resolve the assertion's monitor.
@@ -123,4 +130,38 @@ func (s *mockServer) handleFailMonitorUpdates(w http.ResponseWriter, r *http.Req
 	s.failMonitorUpdates = n
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleMonitorLookups reports how many assertion.monitor lookups the server
+// has answered. See the comment above.
+func (s *mockServer) handleMonitorLookups(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	n := s.monitorLookups
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]int{"lookups": n})
+}
+
+// MonitorLookups returns the number of assertion.monitor lookups the mock at
+// DATAHUB_GMS_URL has answered so far.
+func MonitorLookups() (int, error) {
+	resp, err := http.Get(os.Getenv("DATAHUB_GMS_URL") + "/test-control/monitor-lookups") //nolint:noctx
+	if err != nil {
+		return 0, fmt.Errorf("GET monitor-lookups: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("GET monitor-lookups: HTTP %d", resp.StatusCode)
+	}
+	var body struct {
+		Lookups int `json:"lookups"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decoding monitor-lookups: %w", err)
+	}
+	return body.Lookups, nil
 }

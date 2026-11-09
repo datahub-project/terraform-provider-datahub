@@ -556,6 +556,11 @@ func (r *fieldAssertionResource) ImportState(ctx context.Context, req resource.I
 	}
 	applyFieldInfo(&state, ai.Field)
 
+	state.MonitorURN = importMonitorURN(ctx, r.client, "datahub_field_assertion", ai, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, assertionEntityPath, ai.URN)
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())

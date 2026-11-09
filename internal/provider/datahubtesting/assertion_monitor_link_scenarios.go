@@ -244,6 +244,152 @@ func AssertionMonitorLinkLagDestroySteps(c MonitorBackedAssertionCase) []resourc
 	}
 }
 
+// AssertionMonitorLinkLagImportSteps covers importing an assertion whose
+// monitor link is briefly invisible, which is what importing one created
+// seconds earlier meets on DataHub Cloud.
+//
+//  1. Create normally, recording monitor_urn.
+//  2. Hide the link for the next three lookups and import. Import starts with
+//     no state, so a single empty lookup would leave monitor_urn null; the
+//     import must wait the lookups out and record the monitor, which
+//     ImportStateVerify then compares against the created state.
+//
+// Three resolutions is enough to need more than one retry and few enough to
+// clear well inside the shortened wait.
+func AssertionMonitorLinkLagImportSteps(c MonitorBackedAssertionCase) []resource.TestStep {
+	return []resource.TestStep{
+		{
+			Config:            c.Config,
+			ConfigStateChecks: []statecheck.StateCheck{monitorURNCheck(c.Addr)},
+		},
+		{
+			PreConfig:         func() { mockControl(http.MethodPost, "/test-control/hide-monitor-links?resolutions=3") },
+			ResourceName:      c.Addr,
+			ImportState:       true,
+			ImportStateVerify: true,
+		},
+	}
+}
+
+// AssertionMonitorLinkLagImportGivesUpSteps covers an import whose monitor link
+// stays invisible past the import wait. The caller must shorten the wait with
+// datahub.SetMonitorLinkBackoffForTesting.
+//
+//  1. Create normally, and note the assertion URN.
+//  2. Drop the resource from state without destroying it (a removed block), so
+//     the assertion and its monitor exist with nothing tracking them, as they
+//     would for a practitioner about to import.
+//  3. With every link hidden, import into the real state. The import must
+//     succeed (with a warning) and record monitor_urn null rather than fail.
+//  4. Once the link is visible, a refresh fills monitor_urn.
+//  5. A plan against the same configuration is empty.
+//
+// The final destroy then runs with the refreshed monitor_urn, and the caller's
+// CheckDestroy proves the monitor went with the assertion.
+func AssertionMonitorLinkLagImportGivesUpSteps(c MonitorBackedAssertionCase) []resource.TestStep {
+	var assertionURN string
+	return []resource.TestStep{
+		{
+			Config: c.Config,
+			Check: func(s *terraform.State) error {
+				assertionURN = s.RootModule().Resources[c.Addr].Primary.Attributes["urn"]
+				return nil
+			},
+		},
+		{
+			Config: providerBlock + fmt.Sprintf("removed {\n  from = %s\n  lifecycle {\n    destroy = false\n  }\n}\n", c.Addr),
+		},
+		{
+			PreConfig:          func() { mockControl(http.MethodPost, "/test-control/hide-monitor-links") },
+			Config:             c.Config,
+			ResourceName:       c.Addr,
+			ImportState:        true,
+			ImportStateIdFunc:  func(*terraform.State) (string, error) { return assertionURN, nil },
+			ImportStatePersist: true,
+			ImportStateCheck: func(states []*terraform.InstanceState) error {
+				if len(states) != 1 {
+					return fmt.Errorf("expected 1 imported instance, got %d", len(states))
+				}
+				attrs := states[0].Attributes
+				if attrs["urn"] != assertionURN {
+					return fmt.Errorf("imported urn = %q, want %q", attrs["urn"], assertionURN)
+				}
+				if got := attrs["monitor_urn"]; got != "" {
+					return fmt.Errorf("imported monitor_urn = %q, want empty: every lookup was hidden", got)
+				}
+				return nil
+			},
+		},
+		{
+			PreConfig:    func() { mockControl(http.MethodDelete, "/test-control/hide-monitor-links") },
+			RefreshState: true,
+			Check:        resource.TestMatchResourceAttr(c.Addr, "monitor_urn", regexp.MustCompile(`^urn:li:monitor:`)),
+		},
+		{
+			Config: c.Config,
+			ConfigPlanChecks: resource.ConfigPlanChecks{
+				PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+			},
+			ConfigStateChecks: []statecheck.StateCheck{monitorURNCheck(c.Addr)},
+		},
+	}
+}
+
+// AssertionMonitorLinkLagRefreshSteps pins that a normal refresh does not wait
+// for the monitor link, even with monitor_urn null: only import waits, so that
+// terraform plan stays fast. The caller must shorten the wait with a backoff
+// dense enough that waiting would show as many lookups (see
+// TestAssertionMonitorLinkLag_RefreshDoesNotWait_mock).
+//
+//  1. With every link hidden, create; the create's own wait runs out and
+//     monitor_urn is recorded null.
+//  2. Refresh with the link still hidden, counting lookups. A Read that does
+//     not wait makes exactly one, and the step's check runs straight after the
+//     single refresh, so one is what it sees today. It allows two so that a
+//     framework change adding a refresh does not fail it, while a Read that
+//     waited makes well over a hundred against the caller's backoff.
+//  3. Reveal the link and refresh, so the final destroy has the monitor URN
+//     and the caller's CheckDestroy can prove the monitor went too.
+func AssertionMonitorLinkLagRefreshSteps(c MonitorBackedAssertionCase) []resource.TestStep {
+	var before int
+	return []resource.TestStep{
+		{
+			PreConfig:         func() { mockControl(http.MethodPost, "/test-control/hide-monitor-links") },
+			Config:            c.Config,
+			ConfigStateChecks: []statecheck.StateCheck{statecheck.ExpectKnownValue(c.Addr, tfjsonpath.New("monitor_urn"), knownvalue.Null())},
+		},
+		{
+			PreConfig: func() {
+				n, err := MonitorLookups()
+				if err != nil {
+					panic(err)
+				}
+				before = n
+			},
+			RefreshState: true,
+			Check: resource.ComposeTestCheckFunc(
+				resource.TestCheckNoResourceAttr(c.Addr, "monitor_urn"),
+				func(*terraform.State) error {
+					after, err := MonitorLookups()
+					if err != nil {
+						return err
+					}
+					if delta := after - before; delta > 2 {
+						return fmt.Errorf("refresh made %d monitor lookups, want 1 (at most 2): "+
+							"a refresh must not wait for the monitor link", delta)
+					}
+					return nil
+				},
+			),
+		},
+		{
+			PreConfig:    func() { mockControl(http.MethodDelete, "/test-control/hide-monitor-links") },
+			RefreshState: true,
+			Check:        resource.TestMatchResourceAttr(c.Addr, "monitor_urn", regexp.MustCompile(`^urn:li:monitor:`)),
+		},
+	}
+}
+
 // AssertionCreateTagFailureSteps covers a create that fails after the
 // assertion was written, at the step that applies the provider's default tags.
 // The assertion must still be recorded -- Terraform then holds it as tainted --

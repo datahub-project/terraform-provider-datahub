@@ -150,6 +150,9 @@ type mockServer struct {
 	hideMonitorLinks           bool
 	hideMonitorLinkResolutions int
 	failMonitorUpdates         int
+	// monitorLookups counts assertion.monitor lookups, read through
+	// /test-control/monitor-lookups; see assertion_monitor_link.go.
+	monitorLookups int
 	// failNextAssertionTagsWrite makes the next aspect write to an assertion
 	// return 500 (one-shot). Armed via /test-control/fail-next-assertion-tags-write.
 	failNextAssertionTagsWrite bool
@@ -243,6 +246,7 @@ func NewServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/test-control/force-monitor-delete-fail", s.handleForceMonitorDeleteFail)
 	mux.HandleFunc("/test-control/hide-monitor-links", s.handleHideMonitorLinks)
 	mux.HandleFunc("/test-control/fail-monitor-updates", s.handleFailMonitorUpdates)
+	mux.HandleFunc("/test-control/monitor-lookups", s.handleMonitorLookups)
 	mux.HandleFunc("/test-control/fail-next-assertion-tags-write", s.handleFailNextAssertionTagsWrite)
 	mux.HandleFunc("/test-control/oss-signup-mode", s.handleOSSSignUpMode)
 	mux.HandleFunc("/test-control/reformat-test-definitions", s.handleReformatTestDefinitions)

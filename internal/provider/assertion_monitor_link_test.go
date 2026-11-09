@@ -83,6 +83,70 @@ func TestAssertionMonitorLinkLag_Destroy_mock(t *testing.T) {
 	})
 }
 
+// TestAssertionMonitorLinkLag_Import_mock verifies that importing an
+// assertion whose monitor link is briefly invisible waits for it and records
+// monitor_urn, so ImportStateVerify matches the created state. Runs against
+// every monitor-backed resource, since each has its own ImportState.
+func TestAssertionMonitorLinkLag_Import_mock(t *testing.T) {
+	for _, c := range datahubtesting.MonitorBackedAssertionCases() {
+		t.Run(c.Name, func(t *testing.T) {
+			shortMonitorLinkWait(t)
+			server := datahubtesting.NewServer(t)
+			t.Setenv("DATAHUB_GMS_URL", server.URL)
+			t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				CheckDestroy:             c.CheckDestroy,
+				Steps:                    datahubtesting.AssertionMonitorLinkLagImportSteps(c),
+			})
+		})
+	}
+}
+
+// TestAssertionMonitorLinkLag_ImportGivesUp_mock verifies that an import whose
+// monitor link outlasts the wait succeeds with monitor_urn null, and that a
+// later refresh fills it without a diff. Runs against every monitor-backed
+// resource, since each has its own ImportState.
+func TestAssertionMonitorLinkLag_ImportGivesUp_mock(t *testing.T) {
+	for _, c := range datahubtesting.MonitorBackedAssertionCases() {
+		t.Run(c.Name, func(t *testing.T) {
+			shortMonitorLinkWait(t)
+			server := datahubtesting.NewServer(t)
+			t.Setenv("DATAHUB_GMS_URL", server.URL)
+			t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				CheckDestroy:             c.CheckDestroy,
+				Steps:                    datahubtesting.AssertionMonitorLinkLagImportGivesUpSteps(c),
+			})
+		})
+	}
+}
+
+// TestAssertionMonitorLinkLag_RefreshDoesNotWait_mock verifies that a normal
+// refresh with monitor_urn null makes one lookup per Read rather than waiting
+// for the link. The backoff here retries every millisecond, so a Read that
+// waited would make hundreds of lookups within its budget. Runs against every
+// monitor-backed resource, since each has its own Read.
+func TestAssertionMonitorLinkLag_RefreshDoesNotWait_mock(t *testing.T) {
+	for _, c := range datahubtesting.MonitorBackedAssertionCases() {
+		t.Run(c.Name, func(t *testing.T) {
+			t.Cleanup(datahub.SetMonitorLinkBackoffForTesting(time.Millisecond, time.Millisecond, 250*time.Millisecond))
+			server := datahubtesting.NewServer(t)
+			t.Setenv("DATAHUB_GMS_URL", server.URL)
+			t.Setenv("DATAHUB_GMS_TOKEN", "test-token")
+
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				CheckDestroy:             c.CheckDestroy,
+				Steps:                    datahubtesting.AssertionMonitorLinkLagRefreshSteps(c),
+			})
+		})
+	}
+}
+
 // TestAssertionCreateTagFailure_mock verifies that a create failing after the
 // assertion was written records the assertion (tainted) so the next apply
 // replaces it, instead of leaving it and its monitor behind untracked. Runs

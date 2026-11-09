@@ -464,6 +464,7 @@ func (s *mockServer) handleGetAssertionMonitor(w http.ResponseWriter, variables 
 	urn, _ := variables["urn"].(string)
 
 	s.mu.Lock()
+	s.monitorLookups++
 	failLookup := s.failMonitorLookup
 	_, assertionExists := s.assertions[urn]
 	_, monitorExists := s.monitors[mockMonitorURN(urn)]

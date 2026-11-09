@@ -517,6 +517,11 @@ func (r *schemaAssertionResource) ImportState(ctx context.Context, req resource.
 		Mode:               types.StringValue("ACTIVE"),
 	}
 
+	state.MonitorURN = importMonitorURN(ctx, r.client, "datahub_schema_assertion", ai, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	tagsAll, err := importTagsAll(ctx, r.client, r.defaults, assertionEntityPath, ai.URN)
 	if err != nil {
 		resp.Diagnostics.AddError("DataHub API Error", err.Error())
