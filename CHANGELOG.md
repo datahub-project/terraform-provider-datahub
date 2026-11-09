@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-09
+
 ### Changed
+
+- **`datahub_policy` documentation and diagnostics no longer claim that a role-bearing policy write is unsafe on every DataHub.** DataHub Cloud v2.3.0 and later keeps a policy's role bindings on update; OSS DataHub does not. The provider still refuses the write on every server rather than gating on a server version, and the refusal, the import warning and the `datahub_policy` and `datahub_policies` pages now say so.
 
 - The live acceptance suite now also runs nightly against DataHub Cloud, not only against an OSS Quickstart. The Cloud-only resources, and the server behaviours that differ on Cloud, were previously tested only when a maintainer ran the suite by hand, which is how several of the Cloud fixes below were found after release rather than before. Nothing here changes the provider's behaviour.
 
@@ -626,7 +630,8 @@ Initial public release.
   `DATAHUB_GMS_URL`/`DATAHUB_GMS_TOKEN` environment variables, or
   `~/.datahubenv` (DataHub CLI config).
 
-[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/datahub-project/terraform-provider-datahub/compare/v0.27.0...v0.27.1
