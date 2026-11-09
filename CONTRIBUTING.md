@@ -142,7 +142,7 @@ The quick checklist is also reproduced in `CLAUDE.md` for AI-assisted developmen
 
 ## Release process
 
-Releases are cut by the maintainers. A `v*` tag push triggers the GoReleaser workflow, which builds multi-platform binaries, signs them with GPG, and publishes to the Terraform Registry. Contributors do not need to do anything special - just get your PR merged to `main`.
+Releases are cut by the maintainers. A `v*` tag push starts the Release workflow, which runs the live acceptance suite against Quickstart and then waits for approval on the `release` GitHub environment. Approving it is what publishes: GoReleaser builds multi-platform binaries, signs them with GPG and publishes the GitHub release, the Terraform Registry ingests that release, and the workflow dispatches the Registry smoke test. Contributors do not need to do anything special - just get your PR merged to `main`.
 
 ### Pre-release dependency audit
 
@@ -217,3 +217,15 @@ Before tagging a release, open a "Prepare vX.Y.Z" PR that does the following in 
 3. **Update CHANGELOG.md**: move the `[Unreleased]` section into a new `## [X.Y.Z] - YYYY-MM-DD` section and add a compare link at the bottom.
 
 The GoReleaser workflow includes a pre-release gate (`scripts/check-example-versions.sh`) that verifies every example pin matches the tag being released. Tagging before running `make bump-examples` will fail the gate and prevent any artifacts from being published.
+
+### When a release does not reach the Registry
+
+The Registry learns of a published GitHub release within seconds, then downloads its assets from the public `releases/download/...` URLs anonymously. If that download fails, the version never appears and the Registry smoke test fails all ten attempts. The release itself is usually fine.
+
+1. Read the per-version message on the provider's page in the Registry (Settings, signed in as a namespace owner). For example, `could not fetch SHA256SUMS file` means the download failed, not that the artifacts are wrong.
+2. Fetch the named asset anonymously and check the status: `curl -sS -o /dev/null -w '%{http_code}\n' https://github.com/datahub-project/terraform-provider-datahub/releases/download/vX.Y.Z/terraform-provider-datahub_X.Y.Z_SHA256SUMS`. A `302` is healthy; a `5xx` points to a GitHub problem, so check https://www.githubstatus.com.
+3. Once the URL returns `302` reliably, press **Resync** on the provider settings page, then re-run the smoke test: `gh workflow run registry-smoke-test.yml --repo datahub-project/terraform-provider-datahub --ref main`.
+
+Do not re-tag or rebuild for a failed ingest. Do not treat an empty webhook list under the repository's settings as the cause either: the Registry detects releases without a repository webhook.
+
+**Resync adds every GitHub release the Registry lacks, so read its preview before confirming.** Versions 0.3.0 and 0.4.0 have tags but no GitHub releases, on purpose. Their `SHA256SUMS` listed the `datahub-tf-extract` archives before the provider's, so the Registry served the wrong zip and `terraform init` failed (fixed in 0.4.1). They were removed from the Registry, and a Resync in November 2026 re-published them from their GitHub releases. Those releases were then deleted, keeping the tags, so that a Resync has nothing to publish for them. Do not recreate those releases. If the preview still lists either version, cancel and delete them from the Registry afterwards.
