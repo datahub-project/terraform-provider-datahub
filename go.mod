@@ -2,7 +2,7 @@ module github.com/datahub-project/terraform-provider-datahub
 
 go 1.26.5
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/google/go-cmp v0.7.0
