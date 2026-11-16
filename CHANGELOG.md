@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The provider is now built with Go 1.27.4, which fixes GO-2026-6859 (CVE-2026-97054) in `net/http`.** The advisory is a crash in HTTP/1 *servers* that use `MaxBytesReader` or `MaxBytesHandler` while reading a request body concurrently with writing the response header. The provider is an HTTP client and uses neither, so there is no known practical exposure. `govulncheck` nonetheless reports the finding as reachable, because the advisory lists most of the `net/http` API as affected, and a released binary built from 1.27.3 carries the vulnerable standard library while one built from 1.27.4 does not. Nothing in the provider's own code changed.
+
+  Selected by moving the `toolchain` directive in all three `go.mod` files and the `go` pin in `mise.toml` to 1.27.4. The `go` directive is unchanged.
+
 ## [0.30.0] - 2026-11-09
 
 ### Changed
