@@ -110,11 +110,20 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 		waitForURNsInList(ctx, t, client, []string{ingestionURN, secretURN}, 60*time.Second)
 	}
 
-	outDir := t.TempDir()
-	err = Run(ctx, Options{
-		GmsURL:    gmsURL,
-		GmsToken:  gmsToken,
-		OutputDir: outDir,
+	// Derive the Terraform labels that the post-processor assigns. On live the
+	// URN suffix includes the random component (e.g. "rt-source-abc12345" ->
+	// "rt_source_abc12345"), so we compute rather than hard-code them.
+	sourceLabel := LabelFromURN(ingestionURN)
+	secretLabel := LabelFromURN(secretURN)
+
+	// One attempt on mock, where enumeration is exact and a miss is a bug.
+	attempts := 1
+	if tg.IsLive() {
+		attempts = liveEnumerationAttempts
+	}
+	outDir := runUntilSeedsEnumerated(ctx, t, Options{
+		GmsURL:   gmsURL,
+		GmsToken: gmsToken,
 		// Scope the run to the two types this test seeds. The registry holds
 		// every target the provider supports, and enumerating all of them here
 		// would make the assertions below depend on whatever else happens to
@@ -123,20 +132,14 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 		// SkipTerraform: false (default) -- the whole point of this test.
 		// SkipValidation is not needed: a non-empty vars list (the secret)
 		// naturally skips the final terraform plan validation.
+	}, attempts, []string{
+		"to = datahub_ingestion_source." + sourceLabel,
+		"to = datahub_secret." + secretLabel,
 	})
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
 
 	// --- assertions ---
 
 	requireFiles(t, outDir, "import.tf", "generated.tf", "variables.tf", "IMPORT_README.md")
-
-	// Derive the Terraform labels that the post-processor assigns. On live the
-	// URN suffix includes the random component (e.g. "rt-source-abc12345" ->
-	// "rt_source_abc12345"), so we compute rather than hard-code them.
-	sourceLabel := LabelFromURN(ingestionURN)
-	secretLabel := LabelFromURN(secretURN)
 
 	assertGeneratedTFContains(t, outDir,
 		fmt.Sprintf(`resource "datahub_ingestion_source" %q`, sourceLabel),
@@ -156,12 +159,71 @@ func TestAcc_ImportRoundtrip_E2E(t *testing.T) {
 	assertReadmeStepNumbersIncreasing(t, outDir)
 }
 
+// liveEnumerationAttempts bounds runUntilSeedsEnumerated on live targets. With
+// the pauses in enumerationRetryPause this spans about half a minute.
+const liveEnumerationAttempts = 4
+
+// enumerationRetryPause is the pause before the given retry (1-based).
+func enumerationRetryPause(retry int) time.Duration {
+	return time.Duration(retry) * 5 * time.Second
+}
+
+// runUntilSeedsEnumerated runs the extract tool into a fresh directory and
+// returns that directory once import.tf contains every one of wantImports,
+// running again up to attempts times when it does not.
+//
+// A seed can be missing from the tool's enumeration even after
+// waitForURNsInList has seen it. On DataHub Cloud the listing has been
+// observed to include a new entity on one call and omit it on the next, so a
+// single sighting does not carry over to the tool's own listing a moment
+// later. Enumeration is documented as best-effort (see listEntityURNs), so
+// that is not a defect in the tool, and the test retries the whole run rather
+// than failing on it.
+//
+// Only an enumeration miss is retried. A seed that reaches import.tf but not
+// generated.tf is a real defect, and the caller's assertions fail on it
+// immediately.
+func runUntilSeedsEnumerated(ctx context.Context, t *testing.T, opts Options, attempts int, wantImports []string) string {
+	t.Helper()
+	for attempt := 1; ; attempt++ {
+		opts.OutputDir = t.TempDir()
+		if err := Run(ctx, opts); err != nil {
+			t.Fatalf("Run (attempt %d): %v", attempt, err)
+		}
+		importTF := readFile(t, filepath.Join(opts.OutputDir, "import.tf"))
+		var missing []string
+		for _, want := range wantImports {
+			if !strings.Contains(importTF, want) {
+				missing = append(missing, want)
+			}
+		}
+		if len(missing) == 0 {
+			if attempt > 1 {
+				t.Logf("seeds enumerated on attempt %d of %d", attempt, attempts)
+			}
+			return opts.OutputDir
+		}
+		if attempt >= attempts {
+			t.Fatalf("extract enumeration missed seeded resources on all %d attempts; import.tf lacks %q\nfull content:\n%s", attempts, missing, importTF)
+		}
+		pause := enumerationRetryPause(attempt)
+		t.Logf("attempt %d of %d: extract enumeration missed %q; retrying in %s", attempt, attempts, missing, pause)
+		select {
+		case <-ctx.Done():
+			t.Fatalf("context done while waiting to retry: %v", ctx.Err())
+		case <-time.After(pause):
+		}
+	}
+}
+
 // waitForURNsInList polls ListSecretURNs and ListIngestionSourceURNs until all
 // of the given URNs appear, or fails the test after timeout. Used on live
 // targets to absorb the eventual-consistency lag between entity creation and
 // OpenSearch indexing, which is seconds. It used to time out on DataHub Cloud
 // because the lists were answered from a search result cache that writes do
 // not evict; they now bypass it (see listEntityURNs), so a minute is ample.
+// Seeing a URN here does not guarantee the next listing includes it; see
+// runUntilSeedsEnumerated.
 func waitForURNsInList(ctx context.Context, t *testing.T, client *datahub.Client, urns []string, timeout time.Duration) {
 	t.Helper()
 	start := time.Now()
