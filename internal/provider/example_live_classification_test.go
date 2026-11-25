@@ -180,7 +180,7 @@ var liveExamples = []liveExample{
 	// are assigned to entities the same destroy removes. CHANGELOG.md records
 	// this exact configuration producing husks.
 	//
-	// The one opt-out from the re-apply check, and the reason is a finding rather
+	// Opted out of the re-apply check, and the reason is a finding rather
 	// than a preference. Assigning a structured property to an entity creates an
 	// Elasticsearch field for it, and deleting the property does not remove that
 	// field. The entity is provably gone -- 404 on the v3 endpoint -- but a later
@@ -198,11 +198,15 @@ var liveExamples = []liveExample{
 	// versus '_': that describes two distinct names colliding on one field, and
 	// DataHub reuses the wording here.
 	//
-	// The practical rule for a new entry: an example that DEFINES structured
-	// properties can re-apply (see structured-property-simple, verified); one
-	// that ASSIGNS them cannot. Distinct from CAT-2583 -- there is no husk here
-	// -- and it is why the ephemeral Quickstart target is mandatory for this
-	// example rather than merely preferable.
+	// That defining-vs-assigning distinction held through v1.7.0 and is gone from
+	// v1.8.0: datahub-project/datahub#19490 made structured-property mappings
+	// explicit, so DEFINING a property now writes its field, and any example that
+	// creates a structured property cannot re-apply (structured-property-simple
+	// and form-simple were both measured failing on v1.9.1). The practical rule
+	// for a new entry is now simply: creates a structured property, needs the
+	// opt-out. Distinct from CAT-2583 -- there is no husk here -- and it is why
+	// the ephemeral Quickstart target is mandatory for these examples rather than
+	// merely preferable.
 	{
 		dir:                "structured-and-custom-properties",
 		settleAfterDestroy: true,
@@ -226,18 +230,27 @@ var liveExamples = []liveExample{
 	// configuration cannot trigger. The end-of-run sweep re-checks every URN
 	// anyway, so if that reasoning is ever wrong the run still says so.
 	//
-	// It also keeps the re-apply check for the same underlying reason: a
-	// definition writes no Elasticsearch field (structuredProperties is a dynamic
-	// mapping, so the field appears only once a document carries a value), so
-	// there is nothing here to burn.
-	{dir: "structured-property-simple"},
+	// It kept the re-apply check through v1.7.0, when a definition wrote no
+	// Elasticsearch field and there was nothing to burn. From v1.8.0 the
+	// definition itself maps the field (see the entry above), so the second
+	// create is refused and the check can never pass.
+	{
+		dir: "structured-property-simple",
+		noReapplyReason: "since DataHub v1.8.0 (datahub-project/datahub#19490) defining a " +
+			"structured property maps its Elasticsearch field, and deleting the property does " +
+			"not release it, so re-creating tf-example-property-retention-days is rejected with " +
+			"\"Elasticsearch field ... already exists in the entity-index mapping\". Reclaim is " +
+			"deferred to system-update on datahub-project/datahub#18974. Sweep condition: " +
+			"re-enable this check when the mapping is reclaimed on delete.",
+	},
 
 	// Two forms (one COMPLETION, one VERIFICATION), the two structured
 	// properties their prompts collect, and a stewardship group. The example
 	// DEFINES structured properties and assigns them to nothing -- a form
 	// prompt references a property by URN without writing a value to any
-	// entity -- so no Elasticsearch field is burned and the re-apply check
-	// stays on, per the defining-vs-assigning rule in the design doc.
+	// entity. That kept the re-apply check on through v1.7.0; from v1.8.0
+	// defining is enough to burn the field, so it opts out like
+	// structured-property-simple.
 	//
 	// settleAfterDestroy is false for the same reason it is false on
 	// structured-property-simple: the CAT-2583 resurrection needs entities
@@ -245,7 +258,15 @@ var liveExamples = []liveExample{
 	// assignment matches postgres and mysql datasets, of which a Quickstart
 	// has zero, so the async assignment hook has nothing to assign and the
 	// destroy has nothing to retract.
-	{dir: "form-simple"},
+	{
+		dir: "form-simple",
+		noReapplyReason: "since DataHub v1.8.0 (datahub-project/datahub#19490) defining a " +
+			"structured property maps its Elasticsearch field, and deleting the property does " +
+			"not release it, so re-creating the two prompt properties is rejected with " +
+			"\"Elasticsearch field ... already exists in the entity-index mapping\". Reclaim is " +
+			"deferred to system-update on datahub-project/datahub#18974. Sweep condition: " +
+			"re-enable this check when the mapping is reclaimed on delete.",
+	},
 
 	// The only phased example, and the only one whose provider block is part of
 	// what is under test. main.tf puts the marker tag and structured-property URNs
