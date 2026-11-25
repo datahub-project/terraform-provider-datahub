@@ -108,10 +108,21 @@ install: build
 #
 # install, not sync: requirements-dev.txt lists only the top-level pin, and
 # 'uv pip sync' installs exactly the listed packages, without their dependencies.
+#
+# The interpreter is mise's, named explicitly. Without --python, uv prefers an
+# interpreter it downloaded itself over one on PATH, so on any machine where uv
+# has ever fetched a Python (uvx does) the venv was built on uv's newest one and
+# not the mise.toml pin, and --allow-existing silently moved an existing venv
+# onto it: a checkout pinned to 3.11 ended up on 3.12. CI never showed it,
+# because a fresh runner has no uv-managed Python to prefer. The stamp also
+# depends on mise.toml, so a Python pin bump rebuilds the venv as a
+# requirements-dev.txt bump does. Recursive '=' so mise runs only when the venv
+# is (re)built; without mise the flag is omitted and uv chooses as before.
 DEV_DEPS_STAMP := .venv/.dev-deps.stamp
+DEV_DEPS_PYTHON = $(shell mise which python 2>/dev/null)
 
-$(DEV_DEPS_STAMP): requirements-dev.txt
-	uv venv --allow-existing .venv
+$(DEV_DEPS_STAMP): requirements-dev.txt mise.toml
+	uv venv --allow-existing $(if $(DEV_DEPS_PYTHON),--python $(DEV_DEPS_PYTHON)) .venv
 	UV_INDEX= uv pip install -r requirements-dev.txt
 	@touch $@
 
