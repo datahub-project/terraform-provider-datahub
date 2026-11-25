@@ -20,6 +20,17 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    # One named exception to direct-only. govulncheck is pinned by a `tool`
+    # directive, which Go records as `// indirect` because nothing imports it,
+    # so the default skipped it: it sat at v1.6.0 through three releases. The
+    # argument above does not apply to it -- no upstream module asks for it,
+    # we chose it. Both entries are needed: setting `allow` replaces the
+    # direct-only default, so `direct` is restated, and an entry with only a
+    # name defaults to `direct` server-side, so `indirect` must be explicit.
+    allow:
+      - dependency-type: direct
+      - dependency-name: golang.org/x/vuln
+        dependency-type: indirect
     groups:
       go-dependencies:
         patterns:
