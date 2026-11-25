@@ -20,7 +20,7 @@ DATAHUB_GMS_URL ?= http://localhost:8080
 TFPLUGINDOCS_SERVE_BIN := $(BIN_DIR)/tfplugindocs-serve
 QUICKSTART_GMS_URL := http://localhost:8080
 TOKEN_ACTOR ?= urn:li:corpuser:datahub
-# Must be exactly three numeric components, e.g. v1.7.0. The CLI treats such a
+# Must be exactly three numeric components, e.g. v1.9.1. The CLI treats such a
 # version as a "passthrough" and uses it verbatim as both the compose git ref
 # and the image tag, so the compose file comes from an immutable release tag.
 # Anything else -- including a four-component patch tag like v1.6.0.1 -- fails
@@ -29,7 +29,7 @@ TOKEN_ACTOR ?= urn:li:corpuser:datahub
 # v1.5.0.6 for months while every run actually booted the default. The guard in
 # quickstart-up rejects the wrong shape before a boot is paid for, and the
 # version-drift check after boot verifies what actually started.
-QUICKSTART_VERSION ?= v1.7.0
+QUICKSTART_VERSION ?= v1.9.1
 
 # Pins the CLI's quickstart version mapping to a checked-in file instead of
 # letting it fetch one from datahub master on every invocation. See the header
