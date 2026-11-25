@@ -34,6 +34,6 @@
 # entry exists only so the map is never empty; nothing here requests it.
 quickstart_version_map:
   default:
-    composefile_git_ref: v1.7.0
-    docker_tag: v1.7.0
+    composefile_git_ref: v1.9.1
+    docker_tag: v1.9.1
     mysql_tag: "8.2"

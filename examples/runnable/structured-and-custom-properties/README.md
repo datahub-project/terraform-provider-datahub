@@ -85,7 +85,9 @@ to the same field name (proposed qualifiedName='tf-example.governance.tier').
 
 **Ignore what that message says about `.` versus `_`.** It describes a different situation -- two *distinct* names, `a.b` and `a_b`, normalising onto one field -- and DataHub reuses the same wording for this one. Punctuation has nothing to do with it, and renaming to a dotless `property_id` does not help.
 
-**What burns the field name is assigning a value, not defining the property.** Established by controlled experiment against Quickstart `v1.7.0` in August 2026:
+**On DataHub v1.8.0 and later, and DataHub Cloud, defining the property is enough to burn the field name.** [datahub-project/datahub#19490](https://github.com/datahub-project/datahub/pull/19490) made structured-property mappings explicit, so the field is created with the definition, and *any* structured property -- assigned or not -- cannot be re-created with the same `qualifiedName` after a destroy. Newer servers also report it plainly: `Structured property Elasticsearch field '...' already exists in the entity-index mapping`, naming the residual mapping as the cause.
+
+**On v1.7.0 and earlier, only assigning a value burned it.** Established by controlled experiment against Quickstart `v1.7.0` in August 2026:
 
 | `qualifiedName` | A value was assigned? | Destroy, then apply again |
 |---|---|---|
@@ -94,7 +96,7 @@ to the same field name (proposed qualifiedName='tf-example.governance.tier').
 | dotless | **yes** | **fails** |
 | dotted | **yes** | **fails** |
 
-That is consistent with `structuredProperties` being a `dynamic: true` mapping: a field appears in the index only once a *document* contains it, which requires some entity to actually carry a value. A definition on its own writes no document field, so it leaves nothing behind -- which is why `examples/runnable/structured-property-simple` can be applied repeatedly, while this example cannot. Elasticsearch then cannot drop a mapped field without recreating the index, so the provider has no way to clean up: the definition it is asked to create is rejected before it exists.
+That is consistent with `structuredProperties` being a `dynamic: true` mapping: a field appears in the index only once a *document* contains it, which requires some entity to actually carry a value. A definition on its own writes no document field, so it leaves nothing behind -- which is why, on those versions, `examples/runnable/structured-property-simple` could be applied repeatedly while this example could not. Elasticsearch then cannot drop a mapped field without recreating the index, so the provider has no way to clean up: the definition it is asked to create is rejected before it exists.
 
 **This is intended DataHub behaviour, not a defect.** Mapping reclaim is deferred to the system-update job because hard-delete fanout can be large. See [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974) and the [hard-delete](https://docs.datahub.com/docs/api/tutorials/structured-properties#hard-delete) and [index mappings cleanup](https://docs.datahub.com/docs/api/tutorials/structured-properties#index-mappings-cleanup) docs. Note the maintainer's own phrasing there, which points at the same mechanism: *"any remaining assignment value on an index blocks mapping removal for that index."*
 

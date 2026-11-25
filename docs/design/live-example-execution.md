@@ -41,7 +41,7 @@ Every directory under `examples/runnable/` falls into exactly one primary bucket
 | `domain-simple` | Runs on Quickstart | Six `datahub_domain` resources in a three-level hierarchy | Nested destroy hits the child-domain race (see "Flakiness") |
 | `executor-pool-basic` | Cloud-only | `datahub_remote_executor_pool` (`main.tf:19`) is `cloudOnlyBadge` (`remote_executor_pool_resource.go:64`) | README documents a 30-90 second `PROVISIONING_PENDING` to `READY` wait |
 | `financial-services` | Too expensive or slow | Terraform reads two generated files (`main.tf:27`, `assertions.tf:22`), both produced by an in-directory `Makefile` that `pip install`s dependencies and shallow-clones a 40-60 MB repository (`Makefile:20-23`); README quotes 147 domains, 147 glossary nodes and 1500-2000 terms at full scale | Also Cloud-only: five assertion resources in `assertions.tf` are all `cloudOnlyBadge`. Also needs `ANTHROPIC_API_KEY` for `scripts/iso20022/auto_tag.py`. On a fresh checkout the `fileexists` guards make the plan empty, so a naive run would pass vacuously |
-| `form-simple` | Runs on Quickstart | Two `datahub_form` resources (`main.tf:79`, `main.tf:138`) -- one `COMPLETION`, one `VERIFICATION` -- plus the two structured properties their prompts collect and a stewardship group, all `ossAndCloudBadge` (`form_resource.go:113`) | None, and two hazards it looks like it should have are absent. It *defines* structured properties and assigns them to nothing, so it burns no Elasticsearch field (see "Flakiness" item 8) and needs neither `settleAfterDestroy` nor a `noReapplyReason`. Its dynamic assignment matches postgres and mysql datasets, of which a Quickstart has none, so the asynchronous assignment hook has nothing to assign and the destroy nothing to retract |
+| `form-simple` | Runs on Quickstart | Two `datahub_form` resources (`main.tf:79`, `main.tf:138`) -- one `COMPLETION`, one `VERIFICATION` -- plus the two structured properties their prompts collect and a stewardship group, all `ossAndCloudBadge` (`form_resource.go:113`) | None, and two hazards it looks like it should have are absent. It *defines* structured properties and assigns them to nothing, so it needs no `settleAfterDestroy`. Through v1.7.0 that also meant it burned no Elasticsearch field and needed no `noReapplyReason`; from v1.8.0 defining alone burns the field, so it now carries one (see "Flakiness" item 8). Its dynamic assignment matches postgres and mysql datasets, of which a Quickstart has none, so the asynchronous assignment hook has nothing to assign and the destroy nothing to retract |
 | `home-page-layout` | Runs on Quickstart | Page templates and modules are `category: core` in OSS, and OSS ships the entity model and mutations with no UI, so this is the only way to customise a home page there | **Inverts the absence assertion**: it adopts the instance's default template, so destroy restores the previous layout rather than deleting it. Also needs `TF_VAR_test_user_password` (no default, WriteOnly) and a per-run unique `test_user_email`, since `datahub_local_user_login` is subject to the OSS signUp guard |
 | `page-template-simple` | Runs on Quickstart | Two modules and a template nothing points at, all OSS-capable | None -- no variables, and it changes nothing users see |
 | `glossary-node-term-simple` | Runs on Quickstart | Four glossary nodes, four terms, all OSS-capable | Owns `urn:li:glossaryTerm:tf-example-revenue`, shared with `structured-and-custom-properties` |
@@ -58,7 +58,7 @@ Every directory under `examples/runnable/` falls into exactly one primary bucket
 | `remote-executor-aws-ecs` | Too expensive or slow | README quotes roughly USD 120/month for a Fargate task and a NAT gateway with billing starting at apply, and 10-15 minutes of provisioning. Exempt from stage B for the same reason as the other two executor examples (`example_validate_test.go`) | Also Cloud-only (`datahub_remote_executor_pool`, `datahub.tf`). Also needs the AWS account allowlisted on DataHub's private executor ECR registry, which no harness can arrange, and fetches the CloudFormation template from GitHub at plan time |
 | `secret-basic` | Runs on Quickstart | `datahub_secret` plus a referencing ingestion source | `value` is `Required` (`secret_resource.go:112`), and `var.secret_value` defaults to `null` (`variables.tf:5`), so the harness must pass `TF_VAR_secret_value` |
 | `structured-and-custom-properties` | Runs on Quickstart | Glossary node and term, two structured properties, three assignments | Highest CAT-2583 exposure: it deletes structured properties that are assigned to entities the same destroy removes. `CHANGELOG.md:99` records this exact configuration producing husks |
-| `structured-property-simple` | Runs on Quickstart | Two structured properties plus two lookups | Deletes structured properties (assigned to nothing, so a much narrower blast radius) |
+| `structured-property-simple` | Runs on Quickstart | Two structured properties plus two lookups | Deletes structured properties (assigned to nothing, so a much narrower blast radius). Opts out of re-apply from v1.8.0, when defining alone burns the field ("Flakiness" item 8) |
 | `tag-simple` | Runs on Quickstart | Three tags plus two lookups | `data.datahub_tags.all` is `searchAcrossEntities`-backed and eventually consistent (`tags_list.go:11-13`) |
 
 Totals: **18 run on Quickstart**, **5 are Cloud-only**, **4 are too expensive or slow**, **1 is a poor fit by shape**.
@@ -432,7 +432,7 @@ So `liveExample` gained a `waitForURN` field, polled through `datahubtesting.URN
 
 Measured: on a freshly booted v1.7.0 Quickstart the poll returns on its first probe, so the entity is in fact already there by the time `datahub docker check` passes. That does not make the poll dead code -- it makes it cheap. The observation is one instance on one machine, and the failure it guards against would otherwise present as `datahub_ingestion_source` "not found" with nothing pointing at the bootstrap. The failure path was exercised deliberately by pointing `waitForURN` at a URN that will never exist: the example failed after 90.4 s with the budget, the asynchronous bootstrap and the `optional: false` reasoning all named in the message.
 
-### 8. Assigning a structured property burns its Elasticsearch field name
+### 8. Assigning a structured property burns its Elasticsearch field name (from v1.8.0, defining one does too)
 
 **Found by the first live run of this harness, 2026-08-11, and not previously recorded anywhere in this repository.** It is not a flake -- it is deterministic, and it makes one example un-rerunnable on any instance that survives.
 
@@ -458,7 +458,19 @@ to the same field name (proposed qualifiedName='tf-example.governance.tier').
 
 Consistent with `structuredProperties` being a `dynamic: true` mapping: the field enters the index only when a *document* carries a value, so a definition alone writes nothing to leave behind. It is also what the maintainer's reply on the upstream issue says, read carefully -- *"any remaining assignment value on an index blocks mapping removal for that index."* Note what this is *not*: there is no husk, so this is a different mechanism from CAT-2583 (item 1) and the husk classifier correctly reports nothing -- the entity really is absent.
 
-**The rule for classifying a new example:** one that *defines* structured properties can be re-applied (`structured-property-simple`, verified empirically); one that *assigns* them cannot.
+**The rule for classifying a new example (through v1.7.0):** one that *defines* structured properties can be re-applied (`structured-property-simple`, verified empirically); one that *assigns* them cannot.
+
+**From v1.8.0 that distinction is gone, and the rule is simply: creates a structured property, opts out.** [datahub-project/datahub#19490](https://github.com/datahub-project/datahub/pull/19490) ("make structured-property mappings explicit", first released in v1.8.0) replaced the `dynamic: true` mapping above with explicit per-property fields written when the property is *defined*. The table's two "succeeds" rows therefore no longer hold. Measured on the move to Quickstart v1.9.1 (2026-11-26), where both examples that define-but-never-assign failed their re-apply on the first CI run, on the definition itself:
+
+```
+Structured property Elasticsearch field 'tf-example-property-retention-days' (from
+qualifiedName='tf-example-property-retention-days') already exists in the
+entity-index mapping. ... a residual mapping left by a hard-deleted property with
+this field name (Elasticsearch cannot drop a field from a mapping, so the field
+survives the delete).
+```
+
+`structured-property-simple` and `form-simple` now carry a `noReapplyReason` citing #19490 and #18974, with the same sweep condition as the two older entries. The newer server's message also states the residual-mapping cause outright, rather than reusing the `.`-versus-`_` wording quoted above. The consequence for a user widens to match: on v1.8.0 and later, destroy-then-apply of *any* structured property with the same `qualifiedName` fails, assigned or not.
 
 Three consequences, in descending order of how much they matter:
 
